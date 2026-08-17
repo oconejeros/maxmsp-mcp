@@ -80,10 +80,17 @@ function anything() {
     // [pack s s 0] output starts with a symbol, so Max JS routes it here as
     // an "anything" message where messagename = source, arguments = [text, type]
     if (this.inlet === 1) {
-        var source = messagename;
-        var text = String(arguments[0] || "");
-        var type = arguments[1] || 0;
-        console_buffer.push({s: source, t: text, tp: type});
+        // [pack s s 0] sends <objectname> <message> <type>, but a message containing
+        // spaces is not a single symbol -- Max splits it back into separate atoms here.
+        // So arguments is [word, word, ..., type]: the trailing number is the type and
+        // everything before it is the message. Reading only arguments[0] truncated every
+        // console line to its first word.
+        var a = arrayfromargs(arguments);
+        var type = 0;
+        if (a.length > 1 && typeof a[a.length - 1] === "number") {
+            type = a.pop();
+        }
+        console_buffer.push({s: messagename, t: a.join(" "), tp: type});
         if (console_buffer.length > CONSOLE_BUFFER_MAX) {
             console_buffer.shift();
         }
