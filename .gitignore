@@ -180,3 +180,13 @@ cython_debug/
 .pypirc
 
 .vscode
+# Local VS Code workspace: contains machine-specific absolute paths (F:/Ableton/...)
+maxmsp-mcp.code-workspace
+
+# device_backup/ holds local copies of .amxd devices. Only the FORTESEQ family is
+# versioned (git is the rollback mechanism for those); dated snapshots and unrelated
+# or third-party devices stay local.
+device_backup/*
+!device_backup/FORTESEQ.amxd
+!device_backup/forteseqvoicetrigger.amxd
+!device_backup/forteseqmidifilter.amxd
