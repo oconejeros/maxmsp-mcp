@@ -19,6 +19,9 @@ var voiceRangeMax = [127, 127, 127, 127];  // per-voice register clamp, high bou
 var root = 0;                      // semitone transpose applied to everything (tonic/root shift)
 var masterOctave = 0;               // global octave transpose applied to everything, on top of per-voice octave and root
 var patternStep = 0;               // increments once per step() call, in every mode; drives octave-list position
+var DEBUG_STEP = 0;                // 1 = trace every step()/triggervoice() to the Max console. Invaluable for telling
+                                   // apart "the clock is driving" from "only external triggers are driving" -- only
+                                   // step() ever advances setIndex, so STEP lines missing means the set cannot change.
 
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -183,7 +186,28 @@ function triggervoice(v) {
 	if (!pcs || pcs.length === 0) return;
 
 	var pos = voicePos[idx];
-	var pc = pcs[pos % pcs.length];
+	var n = pcs.length;
+	var pc;
+
+	// Walk the same permuted order the shared clock uses, so an externally triggered
+	// voice permutes too instead of falling back to a plain linear pass through the
+	// chord. Not gated on `mode` (Acordes/Arp): triggervoice always emits one note per
+	// trigger, so only permMode is meaningful here. Same cardinality limits as step():
+	// minimal superpermutations exist for n<=5, brute force up to PERM_CAP, else linear.
+	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) {
+		var minSeq = MINIMAL_SUPERPERMS[n];
+		pc = pcs[minSeq[pos % minSeq.length]];
+	} else if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
+		if (permCachedFor !== setIndex) {
+			permList = heapPermutations(pcs);
+			permCachedFor = setIndex;
+		}
+		// each voice advances through the permutation list at its own pace
+		pc = permList[Math.floor(pos / n) % permList.length][pos % n];
+	} else {
+		pc = pcs[pos % n];
+	}
+
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
 	var shift = oct * 12 + root + masterOctave * 12;
@@ -191,6 +215,12 @@ function triggervoice(v) {
 	var shifted = foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
 	voicePos[idx] = pos + 1;
+	if (DEBUG_STEP) {
+		// NOTE: triggervoice() never advances setIndex -- only step() does. If notes are
+		// arriving here and STEP lines are absent, the PC set cannot change by design.
+		post("TRIG v" + (idx + 1) + " | set=" + (setIndex + 1) + " n=" + n +
+			" pos=" + pos + " -> note " + shifted + "\n");
+	}
 	outlet(VOICE_OUTLETS[idx], shifted);
 }
 
@@ -403,6 +433,11 @@ function step() {
 	if (setIndex >= sets.length) setIndex = 0;
 	var pcs = sets[setIndex];
 	var n = pcs.length;
+	if (DEBUG_STEP) {
+		post("STEP " + patternStep + " | set=" + (setIndex + 1) + " n=" + n +
+			" | locked=" + locked + " mode=" + mode + " perm=" + permMode +
+			" | noteIdx=" + noteIndex + " permIdx=" + permIndex + " minPos=" + minimalPos + "\n");
+	}
 	outlet(9, pcs.map(function(p) { return ((p + root) % 12 + 12) % 12; }));
 
 	if (mode === 1 && permMode === 2 && MINIMAL_SUPERPERMS[n]) {
