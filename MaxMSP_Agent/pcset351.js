@@ -1,9 +1,14 @@
 autowatch = 1;
 inlets = 1;
-outlets = 10;  // 0 = voice1 MIDI, 1 = current set index (1-351), 2 = notes for display (names),
+outlets = 11;  // 0 = voice1 MIDI, 1 = current set index (1-351), 2 = notes for display (names),
                // 3 = voice2 MIDI, 4 = voice3 MIDI, 5 = voice4 MIDI, 6 = all-voice summary for viz,
                // 7 = preset recall broadcast (tagged pairs, routed in Max), 8 = voice note names for monitor,
-               // 9 = current set's pitch classes (0-11, transposed by root) for circle-of-fifths display
+               // 9 = current set's pitch classes (0-11, transposed by root) for circle-of-fifths display,
+               // 10 = articulation for the note about to be sent: <voice 1-4> <velocity> <duration ms>.
+               //      ALWAYS emitted immediately BEFORE the pitch goes out its voice outlet, so in Max it
+               //      feeds makenote's cold velocity/duration inlets and is already in place when the
+               //      pitch hits the hot inlet. Velocity is no longer the fixed 100 baked into
+               //      [makenote 100 200], and duration no longer rides on the BPM dial.
 
 var currentBpm = 120;   // tracked purely for presets; actual timing is handled in Max via expr_ms
 var presets = {};        // in-memory preset store: slot -> captured state object
@@ -57,6 +62,35 @@ var minimalCachedFor = -1; // which setIndex the minimal sequence is active for
 var CHORD_BASE = 48;       // C3 - low end of chord voicing
 var CHORD_SPAN_OCT = 4;    // chords spread across ~4 octaves
 var MELODY_BASE = 60;      // C4 - melody register (kept to one octave for a playable line)
+
+// ---------------------------------------------------------------------------
+// Articulation: accent grid + two dynamic groups
+// ---------------------------------------------------------------------------
+// Every note belongs to one of two groups, NORMAL (0) or ACCENT (1), decided by a
+// hand-drawn grid of up to 16 cells. Each group owns its own velocity band, note
+// length and rest probability, so one grid drives dynamics, duration and silence
+// together instead of three unrelated mechanisms.
+//
+// Velocity is drawn at random inside the group's band: the distance between min and
+// max IS the amount of humanisation (min == max gives a dead-mechanical line).
+//
+// The grid is read at (position + per-voice phase) % cycleLength. When cycleLength
+// equals the set's cardinality the accents lock onto the same chord tones every pass;
+// when it is coprime with the cardinality the pattern rotates against the harmony and
+// a single drawn accent walks the whole chord -- long-form variation with nothing random
+// in it. That is the whole point of leaving the length free.
+
+var ACCENT_MAX = 16;
+var accentGrid = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];  // 1 = accent, 0 = normal
+var accentCycle = 4;         // how many leading cells of accentGrid are in play (1..ACCENT_MAX)
+var accentTieToN = 0;        // 1 = ignore accentCycle and use the current set's cardinality instead
+var voicePhase = [0, 0, 0, 0];  // per-voice read offset into the grid, so voices accent at different points
+
+var GROUP_NORMAL = 0, GROUP_ACCENT = 1;
+var groupVelMin = [55, 95];    // low edge of each group's velocity band
+var groupVelMax = [80, 115];   // high edge; velocity is uniform-random between the two
+var groupDurDiv = [16, 4];     // note length as a denominator: 4 = quarter, 8 = eighth, 16 = sixteenth
+var groupSilence = [0, 0];     // percent chance this group's note is dropped and becomes a rest
 
 function popcount(x) {
 	var c = 0;
@@ -215,12 +249,24 @@ function triggervoice(v) {
 	var shifted = foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
 	voicePos[idx] = pos + 1;
+
+	// Read the accent grid at this voice's OWN cursor, not patternStep: an externally
+	// triggered voice advances at its trigger's rate, so its accents have to follow that
+	// rate too or they would drift against the notes they are supposed to be shaping.
+	// The cursor still advances on a rest, so silences occupy a step instead of being skipped.
+	var art = articulationFor(idx, pos, n);
+
 	if (DEBUG_STEP) {
 		// NOTE: triggervoice() never advances setIndex -- only step() does. If notes are
 		// arriving here and STEP lines are absent, the PC set cannot change by design.
 		post("TRIG v" + (idx + 1) + " | set=" + (setIndex + 1) + " n=" + n +
-			" pos=" + pos + " -> note " + shifted + "\n");
+			" pos=" + pos + " -> note " + shifted +
+			" | grp=" + (art.group ? "ACC" : "nrm") + " vel=" + art.vel +
+			" dur=" + Math.round(art.dur) + (art.rest ? " REST" : "") + "\n");
 	}
+	if (art.rest) return;
+
+	outlet(10, [idx + 1, art.vel, art.dur]);
 	outlet(VOICE_OUTLETS[idx], shifted);
 }
 
@@ -287,6 +333,14 @@ function storepreset(slot) {
 		voiceExternal: voiceExternal.slice(),
 		voiceRangeMin: voiceRangeMin.slice(),
 		voiceRangeMax: voiceRangeMax.slice(),
+		accentGrid: accentGrid.slice(),
+		accentCycle: accentCycle,
+		accentTieToN: accentTieToN,
+		voicePhase: voicePhase.slice(),
+		groupVelMin: groupVelMin.slice(),
+		groupVelMax: groupVelMax.slice(),
+		groupDurDiv: groupDurDiv.slice(),
+		groupSilence: groupSilence.slice(),
 		// sequence position, so recall picks up exactly where it was instead of restarting
 		setIndex: setIndex,
 		noteIndex: noteIndex,
@@ -319,6 +373,18 @@ function recallpreset(slot) {
 	voiceRangeMin = p.voiceRangeMin ? p.voiceRangeMin.slice() : [0, 0, 0, 0];
 	voiceRangeMax = p.voiceRangeMax ? p.voiceRangeMax.slice() : [127, 127, 127, 127];
 
+	// Presets stored before the articulation engine existed have none of these fields; fall
+	// back to the module defaults so an old slot recalls as the plain fixed-velocity device
+	// it was saved as, instead of throwing.
+	accentGrid = p.accentGrid ? p.accentGrid.slice() : [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+	accentCycle = p.accentCycle || 4;
+	accentTieToN = p.accentTieToN || 0;
+	voicePhase = p.voicePhase ? p.voicePhase.slice() : [0, 0, 0, 0];
+	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
+	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
+	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
+	groupSilence = p.groupSilence ? p.groupSilence.slice() : [0, 0];
+
 	// restore sequence position exactly, so recall continues instead of restarting
 	setIndex = p.setIndex;
 	noteIndex = p.noteIndex;
@@ -341,11 +407,20 @@ function recallpreset(slot) {
 	outlet(7, ["lockindex", lockIndex + 1]);
 	outlet(7, ["root", root]);
 	outlet(7, ["bpm", currentBpm]);
+	outlet(7, ["accentcycle", accentCycle]);
+	outlet(7, ["accenttie", accentTieToN]);
+	outlet(7, ["accentgrid"].concat(accentGrid));
+	for (var g = GROUP_NORMAL; g <= GROUP_ACCENT; g++) {
+		outlet(7, ["g" + g + "vel", groupVelMin[g], groupVelMax[g]]);
+		outlet(7, ["g" + g + "dur", groupDurDiv[g]]);
+		outlet(7, ["g" + g + "silence", groupSilence[g]]);
+	}
 	for (var v = 0; v < NUM_VOICES; v++) {
 		outlet(7, ["v" + (v + 1) + "octlist"].concat(voiceOctaveList[v]));
 		outlet(7, ["v" + (v + 1) + "mute", voiceMute[v]]);
 		outlet(7, ["v" + (v + 1) + "external", voiceExternal[v]]);
 		outlet(7, ["v" + (v + 1) + "range", voiceRangeMin[v], voiceRangeMax[v] - voiceRangeMin[v]]);
+		outlet(7, ["v" + (v + 1) + "phase", voicePhase[v]]);
 	}
 	post("preset: recalled slot " + slot + "\n");
 }
@@ -357,9 +432,44 @@ function noteName(midi) {
 	return NOTE_NAMES[pc] + octave;
 }
 
+// Decides which group a voice's note belongs to at a given sequence position, and resolves
+// that into the concrete velocity / length / rest verdict for the note about to play.
+// `n` is the current set's cardinality, consulted only when the cycle is tied to it.
+function articulationFor(v, pos, n) {
+	var len = accentTieToN ? n : accentCycle;
+	if (!(len > 0)) len = 1;
+	if (len > ACCENT_MAX) len = ACCENT_MAX;
+
+	var idx = (Math.round(pos) + voicePhase[v]) % len;
+	if (idx < 0) idx += len;
+	var g = accentGrid[idx] ? GROUP_ACCENT : GROUP_NORMAL;
+
+	var lo = groupVelMin[g], hi = groupVelMax[g];
+	if (lo > hi) { var swap = lo; lo = hi; hi = swap; }   // tolerate the two dials crossing
+	var vel = lo + Math.floor(Math.random() * (hi - lo + 1));
+	if (vel < 1) vel = 1;       // velocity 0 is a note-off, never a note
+	if (vel > 127) vel = 127;
+
+	// Length comes from a note-value denominator against the BPM, not from a fraction of the
+	// step interval -- that is precisely what unhooks articulation from the BPM dial. div 4 is
+	// one beat, so ms = (60000/bpm) * 4/div.
+	var bpm = currentBpm > 0 ? currentBpm : 120;
+	var div = groupDurDiv[g] > 0 ? groupDurDiv[g] : 16;
+
+	return {
+		group: g,
+		vel: vel,
+		dur: (60000 / bpm) * (4 / div),
+		rest: groupSilence[g] > 0 && (Math.random() * 100) < groupSilence[g]
+	};
+}
+
 function emitVoices(noteData) {
 	var summary = [];
 	var names = [];
+	// cardinality of the set currently sounding, for the "tie the accent cycle to n" option
+	var curSet = sets[setIndex];
+	var card = curSet ? curSet.length : 1;
 	for (var v = 0; v < NUM_VOICES; v++) {
 		if (voiceMute[v] || voiceExternal[v]) { summary.push(0); names.push("--"); continue; }
 		var list = voiceOctaveList[v];
@@ -376,8 +486,14 @@ function emitVoices(noteData) {
 			shifted = foldToRange(noteData + shift, vmin, vmax);
 			repr = shifted;
 		}
+		// A rest reads as "--" in the monitor, same as a muted or external voice: from the
+		// listener's side nothing sounds, and the readout should not claim otherwise.
+		var art = articulationFor(v, patternStep, card);
+		if (art.rest) { summary.push(0); names.push("--"); continue; }
+
 		summary.push(repr);
 		names.push(noteName(repr));
+		outlet(10, [v + 1, art.vel, art.dur]);
 		outlet(VOICE_OUTLETS[v], shifted);
 	}
 	outlet(6, summary);
@@ -537,6 +653,76 @@ function setpermmode(p) {
 	permCachedFor = -1;
 	minimalPos = 0;
 	minimalCachedFor = -1;
+}
+
+// --- articulation setters --------------------------------------------------------------
+
+// setaccentgrid <c1> <c2> ... : the whole grid arrives as one list from the Max UI, so a
+// redraw can never leave it half-updated between two notes. Cells beyond what was sent are
+// cleared, which makes "shorten the pattern" behave the way the drawing looks.
+function setaccentgrid() {
+	for (var i = 0; i < ACCENT_MAX; i++) {
+		accentGrid[i] = (i < arguments.length && arguments[i]) ? 1 : 0;
+	}
+}
+
+function setaccentcycle(c) {
+	c = Math.round(c);
+	if (c < 1) c = 1;
+	if (c > ACCENT_MAX) c = ACCENT_MAX;
+	accentCycle = c;
+}
+
+// 1 = the cycle length follows the current set's cardinality, so accents lock onto the same
+// chord tones every pass. 0 = the free length set by setaccentcycle, which rotates the
+// pattern against the harmony whenever the two are coprime.
+function setaccenttie(t) {
+	accentTieToN = t ? 1 : 0;
+}
+
+function setvoicephase(v, p) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	p = Math.round(p);
+	if (p < 0) p = 0;
+	if (p > ACCENT_MAX - 1) p = ACCENT_MAX - 1;
+	voicePhase[idx] = p;
+}
+
+// group index for every setter below: 0 = normal, 1 = accent. Returns -1 for anything else
+// so a malformed message is dropped rather than corrupting a group.
+function groupIndex(g) {
+	g = Math.round(g);
+	return (g === GROUP_NORMAL || g === GROUP_ACCENT) ? g : -1;
+}
+
+function setgroupvel(g, min, max) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	min = Math.round(min);
+	max = Math.round(max);
+	if (min < 1) min = 1;         // 0 would be a note-off
+	if (max > 127) max = 127;
+	groupVelMin[i] = min;
+	groupVelMax[i] = max;
+}
+
+// div is a note-value denominator: 1 = whole, 4 = quarter, 8 = eighth, 16 = sixteenth...
+function setgroupdur(g, div) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	div = Math.round(div);
+	if (div < 1) div = 1;
+	groupDurDiv[i] = div;
+}
+
+function setgroupsilence(g, pct) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	pct = Math.round(pct);
+	if (pct < 0) pct = 0;
+	if (pct > 100) pct = 100;
+	groupSilence[i] = pct;
 }
 
 function bang() {
