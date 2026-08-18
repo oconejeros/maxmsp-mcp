@@ -295,6 +295,18 @@ function triggervoice(v) {
 	emitNote(idx, art, shifted);
 }
 
+// The far end of the Hub's Enviar mode: [receive FORTESEQ_TRIG] -> [prepend trig] delivers
+// (bus, voice) here for every note a Hub in that mode plays. The bus test lives in JS rather
+// than in the patcher because busId already lives here -- a patcher-side [== ] fed from the bus
+// numbox would be a SECOND copy of the address, and the two would disagree the moment one is
+// set without the other. Wrong-bus triggers are dropped silently on purpose: every engine in
+// the Live set sees every trigger, so a post() here would flood the console at note rate.
+// triggervoice() does the rest of the vetting (voice in range, not muted).
+function trig(b, v) {
+	if (Math.round(b) !== busId) return;
+	triggervoice(v);
+}
+
 // One note event per message, ALWAYS exactly five atoms:
 //     <bus> <voice 1-N> <velocity> <duration ms> <pitch>
 // A chord goes out as one message per pitch rather than one message with a pitch list. Two
