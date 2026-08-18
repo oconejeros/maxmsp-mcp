@@ -707,6 +707,29 @@ function setgroupvel(g, min, max) {
 	groupVelMax[i] = max;
 }
 
+// The UI exposes min and max as two independent Live parameters, so each needs a setter of its
+// own. Going through setgroupvel would mean packing the two dials together, and on a set reload
+// Live restores parameters one at a time -- whichever arrived first would be paired with the
+// other's stale value for one message. articulationFor() already swaps a crossed pair, so
+// letting them move independently costs nothing.
+function setgroupvelmin(g, v) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	v = Math.round(v);
+	if (v < 1) v = 1;             // 0 would be a note-off
+	if (v > 127) v = 127;
+	groupVelMin[i] = v;
+}
+
+function setgroupvelmax(g, v) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	v = Math.round(v);
+	if (v < 1) v = 1;
+	if (v > 127) v = 127;
+	groupVelMax[i] = v;
+}
+
 // div is a note-value denominator: 1 = whole, 4 = quarter, 8 = eighth, 16 = sixteenth...
 function setgroupdur(g, div) {
 	var i = groupIndex(g);
