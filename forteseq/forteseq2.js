@@ -206,10 +206,11 @@ function setvoiceoctavelist() {
 	voiceOctaveList[idx] = list;
 }
 
-// Simple generator: every "everyN" notes, step one octave toward "range"; wraps back to 0 after.
+// Simple generator: every "everyN" notes, step one octave toward "range", starting from
+// "base"; wraps back to base after.
 // e.g. everyN=4, range=2  -> [0,0,0,0, 1,1,1,1, 2,2,2,2] (then repeats).
 // e.g. everyN=4, range=-2 -> [0,0,0,0, -1,-1,-1,-1, -2,-2,-2,-2] (then repeats).
-function setvoiceoctavesimple(v, everyN, range, steps) {
+function setvoiceoctavesimple(v, everyN, range, steps, base) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	everyN = Math.round(everyN);
@@ -221,6 +222,11 @@ function setvoiceoctavesimple(v, everyN, range, steps) {
 	if (steps === undefined || steps === null) steps = Math.abs(range);
 	steps = Math.round(steps);
 	if (steps < 1) steps = 1;
+	// base = the octave the pattern starts from, so a voice can sit an octave up while it
+	// climbs. It replaces the old setvoiceoctavelist control: base=n with range=0 collapses
+	// to the fixed list [n], which is exactly what that control used to send.
+	if (base === undefined || base === null) base = 0;
+	base = Math.round(base);
 
 	var list = [];
 	var lastLevel = null;
@@ -228,10 +234,10 @@ function setvoiceoctavesimple(v, everyN, range, steps) {
 		var level = Math.round(i * range / steps);
 		if (level === lastLevel) continue; // collapse steps finer than the integer octave grid
 		lastLevel = level;
-		for (var j = 0; j < everyN; j++) list.push(level);
+		for (var j = 0; j < everyN; j++) list.push(level + base);
 	}
 	voiceOctaveList[idx] = list;
-	post("voice " + v + " octave pattern: every " + everyN + " notes, range " + range + ", steps " + steps + " -> [" + list.join(",") + "]\n");
+	post("voice " + v + " octave pattern: every " + everyN + " notes, range " + range + ", steps " + steps + ", base " + base + " -> [" + list.join(",") + "]\n");
 }
 
 // Fires ONE voice from an external rhythmic MIDI trigger, independent of the shared clock.
