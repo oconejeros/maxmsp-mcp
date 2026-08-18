@@ -37,3 +37,19 @@ Key tools for object manipulation:
 - `MaxMSP_Agent/max_mcp_v8_add_on.js` - V8 JavaScript with `obj.boxtext` access
 
 **After code changes**: Reload js objects in Max (double-click to open editor, then close) and restart node.script (`script stop`, `script start`).
+
+## The FORTESEQ devices
+
+`forteseq/` holds the Max for Live devices and the JS they load, in one folder because
+`FORTESEQ.amxd` references its engine by bare filename (`js pcset351.js`) and Max resolves
+bare filenames from the patcher's own folder first. Live reaches them through a Place
+pointing at that folder, so **these files are the ones Live actually loads** - there is no
+second copy in the Ableton User Library, and edits here take effect directly.
+
+Two consequences worth remembering:
+
+- Saving the device from inside Live writes `forteseq/FORTESEQ.amxd`, so `git diff` will
+  show changes you made through the Live UI, not just through the MCP.
+- A `.js` added as a new device dependency must go in `forteseq/`, next to the `.amxd`.
+  Dropping it in `MaxMSP_Agent/` (which is the MCP server's own Max-side code) will not be
+  found, and Max reports that as a silent no-op rather than an error.
