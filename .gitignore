@@ -187,3 +187,7 @@ maxmsp-mcp.code-workspace
 # folder is what Live loads, so it is the only copy. device_backup/ is now purely
 # dated snapshots and third-party devices, none of which belong in git.
 device_backup/*
+
+# Live writes this into any folder it indexes as a Place; it is a machine-local
+# UUID that regenerates on its own and says nothing about the devices.
+Ableton Folder Info/
