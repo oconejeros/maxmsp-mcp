@@ -1114,6 +1114,23 @@ function setvoicedegoffset(v, d) {
 	voiceDegOffset[idx] = d;
 }
 
+// Writes Grado = 0, step, 2*step ... across the live voices in one go: with step 1 the four of
+// them read consecutive degrees of the set, which is the chord stacked up, and with step 0 they
+// all come back to the same degree. It writes OTHER parameters, so its button is an action and
+// stays off fs2_harm_init -- otherwise loading a set would silently undo whatever was tweaked by
+// hand afterwards. Same rule as Rango and Preset Silencio.
+function stackvoices(step) {
+	step = (step === undefined) ? 1 : Math.round(step);
+	if (!isFinite(step)) return;
+	for (var v = 0; v < NUM_VOICES; v++) {
+		var g = v * step;
+		if (g < -8) g = -8;
+		if (g > 8) g = 8;    // el numbox de Grado no pasa de ahi, y el eco tiene que caer adentro
+		voiceDegOffset[v] = g;
+		if (v < 4) outlet(4, ["v" + (v + 1) + "grado", g]);   // solo hay cuatro tiras en la UI
+	}
+}
+
 // Clock divider: the voice sounds on one step out of every N, and its cursor advances only when
 // it sounds. This is what turns independent cursors from parallel motion into counterpoint,
 // since voices on different dividers drift apart and meet again on their common multiple.

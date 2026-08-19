@@ -861,6 +861,25 @@
      "text": "unpack 0 0",
      "varname": "v_range_unpack"
     }
+   },
+   {
+    "box": {
+     "id": "obj-36",
+     "maxclass": "inlet",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      160.0,
+      20.0,
+      30.0,
+      30.0
+     ],
+     "comment": "grado: el motor escribe el grado de esta voz (boton Apilar)",
+     "varname": "v_grado_in"
+    }
    }
   ],
   "lines": [
@@ -1329,6 +1348,18 @@
      "source": [
       "obj-35",
       1
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-30",
+      0
+     ],
+     "source": [
+      "obj-36",
+      0
      ]
     }
    }
