@@ -66,7 +66,21 @@ var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B
 var sets = [];        // arrays of pitch classes (0-11), sorted by cardinality then value
 var mode = 0;          // 0 = chords, 1 = arpeggio
 var rotShape = 0;      // 0 = rotate once per full 351-set pass, 1 = rotate every set change
-var permMode = 0;      // 0 = normal rotation, 1 = superpermutation (brute force), 2 = superpermutation (minimal, n<=5)
+// Which degree of the set comes next. This used to be permMode, with three values; those three
+// keep their numbers -- old presets, and automation lanes in saved Live sets, carry them -- and
+// the shapes added later are appended after, so the reading order stays ONE control instead of
+// two that would have to be kept in agreement.
+var READ_RECTO = 0,      // straight ascending pass, the historic default
+	READ_SUPER = 1,      // superpermutation, brute force (n <= PERM_CAP)
+	READ_SUPERMIN = 2,   // superpermutation, proven minimal where one is tabulated (n <= 5)
+	READ_MODOS = 3,      // one mode per pass: pass p starts on degree p and climbs past the top
+	READ_COPRIMO = 4,    // skip by a fixed number of degrees, coprime with n so nothing repeats
+	READ_ZIGZAG = 5,     // outside in: lowest, highest, second lowest, second highest...
+	READ_URNA = 6;       // random without replacement, reshuffled once per pass
+var READ_MAX = 6;
+var readMode = READ_RECTO;
+var readDir = 0;        // 0 = adelante, 1 = atras, 2 = alterna: pendulum over the whole pass
+var coprimeSkip = 2;    // degrees to skip in READ_COPRIMO; snapped to a coprime of the cardinality
 var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
@@ -712,7 +726,7 @@ function triggervoice(v) {
 	// Walk the same permuted order the shared clock uses, so an externally triggered
 	// voice permutes too instead of falling back to a plain linear pass through the
 	// chord. Not gated on `mode` (Acordes/Arp): triggervoice always emits one note per
-	// trigger, so only permMode is meaningful here. degreeAt() is now the only copy of that
+	// trigger, so only the reading order is meaningful here. degreeAt() is the only copy of that
 	// reading order, shared with the clock-driven voices, so a voice sounds the same whether
 	// the clock or an external trigger moved it.
 	pc = pitchForDegree(pcs, degreeAt(n, pos) + voiceDegOffset[idx]);
@@ -883,7 +897,9 @@ function storepreset(slot) {
 	presets[slot] = {
 		mode: mode,
 		rotShape: rotShape,
-		permMode: permMode,
+		permMode: readMode,       // stored under its old key: a slot stays readable both ways
+		readDir: readDir,
+		coprimeSkip: coprimeSkip,
 		locked: locked,
 		lockIndex: lockIndex,
 		root: root,
@@ -934,7 +950,11 @@ function recallpreset(slot) {
 	}
 	mode = p.mode;
 	rotShape = p.rotShape;
-	permMode = p.permMode;
+	readMode = p.permMode;
+	// Slots stored before the other reading orders existed have neither field; the fallbacks are
+	// forward motion and the default skip, which is what such a slot played.
+	readDir = p.readDir || 0;
+	coprimeSkip = p.coprimeSkip || 2;
 	locked = p.locked;
 	lockIndex = p.lockIndex;
 	root = p.root;
@@ -1006,7 +1026,9 @@ function recallpreset(slot) {
 	outlet(4, ["masteroct", masterOctave]);
 	outlet(4, ["mode", mode]);
 	outlet(4, ["shape", rotShape]);
-	outlet(4, ["permmode", permMode]);
+	outlet(4, ["permmode", readMode]);
+	outlet(4, ["readdir", readDir]);
+	outlet(4, ["coprime", coprimeSkip]);
 	outlet(4, ["locked", locked]);
 	outlet(4, ["lockindex", lockIndex + 1]);
 	outlet(4, ["root", root]);
@@ -1163,36 +1185,111 @@ function ensurePermCache(n) {
 	permCachedForN = n;
 }
 
-// Which degree (0..n-1) the reading order says to play at position pos. This is the ONE place
-// the reading order lives: the shared clock, the independent voices and triggervoice() all go
-// through it. permMode picks the order -- 2 = proven-minimal superpermutation where one exists
-// (n<=5), 1 or 2 = brute-force superpermutation up to PERM_CAP, anything else = a straight
-// ascending pass. Cardinalities past those limits fall back to the linear pass, as before.
-function degreeAt(n, pos) {
-	pos = Math.round(pos);
-	if (!isFinite(pos) || pos < 0) pos = 0;
-	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) {
-		var minSeq = MINIMAL_SUPERPERMS[n];
-		return minSeq[pos % minSeq.length];
-	}
-	if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
-		ensurePermCache(n);
-		// each voice advances through the permutation list at its own pace
-		return permList[Math.floor(pos / n) % permList.length][pos % n];
-	}
-	return pos % n;
+function gcd(a, b) {
+	while (b) { var t = a % b; a = b; b = t; }
+	return a;
 }
 
-// How many steps one complete pass through the reading order takes. It decides when the set is
-// allowed to change, so no reading order is ever cut off half way -- a superpermutation gets to
-// finish before the harmony moves, exactly as the shared-clock path already does.
-function readCycleLength(n) {
-	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n].length;
-	if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
+// The skip the user asked for, snapped to the nearest value coprime with the cardinality. Only a
+// coprime skip visits every degree before any repeats; a skip sharing a factor with n collapses
+// the read into a shorter loop over part of the set. Ties go to the smaller skip. On a seven-note
+// set a skip of 2 is a chain of thirds, which is why 2 is the default.
+function coprimeStepFor(n) {
+	if (n <= 2) return 1;
+	var want = Math.round(coprimeSkip);
+	if (!isFinite(want) || want < 1) want = 1;
+	for (var d = 0; d < n; d++) {
+		var lo = want - d, hi = want + d;
+		if (lo >= 1 && lo < n && gcd(lo, n) === 1) return lo;
+		if (hi >= 1 && hi < n && gcd(hi, n) === 1) return hi;
+	}
+	return 1;
+}
+
+var urnBag = [], urnBagN = -1, urnBagPass = -1;
+
+// Random without replacement: every degree sounds once before any of them sounds twice, and the
+// bag is reshuffled for the next pass. The draw is cached per (cardinality, pass) rather than
+// rolled per note so that voices sitting at different points of the SAME pass agree on the order
+// -- that is what makes the urn a phrase heard from several places instead of unrelated noise.
+// The pass number has to be handed in: the shape's own cycle is n long, so the position modulo
+// that cycle cannot tell one pass from the next, and the urn would shuffle once and then repeat
+// forever like a fixed permutation.
+function urnAt(n, i, pass) {
+	if (urnBagN !== n || urnBagPass !== pass) {
+		urnBag = [];
+		for (var k = 0; k < n; k++) urnBag.push(k);
+		for (var j = n - 1; j > 0; j--) {
+			var r = Math.floor(Math.random() * (j + 1));
+			var t = urnBag[j]; urnBag[j] = urnBag[r]; urnBag[r] = t;
+		}
+		urnBagN = n;
+		urnBagPass = pass;
+	}
+	return urnBag[i % n];
+}
+
+// How long one pass of the SHAPE is, before direction is taken into account.
+function shapeCycleLength(n) {
+	if (readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n].length;
+	if ((readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
 		ensurePermCache(n);
 		return permList.length * n;
 	}
+	if (readMode === READ_MODOS) return n * n;   // n modes, n degrees each
 	return n;
+}
+
+// The degree the shape puts at position i of its own pass; `pass` counts completed passes, which
+// only the urn needs. Modos is the one shape that returns
+// degrees past n-1 on purpose: pitchForDegree() reads those as the next octave up, which is what
+// re-voices each successive mode above the last instead of folding it back on itself.
+function shapeDegreeAt(n, i, pass) {
+	if (readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n][i];
+	if ((readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
+		ensurePermCache(n);
+		return permList[Math.floor(i / n) % permList.length][i % n];
+	}
+	if (readMode === READ_MODOS) return Math.floor(i / n) + (i % n);
+	if (readMode === READ_COPRIMO) return (i * coprimeStepFor(n)) % n;
+	if (readMode === READ_ZIGZAG) return (i % 2 === 0) ? (i >> 1) : (n - 1 - (i >> 1));
+	if (readMode === READ_URNA) return urnAt(n, i, pass);
+	return i % n;
+}
+
+// Which degree the reading order says to play at position pos. This is the ONE place the reading
+// order lives: the shared clock, the independent voices and triggervoice() all come through here,
+// so a voice sounds the same whichever of them moved it. Shape and direction are separate on
+// purpose -- any shape can be read backwards or as a pendulum, and the pendulum does not repeat
+// the note at either end, so the turn is heard as a turn and not as a stutter.
+function degreeAt(n, pos) {
+	pos = Math.round(pos);
+	if (!isFinite(pos) || pos < 0) pos = 0;
+	var L = shapeCycleLength(n);
+	if (L < 1) L = 1;
+	var i, pass;
+	if (readDir === 1) {
+		pass = Math.floor(pos / L);
+		i = L - 1 - (pos % L);
+	} else if (readDir === 2 && L > 1) {
+		var period = 2 * L - 2;
+		pass = Math.floor(pos / period);
+		var q = pos % period;
+		i = (q < L) ? q : period - q;
+	} else {
+		pass = Math.floor(pos / L);
+		i = pos % L;
+	}
+	return shapeDegreeAt(n, i, pass);
+}
+
+// How many steps one complete pass takes, direction included. It decides when the set is allowed
+// to change, so no reading order is ever cut off half way -- a superpermutation gets to finish,
+// and a pendulum gets to come back, before the harmony moves.
+function readCycleLength(n) {
+	var L = shapeCycleLength(n);
+	if (readDir === 2 && L > 1) return 2 * L - 2;
+	return L;
 }
 
 // Turns a degree index into a pitch, letting the index run past the end of the set: degree n is
@@ -1278,7 +1375,7 @@ function step() {
 	var n = pcs.length;
 	if (DEBUG_STEP) {
 		post("STEP " + patternStep + " | set=" + (setIndex + 1) + " n=" + n +
-			" | locked=" + locked + " mode=" + mode + " perm=" + permMode +
+			" | locked=" + locked + " mode=" + mode + " read=" + readMode + "/" + readDir +
 			" | noteIdx=" + noteIndex + " permIdx=" + permIndex + " minPos=" + minimalPos + "\n");
 	}
 	var er = effRoot();
@@ -1289,7 +1386,7 @@ function step() {
 		return;
 	}
 
-	if (mode === 1 && permMode === 2 && MINIMAL_SUPERPERMS[n]) {
+	if (mode === 1 && readDir === 0 && readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) {
 		var minSeq = MINIMAL_SUPERPERMS[n];
 		if (minimalCachedFor !== setIndex) {
 			minimalCachedFor = setIndex;
@@ -1310,7 +1407,8 @@ function step() {
 		return;
 	}
 
-	if (mode === 1 && (permMode === 1 || permMode === 2) && n <= PERM_CAP) {
+	if (mode === 1 && readDir === 0 &&
+		(readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
 		ensurePermCache(n);
 		if (permSetTag !== setIndex) {
 			permSetTag = setIndex;
@@ -1347,10 +1445,16 @@ function step() {
 			advanceSet();
 		}
 	} else {
-		var playPos = (noteIndex + rotation) % n;
-		emitVoices(MELODY_BASE + pcs[playPos]);
+		// The reading order picks the degree; `rotation` still turns the whole pass by one degree
+		// per pass, as it always did. Modos is the exception: its degrees deliberately climb past
+		// the top of the set to re-voice each mode upward, so it reads through pitchForDegree()
+		// and leaves rotation alone, which would only fight it.
+		var deg = degreeAt(n, noteIndex);
+		emitVoices(readMode === READ_MODOS
+			? MELODY_BASE + pitchForDegree(pcs, deg)
+			: MELODY_BASE + pcs[(deg + rotation) % n]);
 		noteIndex++;
-		if (noteIndex >= n) {
+		if (noteIndex >= readCycleLength(n)) {
 			noteIndex = 0;
 			if (locked) {
 				rotation = (rotation + 1) % n;   // only one set in the loop, so always rotate per cycle
@@ -1373,15 +1477,42 @@ function setshape(s) {
 	rotShape = s ? 1 : 0;
 }
 
-function setpermmode(p) {
-	permMode = Math.round(p);
-	if (permMode < 0) permMode = 0;
-	if (permMode > 2) permMode = 2;
+// A change of reading order restarts the pass rather than landing mid-phrase in a walk that was
+// counted for the previous shape.
+function resetReadWalk() {
 	noteIndex = 0;
 	permIndex = 0;
 	permSetTag = -1;
 	minimalPos = 0;
 	minimalCachedFor = -1;
+	urnBagPass = -1;
+}
+
+function setreadmode(p) {
+	readMode = Math.round(p);
+	if (!isFinite(readMode) || readMode < 0) readMode = 0;
+	if (readMode > READ_MAX) readMode = READ_MAX;
+	resetReadWalk();
+}
+
+// The message name the device has been sending since the reading order had only three values.
+// Kept so an older patch, preset or automation lane still selects the same three.
+function setpermmode(p) {
+	setreadmode(p);
+}
+
+function setreaddir(d) {
+	readDir = Math.round(d);
+	if (!isFinite(readDir) || readDir < 0) readDir = 0;
+	if (readDir > 2) readDir = 2;
+	resetReadWalk();
+}
+
+// Not a walk reset: changing the skip mid-pass is a change of interval, not of place.
+function setcoprime(k) {
+	coprimeSkip = Math.round(k);
+	if (!isFinite(coprimeSkip) || coprimeSkip < 1) coprimeSkip = 1;
+	if (coprimeSkip > 11) coprimeSkip = 11;
 }
 
 // --- articulation setters --------------------------------------------------------------
