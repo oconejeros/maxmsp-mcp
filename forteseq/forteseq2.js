@@ -141,6 +141,14 @@ var groupVelMax = [80, 115];   // high edge; velocity is uniform-random between 
 var groupDurDiv = [16, 4];     // note length as a denominator: 4 = quarter, 8 = eighth, 16 = sixteenth
 var groupSilence = [0, 0];     // percent chance this group's note is dropped and becomes a rest
 
+// The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
+// k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
+// writes the same array the toggles write, so nothing downstream knows where the pattern came
+// from -- and the grid is echoed back to the toggles, so the drawing never lies about it.
+var euclidOn = 0;
+var euclidK = 4;
+var euclidRot = 0;
+
 function popcount(x) {
 	var c = 0;
 	while (x) { c += x & 1; x >>= 1; }
@@ -878,6 +886,39 @@ function foldToRange(note, min, max) {
 	return n;
 }
 
+// Register templates: one [min, max] pair per voice, in sounding MIDI notes, top voice first --
+// V1 is the soprano and V4 the bass, the way a score is scored. These are working ranges, not
+// the extremes of each instrument: what a player covers comfortably all evening.
+// Entry 0 applies nothing, so the menu in Live can carry its own name in its first item.
+var RANGE_TEMPLATES = [
+	null,                                                        // Rango: the menu's own label
+	[[0, 127]],                                                  // Libre: no clamp at all
+	[[60, 81], [55, 74], [48, 67], [40, 60]],                    // SATB
+	[[55, 93], [55, 84], [48, 79], [36, 69]],                    // Cuerdas: vln I, vln II, vla, vc
+	[[60, 96], [58, 88], [50, 86], [34, 70]],                    // Maderas: fl, ob, cl, fg
+	[[55, 82], [41, 77], [40, 70], [28, 58]],                    // Metales: tpt, cor, tbn, tuba
+	[[72, 96], [60, 84], [48, 72], [21, 48]],                    // Teclado: cuatro manos de piano
+	[[84, 108], [60, 84], [36, 60], [24, 48]],                   // Ancho: una octava por voz, sin cruce
+	[[60, 72], [60, 72], [60, 72], [60, 72]]                     // Cluster: las cuatro en la misma octava
+];
+
+// Writes a whole template into the per-voice clamps and echoes each pair back to its strip, so
+// the Min/Span boxes show what is actually in force. Nothing is locked: a voice can be nudged
+// afterwards, and then the menu is only a record of what was last applied.
+function setrangetemplate(t) {
+	t = Math.round(t);
+	var tpl = (t >= 0 && t < RANGE_TEMPLATES.length) ? RANGE_TEMPLATES[t] : null;
+	if (!tpl) return;
+	for (var v = 0; v < NUM_VOICES; v++) {
+		// More voices than the template names wraps back to the top rather than leaving the
+		// extra ones behind: the device caps at four, the engine allows sixteen.
+		var pair = tpl[v % tpl.length];
+		voiceRangeMin[v] = pair[0];
+		voiceRangeMax[v] = pair[1];
+		outlet(4, ["v" + (v + 1) + "range", pair[0], pair[1] - pair[0]]);
+	}
+}
+
 function setroot(r) {
 	root = Math.round(r);
 	buildFilter();   // the mask is absolute, so what fits inside it changes when the root moves
@@ -925,6 +966,9 @@ function storepreset(slot) {
 		accentGrid: accentGrid.slice(),
 		accentCycle: accentCycle,
 		accentTieToN: accentTieToN,
+		euclidOn: euclidOn,
+		euclidK: euclidK,
+		euclidRot: euclidRot,
 		voicePhase: voicePhase.slice(),
 		groupVelMin: groupVelMin.slice(),
 		groupVelMax: groupVelMax.slice(),
@@ -992,6 +1036,11 @@ function recallpreset(slot) {
 	accentGrid = p.accentGrid ? p.accentGrid.slice() : [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 	accentCycle = p.accentCycle || 4;
 	accentTieToN = p.accentTieToN || 0;
+	// A slot stored before the generator existed carries a hand-drawn grid and nothing else; off
+	// is the only reading that leaves that grid alone.
+	euclidOn = p.euclidOn || 0;
+	euclidK = p.euclidK || 4;
+	euclidRot = p.euclidRot || 0;
 	voicePhase = padVoices(p.voicePhase, 0);
 	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
 	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
@@ -1035,6 +1084,9 @@ function recallpreset(slot) {
 	outlet(4, ["bpm", currentBpm]);
 	outlet(4, ["accentcycle", accentCycle]);
 	outlet(4, ["accenttie", accentTieToN]);
+	outlet(4, ["euclid", euclidOn]);
+	outlet(4, ["euclidk", euclidK]);
+	outlet(4, ["euclidrot", euclidRot]);
 	outlet(4, ["accentgrid"].concat(accentGrid));
 	for (var g = GROUP_NORMAL; g <= GROUP_ACCENT; g++) {
 		outlet(4, ["g" + g + "vel", groupVelMin[g], groupVelMax[g]]);
@@ -1531,6 +1583,70 @@ function setaccentcycle(c) {
 	if (c < 1) c = 1;
 	if (c > ACCENT_MAX) c = ACCENT_MAX;
 	accentCycle = c;
+	applyEuclid();          // the cycle IS the n of E(k,n), so the pattern is refitted to it
+}
+
+// Bjorklund's algorithm: k onsets spread over n cells as evenly as n allows. Written out rather
+// than taken as the one-line Bresenham shortcut, because floor(i*k/n) only agrees with it some
+// of the time -- it gets E(3,8) right (10010010) and E(5,8) wrong, answering 10101011 where the
+// maximally even pattern, the cinquillo, is 10110110.
+function bjorklund(k, n) {
+	var i, out = [];
+	if (n < 1) return out;
+	if (k <= 0) { for (i = 0; i < n; i++) out.push(0); return out; }
+	if (k >= n) { for (i = 0; i < n; i++) out.push(1); return out; }
+	var a = [], b = [];
+	for (i = 0; i < k; i++) a.push([1]);
+	for (i = 0; i < n - k; i++) b.push([0]);
+	// Pair each remainder group onto the front of the sequence until at most one is left over;
+	// what remains unpaired is what makes the pattern uneven, and there is never more of it.
+	while (b.length > 1) {
+		var m = Math.min(a.length, b.length);
+		var na = [], nb = [];
+		for (i = 0; i < m; i++) na.push(a[i].concat(b[i]));
+		var rest = (a.length > m) ? a : b;
+		for (i = m; i < rest.length; i++) nb.push(rest[i]);
+		a = na;
+		b = nb;
+	}
+	for (i = 0; i < a.length; i++) out = out.concat(a[i]);
+	for (i = 0; i < b.length; i++) out = out.concat(b[i]);
+	return out;
+}
+
+// Rewrites the grid from (k, accentCycle, rotation) and hands it back to the toggles. Cells past
+// the cycle are cleared, so shortening the cycle behaves the way the drawing looks.
+function applyEuclid() {
+	if (!euclidOn) return;
+	var n = accentCycle;
+	var k = euclidK > n ? n : euclidK;
+	var pat = bjorklund(k, n);
+	var r = ((euclidRot % n) + n) % n;
+	for (var i = 0; i < ACCENT_MAX; i++) accentGrid[i] = (i < n) ? pat[(i + r) % n] : 0;
+	outlet(4, ["accentgrid"].concat(accentGrid));
+}
+
+// 1 = the grid is generated, 0 = it is whatever the toggles say. Turning it on regenerates at
+// once, so the drawing and the sound never disagree about which one is in charge.
+function seteuclid(on) {
+	euclidOn = on ? 1 : 0;
+	applyEuclid();
+}
+
+function seteuclidk(k) {
+	k = Math.round(k);
+	if (!isFinite(k) || k < 0) k = 0;
+	if (k > ACCENT_MAX) k = ACCENT_MAX;
+	euclidK = k;
+	applyEuclid();
+}
+
+function seteuclidrot(r) {
+	r = Math.round(r);
+	if (!isFinite(r) || r < 0) r = 0;
+	if (r > ACCENT_MAX - 1) r = ACCENT_MAX - 1;
+	euclidRot = r;
+	applyEuclid();
 }
 
 // 1 = the cycle length follows the current set's cardinality, so accents lock onto the same
@@ -1606,6 +1722,29 @@ function setgroupsilence(g, pct) {
 	if (pct < 0) pct = 0;
 	if (pct > 100) pct = 100;
 	groupSilence[i] = pct;
+}
+
+// The textures worth reaching for in one move, as [normal %, accent %]. Silencing a whole group
+// is what turns the accent grid from a dynamic into a rhythm: with the normal group at 100 only
+// the accented cells sound, so E(5,8) stops being five loud notes among eight and becomes the
+// five-note rhythm itself. Entry 0 applies nothing and carries the menu's name.
+var SILENCE_PRESETS = [
+	null,        // Silencio: the menu's own label
+	[0, 0],      // Todo: nothing is dropped
+	[100, 0],    // Solo ac.: the grid becomes the rhythm
+	[0, 100],    // Solo norm.: the grid becomes a rhythm of rests
+	[50, 50],    // Ralo: half of everything, wherever it falls
+	[75, 75]     // Muy ralo: a scattering
+];
+
+function setsilencepreset(t) {
+	t = Math.round(t);
+	var pr = (t >= 0 && t < SILENCE_PRESETS.length) ? SILENCE_PRESETS[t] : null;
+	if (!pr) return;
+	groupSilence[GROUP_NORMAL] = pr[0];
+	groupSilence[GROUP_ACCENT] = pr[1];
+	outlet(4, ["g0silence", pr[0]]);
+	outlet(4, ["g1silence", pr[1]]);
 }
 
 function bang() {

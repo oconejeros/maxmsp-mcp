@@ -822,6 +822,45 @@
      "text": "prepend setvoicediv #1",
      "varname": "v_div_prep"
     }
+   },
+   {
+    "box": {
+     "id": "obj-34",
+     "maxclass": "inlet",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      90.0,
+      20.0,
+      30.0,
+      30.0
+     ],
+     "comment": "registro: min y span que el motor impone a esta voz",
+     "varname": "v_range_in"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-35",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "int",
+      "int"
+     ],
+     "patching_rect": [
+      90.0,
+      70.0,
+      70.0,
+      22.0
+     ],
+     "text": "unpack 0 0",
+     "varname": "v_range_unpack"
+    }
    }
   ],
   "lines": [
@@ -1254,6 +1293,42 @@
      "source": [
       "obj-33",
       0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-35",
+      0
+     ],
+     "source": [
+      "obj-34",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-20",
+      0
+     ],
+     "source": [
+      "obj-35",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-21",
+      0
+     ],
+     "source": [
+      "obj-35",
+      1
      ]
     }
    }
