@@ -191,3 +191,6 @@ device_backup/*
 # Live writes this into any folder it indexes as a Place; it is a machine-local
 # UUID that regenerates on its own and says nothing about the devices.
 Ableton Folder Info/
+
+# La lista de favoritos de FORTESEQ2: curaduria personal, no fuente.
+forteseq/forteseq2_favs.txt

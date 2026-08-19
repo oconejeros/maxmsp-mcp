@@ -541,6 +541,68 @@ function sendFavList() {
 	var l = ["favlist", -1];
 	for (var i = 0; i < favs.length; i++) if (favs[i]) l.push(i);
 	outlet(4, l);
+	savefavs();
+}
+
+// --- the list on disk -----------------------------------------------------------------------
+// The pattr keeps the list inside the patcher, and that turned out not to survive a Live set
+// being saved and reopened: Live stores parameter values per instance, and 351 flags are not a
+// parameter. So the list lives in a file next to the device as well. That makes it global rather
+// than per-song -- a shortlist of set classes you like follows you from one set to the next,
+// which is what a list of favourites usually wants to be anyway.
+var FAV_FILE = "forteseq2_favs.txt";
+var favSaveWarned = 0;
+
+// Next to the .amxd, not wherever Max happens to think the current folder is. A bare filename is
+// only resolved by the search path when READING; writing one would land somewhere unpredictable.
+function favPath() {
+	var fp = "";
+	try { fp = this.patcher.filepath; } catch (e) { fp = ""; }
+	if (!fp) return FAV_FILE;
+	var cut = fp.lastIndexOf("/");
+	if (cut < 0) cut = fp.lastIndexOf("\\");
+	return cut >= 0 ? fp.slice(0, cut + 1) + FAV_FILE : FAV_FILE;
+}
+
+function savefavs() {
+	if (typeof File === "undefined") return;   // fuera de Max no hay disco, y los tests corren igual
+	var line = "";
+	for (var i = 0; i < favs.length; i++) if (favs[i]) line += (line ? " " : "") + i;
+	var f = new File(favPath(), "write", "TEXT");
+	if (!f.isopen) {
+		if (!favSaveWarned) {
+			favSaveWarned = 1;   // una vez por sesion: esto se llama en cada marca
+			post("forteseq2: no pude escribir " + favPath() +
+				", los favoritos duran hasta cerrar\n");
+		}
+		return;
+	}
+	try {
+		f.eof = 0;        // una lista mas corta no puede dejar la cola de la anterior atras
+		f.position = 0;
+		f.writeline(line);
+	} catch (e) {
+		post("forteseq2: fallo al guardar favoritos: " + e + "\n");
+	}
+	f.close();
+}
+
+function loadfavs() {
+	if (typeof File === "undefined") return;
+	var f = new File(favPath(), "read", "TEXT");
+	if (!f.isopen) return;   // todavia no hay archivo, que no es un error sino el primer arranque
+	var line = "";
+	try { line = f.readline(8192); } catch (e) { line = ""; }
+	f.close();
+	for (var i = 0; i < favs.length; i++) favs[i] = 0;
+	var parts = ("" + line).split(" ");
+	for (var a = 0; a < parts.length; a++) {
+		var idx = parseInt(parts[a], 10);
+		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
+	}
+	favEcho = -1;            // que el toggle se repinte en la primera nota
+	if (favOnly) buildFilter();
+	post("forteseq2: " + favCount() + " favoritos leidos de " + favPath() + "\n");
 }
 
 // Transpositions to try, nearest to the root first, so a fitted set stays as close to the key
@@ -823,6 +885,7 @@ function setfavlist() {
 	}
 	favEcho = -1;
 	if (favOnly) buildFilter();
+	savefavs();
 	var now = favCount();
 	// Silent when the list comes back unchanged, which is what the echo of a single mark looks
 	// like; loud when the Live set actually hands us a list at load.
@@ -838,6 +901,7 @@ buildFilter();
 function loadbang() {
 	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
 		", " + NUM_VOICES + "/" + MAX_VOICES + " voices\n");
+	loadfavs();
 }
 
 function setmode(m) {
