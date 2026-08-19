@@ -149,6 +149,30 @@ var euclidOn = 0;
 var euclidK = 4;
 var euclidRot = 0;
 
+// --- musicalidad ------------------------------------------------------------------------
+// In drum mode a pitch class stops being a note and becomes a pad: the set chooses WHICH drums
+// play, and the reading order chooses when. Nothing that moves a note vertically applies, so
+// the register controls sit idle while it is on -- see padFor().
+var drumOn = 0;
+var drumBase = 36;     // C1, the bottom-left pad of a Drum Rack
+
+// The harmony has always changed when the reading pass ended. harmRate > 0 puts it on its own
+// clock instead -- a set change every N steps, whatever the reading is doing.
+var harmRate = 0;
+var harmCount = 0;
+
+// A root that walks on every harmonic change, on top of the Raiz dial. The dial stays the
+// origin of the walk, so moving it transposes the whole sequence.
+var rootSeqIdx = 0;      // 0 = no sequence; ROOT_RANDOM = a new root drawn each change
+var rootSeqPos = 0;
+var rootSeqOffset = 0;   // what the sequence is contributing right now
+
+// How a chord is spread, and whether the next one may choose its inversion to stay near the one
+// that just sounded.
+var voicingMode = 0;
+var voiceLead = 0;
+var lastChord = null;    // the voicing that last sounded, at pitch, for that comparison
+
 function popcount(x) {
 	var c = 0;
 	while (x) { c += x & 1; x >>= 1; }
@@ -490,9 +514,40 @@ function maskOk(b) {
 // The transposition the current set actually sounds at. Normally that is the root; with the mask
 // fitting sets into place it is the transposition that made this set fit, which is the whole
 // point of fit -- otherwise "only what fits in C major" leaves out C major.
+// Root movements worth walking through. Every one starts on 0 so that switching a sequence on
+// does not jump the harmony: the first chord after the switch sounds where it already was.
+var ROOT_SEQUENCES = [
+	null,                                       // Raiz fija: solo el dial
+	[0, 5, 10, 3, 8, 1, 6, 11, 4, 9, 2, 7],     // Cuartas: el ciclo entero
+	[0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5],     // Quintas
+	[0, 3, 6, 9],                               // Terceras m: el ciclo disminuido
+	[0, 4, 8],                                  // Terceras M: el ciclo aumentado
+	[0, 2, 4, 6, 8, 10],                        // Tonos
+	[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],     // Cromatica
+	[0, 6],                                     // Tritono
+	[0, 5, 7]                                   // I IV V
+];
+var ROOT_RANDOM = ROOT_SEQUENCES.length;        // one past the list: a root drawn at random
+
+// Called once per harmonic change, from advanceSet(), which is the only place the harmony moves.
+function rootSeqAdvance() {
+	if (rootSeqIdx === ROOT_RANDOM) {
+		rootSeqOffset = Math.floor(Math.random() * 12);
+		return;
+	}
+	var seq = ROOT_SEQUENCES[rootSeqIdx];
+	if (!seq) { rootSeqOffset = 0; return; }
+	rootSeqPos = (rootSeqPos + 1) % seq.length;
+	rootSeqOffset = seq[rootSeqPos];
+}
+
+// What actually sounds as the root. The sequence is added on top of BOTH branches on purpose:
+// with the mask fit on, the fit picks the transposition where the set fits the mask, and a root
+// sequence then carries it away from there -- asking for a root walk is the more deliberate of
+// the two requests, so it wins, and the mask stops describing what you hear.
 function effRoot() {
-	if (filterOn && maskFit && setIndex < setFit.length) return setFit[setIndex];
-	return root;
+	var base = (filterOn && maskFit && setIndex < setFit.length) ? setFit[setIndex] : root;
+	return base + rootSeqOffset;
 }
 
 function rotl12(bits, r) {
@@ -552,10 +607,31 @@ function advanceSet() {
 		var p = raw % total;
 		if (allowed[order[p]]) {
 			setIndex = order[p];
+			rootSeqAdvance();   // the only place the harmony moves, so the only place the root walks
 			return raw >= total ? 1 : 0;
 		}
 	}
 	return 0;
+}
+
+// The harmony follows the reading -- a set change when the pass ends, how the device has always
+// worked -- or runs on its own clock. Only one of the two ever moves the catalogue: with
+// harmRate > 0 the end of a pass advances nothing, so a reading order that takes 720 steps to
+// finish can sit over a chord that changes every 4.
+function advanceOnPass() {
+	if (harmRate > 0) return 0;
+	return advanceSet();
+}
+
+// The other half of that: the clock-driven set change, counted in steps. `rotation` is bumped
+// here for the same reason the pass-driven path bumps it, since this is now where the set moves.
+function harmonyStep() {
+	if (harmRate <= 0 || locked) return;
+	harmCount++;
+	if (harmCount < harmRate) return;
+	harmCount = 0;
+	var wrapped = advanceSet();
+	if (rotShape === 1 || (wrapped && rotShape === 0)) rotation++;
 }
 
 function emitSetReadouts(displayPcs) {
@@ -743,7 +819,7 @@ function triggervoice(v) {
 	var oct = list[pos % list.length];
 	var shift = oct * 12 + effRoot() + masterOctave * 12;
 	var vmin = voiceRangeMin[idx], vmax = voiceRangeMax[idx];
-	var shifted = foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
+	var shifted = drumOn ? padFor(pc) : foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
 	voicePos[idx] = pos + 1;
 
@@ -919,6 +995,47 @@ function setrangetemplate(t) {
 	}
 }
 
+function setdrum(x) {
+	drumOn = x ? 1 : 0;
+}
+
+function setdrumbase(b) {
+	var n = Math.round(b);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 115) n = 115;   // the top pad of a twelve-wide set has to stay inside MIDI
+	drumBase = n;
+}
+
+function setharmrate(r) {
+	var n = Math.round(r);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 64) n = 64;
+	harmRate = n;
+	harmCount = 0;   // a new rate counts from here, not from wherever the old one had got to
+}
+
+function setrootseq(i) {
+	var n = Math.round(i);
+	if (!isFinite(n) || n < 0 || n > ROOT_RANDOM) n = 0;
+	rootSeqIdx = n;
+	rootSeqPos = 0;
+	// Every sequence begins on 0, so switching one on leaves the harmony where it stands and the
+	// walk starts at the next set change. Azar is the exception and has to draw its first root.
+	rootSeqOffset = (n === ROOT_RANDOM) ? Math.floor(Math.random() * 12) : 0;
+}
+
+function setvoicing(m) {
+	var n = Math.round(m);
+	if (!isFinite(n) || n < 0 || n > VOICING_OPEN) n = 0;
+	voicingMode = n;
+	lastChord = null;   // the shape changed, so the chord to lead from is no longer this one
+}
+
+function setvoicelead(x) {
+	voiceLead = x ? 1 : 0;
+	lastChord = null;   // start the chain from the next chord rather than from a stale one
+}
+
 function setroot(r) {
 	root = Math.round(r);
 	buildFilter();   // the mask is absolute, so what fits inside it changes when the root moves
@@ -974,6 +1091,13 @@ function storepreset(slot) {
 		groupVelMax: groupVelMax.slice(),
 		groupDurDiv: groupDurDiv.slice(),
 		groupSilence: groupSilence.slice(),
+		drumOn: drumOn,
+		drumBase: drumBase,
+		harmRate: harmRate,
+		rootSeqIdx: rootSeqIdx,
+		rootSeqPos: rootSeqPos,
+		voicingMode: voicingMode,
+		voiceLead: voiceLead,
 		// sequence position, so recall picks up exactly where it was instead of restarting
 		setIndex: setIndex,
 		noteIndex: noteIndex,
@@ -1046,6 +1170,21 @@ function recallpreset(slot) {
 	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
 	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
 	groupSilence = p.groupSilence ? p.groupSilence.slice() : [0, 0];
+	// A slot stored before this phase existed played notes, on the reading's own harmonic rhythm,
+	// with a fixed root and the historic spread -- which is exactly what all six defaults are.
+	drumOn = p.drumOn || 0;
+	drumBase = (p.drumBase === undefined) ? 36 : p.drumBase;
+	harmRate = p.harmRate || 0;
+	harmCount = 0;
+	rootSeqIdx = p.rootSeqIdx || 0;
+	rootSeqPos = p.rootSeqPos || 0;
+	// The offset is derived rather than stored: it is whatever the sequence says at that position,
+	// so a slot cannot recall a root the sequence would never produce.
+	var rseq = ROOT_SEQUENCES[rootSeqIdx];
+	rootSeqOffset = rseq ? rseq[rootSeqPos % rseq.length] : 0;
+	voicingMode = p.voicingMode || 0;
+	voiceLead = p.voiceLead || 0;
+	lastChord = null;   // the chord that sounded before the recall is not the one to lead from
 
 	// restore sequence position exactly, so recall continues instead of restarting
 	setIndex = p.setIndex;
@@ -1087,6 +1226,12 @@ function recallpreset(slot) {
 	outlet(4, ["euclid", euclidOn]);
 	outlet(4, ["euclidk", euclidK]);
 	outlet(4, ["euclidrot", euclidRot]);
+	outlet(4, ["drum", drumOn]);
+	outlet(4, ["drumbase", drumBase]);
+	outlet(4, ["harmrate", harmRate]);
+	outlet(4, ["rootseq", rootSeqIdx]);
+	outlet(4, ["voicing", voicingMode]);
+	outlet(4, ["voicelead", voiceLead]);
 	outlet(4, ["accentgrid"].concat(accentGrid));
 	for (var g = GROUP_NORMAL; g <= GROUP_ACCENT; g++) {
 		outlet(4, ["g" + g + "vel", groupVelMin[g], groupVelMax[g]]);
@@ -1103,6 +1248,16 @@ function recallpreset(slot) {
 		outlet(4, ["v" + (v + 1) + "div", voiceDiv[v]]);
 	}
 	post("preset: recalled slot " + slot + "\n");
+}
+
+// A pitch class as a Drum Rack pad. Nothing that moves a note vertically applies: the octave
+// pattern, the master octave and the register clamp all exist to put a note in a register, and
+// a rack has no registers -- its rows are unrelated instruments, so folding a note into a range
+// would land on a different drum instead of on the same one lower down. The root does count: it
+// slides the whole set across the rack, which is the one transposition that means something here.
+function padFor(pc) {
+	var pad = drumBase + ((((Math.round(pc) + effRoot()) % 12) + 12) % 12);
+	return pad > 127 ? 127 : pad;
 }
 
 function noteName(midi) {
@@ -1160,10 +1315,12 @@ function emitVoices(noteData) {
 		var vmin = voiceRangeMin[v], vmax = voiceRangeMax[v];
 		if (noteData instanceof Array) {
 			shifted = [];
-			for (var i = 0; i < noteData.length; i++) shifted.push(foldToRange(noteData[i] + shift, vmin, vmax));
+			for (var i = 0; i < noteData.length; i++) {
+				shifted.push(drumOn ? padFor(noteData[i]) : foldToRange(noteData[i] + shift, vmin, vmax));
+			}
 			repr = shifted[0];
 		} else {
-			shifted = foldToRange(noteData + shift, vmin, vmax);
+			shifted = drumOn ? padFor(noteData) : foldToRange(noteData + shift, vmin, vmax);
 			repr = shifted;
 		}
 		// A rest reads as "--" in the monitor, same as a muted or external voice: from the
@@ -1181,14 +1338,96 @@ function emitVoices(noteData) {
 	outlet(5, labelled);
 }
 
-function expandChord(pcs) {
+var VOICING_SPREAD = 0, VOICING_CLOSED = 1, VOICING_DROP2 = 2, VOICING_DROP3 = 3,
+	VOICING_DROP24 = 4, VOICING_OPEN = 5;
+
+// The set stacked upward from one of its members. Rotating it puts a different member in the
+// bass and carries the ones that wrapped round up an octave, which is exactly what an inversion
+// is -- and it is the only thing a voicing can vary, since the pitch classes themselves are fixed.
+function closedStack(pcs, rot) {
 	var n = pcs.length;
-	var notes = [];
-	for (var i = 0; i < n; i++) {
-		var octaves = (n > 1) ? Math.floor(i * CHORD_SPAN_OCT / n) : 0;
-		notes.push(CHORD_BASE + pcs[i] + octaves * 12);
+	var out = [CHORD_BASE + pcs[rot % n]];
+	for (var i = 1; i < n; i++) {
+		var p = CHORD_BASE + pcs[(rot + i) % n];
+		while (p <= out[i - 1]) p += 12;
+		out.push(p);
 	}
-	return notes;
+	return out;
+}
+
+// Every mode is a rearrangement of that same closed stack, which is what makes them comparable
+// when the voice leading has to choose between them. Spread is the historic one: with rot 0 it
+// reproduces the old expandChord() note for note, so a set saved before this existed sounds the
+// same. A drop is undefined below its own size -- a triad has no fourth voice to drop -- and
+// falls back to the closed stack rather than to silence. A drop needs one more voice than the
+// one it drops, or the note it moves is the bass and the chord just sinks an octave.
+function applyVoicing(st, m) {
+	var n = st.length, out = st.slice(), k;
+	if (m === VOICING_SPREAD) {
+		for (k = 0; k < n; k++) out[k] = st[k] + ((n > 1) ? Math.floor(k * CHORD_SPAN_OCT / n) : 0) * 12;
+	} else if (m === VOICING_OPEN) {
+		for (k = 1; k < n; k += 2) out[k] += 12;      // one up, one in place: an interlocked spread
+	} else if (m === VOICING_DROP2 && n >= 3) {
+		out[n - 2] -= 12;
+	} else if (m === VOICING_DROP3 && n >= 4) {
+		out[n - 3] -= 12;
+	} else if (m === VOICING_DROP24 && n >= 4) {
+		out[n - 2] -= 12;
+		out[n - 4] -= 12;
+	}
+	out.sort(function (a, b) { return a - b; });
+	return out;
+}
+
+// How far two chords are from each other: every note's distance to the nearest note in the other
+// chord, counted in both directions. Nearest-note rather than voice against voice because the
+// two chords rarely have the same number of notes -- a triad following a nine-note set still has
+// to be scored, and pairing them up by position would score it as nonsense.
+function chordDistance(a, b) {
+	var total = 0, i, j, d, best;
+	for (i = 0; i < a.length; i++) {
+		best = 1e9;
+		for (j = 0; j < b.length; j++) { d = a[i] > b[j] ? a[i] - b[j] : b[j] - a[i]; if (d < best) best = d; }
+		total += best;
+	}
+	for (j = 0; j < b.length; j++) {
+		best = 1e9;
+		for (i = 0; i < a.length; i++) { d = a[i] > b[j] ? a[i] - b[j] : b[j] - a[i]; if (d < best) best = d; }
+		total += best;
+	}
+	return total;
+}
+
+function shiftChord(notes, by) {
+	var out = [];
+	for (var i = 0; i < notes.length; i++) out.push(notes[i] + by);
+	return out;
+}
+
+// The chord this set should sound as. With the voice leading off that is one voicing of the
+// canonical rotation, as before. With it on, every inversion is tried at every octave within
+// reach and the one nearest the chord that just sounded wins. The comparison happens AFTER the
+// root is added, because a moving root is exactly what makes two chords far apart. The pull term
+// keeps a long run from wandering off: without it each chord only has to be near its neighbour,
+// and a hundred small steps in the same direction cost nothing.
+function chordFor(pcs) {
+	var er = effRoot();
+	var plain = applyVoicing(closedStack(pcs, 0), voicingMode);
+	if (!voiceLead || !lastChord) {
+		lastChord = shiftChord(plain, er);
+		return plain;
+	}
+	var bestCand = plain, bestScore = 1e9;
+	for (var r = 0; r < pcs.length; r++) {
+		var cand = applyVoicing(closedStack(pcs, r), voicingMode);
+		for (var o = -2; o <= 2; o++) {
+			var at = shiftChord(cand, o * 12 + er);
+			var score = chordDistance(at, lastChord) + Math.abs(at[0] - (CHORD_BASE + er)) * 0.25;
+			if (score < bestScore) { bestScore = score; bestCand = shiftChord(cand, o * 12); }
+		}
+	}
+	lastChord = shiftChord(bestCand, er);
+	return bestCand;
 }
 
 function displayNotes(pcs) {
@@ -1375,8 +1614,9 @@ function emitVoicesIndependent(pcs, n) {
 		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v]);
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
-		var note = foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
-			voiceRangeMin[v], voiceRangeMax[v]);
+		var note = drumOn ? padFor(pc)
+			: foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
+				voiceRangeMin[v], voiceRangeMax[v]);
 		// the accent grid is read at this voice's own cursor for the same reason triggervoice()
 		// does it: a voice on a divider advances slower, and its accents have to follow its notes
 		var art = articulationFor(v, pos, n);
@@ -1409,19 +1649,20 @@ function stepIndependent(pcs, n) {
 
 	if (locked) return;
 	if (mode === 0) {
-		advanceSet();   // acordes: one set per step, same as the shared path
+		advanceOnPass();   // acordes: one set per step, same as the shared path
 		return;
 	}
 	noteIndex++;
 	if (noteIndex >= readCycleLength(n)) {
 		noteIndex = 0;
-		advanceSet();
+		advanceOnPass();
 	}
 }
 
 function step() {
 	patternStep++;
 	if (locked) setIndex = lockIndex;
+	harmonyStep();   // may move the set before this step reads it, when the harmony has its own clock
 	if (setIndex >= sets.length) setIndex = 0;
 	var pcs = sets[setIndex];
 	var n = pcs.length;
@@ -1452,7 +1693,7 @@ function step() {
 		if (minimalPos >= minSeq.length) {
 			minimalPos = 0;
 			if (!locked) {
-				advanceSet();
+				advanceOnPass();
 				minimalCachedFor = -1;
 			}
 		}
@@ -1481,7 +1722,7 @@ function step() {
 			if (permIndex >= permList.length) {
 				permIndex = 0;
 				if (!locked) {
-					advanceSet();
+					advanceOnPass();
 					permSetTag = -1;   // force the permIndex reset above on the new set next step
 				}
 			}
@@ -1492,9 +1733,9 @@ function step() {
 	emitSetReadouts(pcs);
 
 	if (mode === 0) {
-		emitVoices(expandChord(pcs));
+		emitVoices(chordFor(pcs));
 		if (!locked) {
-			advanceSet();
+			advanceOnPass();
 		}
 	} else {
 		// The reading order picks the degree; `rotation` still turns the whole pass by one degree
@@ -1517,7 +1758,7 @@ function step() {
 				// advanceSet() reports the wrap, which is what "rotate once per full pass" keys
 				// off -- with an alternative order or a filter in play, "wrapped" is no longer
 				// the same thing as "setIndex came back to 0"
-				if (advanceSet() && rotShape === 0) {
+				if (advanceOnPass() && rotShape === 0) {
 					rotation++;
 				}
 			}
