@@ -396,6 +396,7 @@ function buildSetLabels() {
 		setBits.push(bits);
 		setCard.push(pcs.length);
 		setVec.push(intervalVectorOf(pcs));
+		favs.push(0);
 
 		var tn = zeroedNormalOrder(pcs);
 		var tnInv = zeroedNormalOrder(invertPcs(pcs));
@@ -501,6 +502,47 @@ var maskFit = 1;         // 1 = a set may move to the transposition where it sat
 var allowed = [];
 var setFit = [];         // the transposition each set was fitted to; equals root when fit is off
 
+// A floor and a ceiling on each entry of the interval vector -- the same six counts the readout
+// prints as <001110>. "Sin semitonos" is ic1 max 0; "que tenga tritono" is ic6 min 1. The vector
+// does not move when a set is transposed, so this is the one part of the filter the mask fit
+// cannot argue with: a set either has those intervals or it does not, wherever it ends up.
+var vecMin = [0, 0, 0, 0, 0, 0];
+var vecMax = [12, 12, 12, 12, 12, 12];
+var vecCond = 0;         // 1 while any entry is off its default, so the usual case costs one test
+
+// The shortlist. Indexed by the set's place in sets[], which never moves, so a list means the
+// same thing under every reading order and across reloads. It is a filter like the others rather
+// than a mode of its own, so "solo favoritos" still obeys cardinality, vector and mask.
+var favs = [];
+var favOnly = 0;
+var favEcho = -1;        // which set the Fav toggle was last told about
+
+function vecCondRefresh() {
+	vecCond = 0;
+	for (var k = 0; k < 6; k++) if (vecMin[k] > 0 || vecMax[k] < 12) vecCond = 1;
+}
+
+function vecCondOk(i) {
+	var v = setVec[i];
+	for (var k = 0; k < 6; k++) if (v[k] < vecMin[k] || v[k] > vecMax[k]) return 0;
+	return 1;
+}
+
+function favCount() {
+	var n = 0;
+	for (var i = 0; i < favs.length; i++) if (favs[i]) n++;
+	return n;
+}
+
+// Out to the pattr that carries the list inside the Live set. The leading -1 is there so that an
+// empty list still arrives as a message: Max drops a list with nothing in it, and "ya no hay
+// favoritos" has to be a state the device can be told about.
+function sendFavList() {
+	var l = ["favlist", -1];
+	for (var i = 0; i < favs.length; i++) if (favs[i]) l.push(i);
+	outlet(4, l);
+}
+
 // Transpositions to try, nearest to the root first, so a fitted set stays as close to the key
 // the root names as the mask allows.
 var FIT_ORDER = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6];
@@ -568,6 +610,8 @@ function buildFilter() {
 		var fit = root;
 		if (filterOn) {
 			if (setCard[i] < cardMin || setCard[i] > cardMax) ok = 0;
+			if (ok && favOnly && !favs[i]) ok = 0;
+			if (ok && vecCond && !vecCondOk(i)) ok = 0;
 			if (ok && maskFit) {
 				// Sets are stored at one canonical rotation each, which is rarely the rotation
 				// that fits: the diatonic class is stored as 013568T, so testing it in place
@@ -638,6 +682,12 @@ function emitSetReadouts(displayPcs) {
 	outlet(1, setIndex + 1);
 	outlet(2, displayNotes(displayPcs));
 	outlet(7, [setForte[setIndex], vecString(setIndex)]);
+	// The Fav toggle is about whatever is sounding, so it has to be repainted when the harmony
+	// moves -- but only then, or every note would push a parameter change into Live.
+	if (setIndex !== favEcho) {
+		favEcho = setIndex;
+		outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
+	}
 }
 
 // --- setters ---------------------------------------------------------------------------
@@ -704,6 +754,79 @@ function setmaskk(k) {
 	if (k > 12) k = 12;
 	maskK = k;
 	buildFilter();
+}
+
+// setvecmin <ic> <n> / setvecmax <ic> <n>: the interval class travels with the value instead of
+// living in a second control, so Live restoring the twelve numboxes one at a time can never pair
+// a value with the wrong entry. A floor above its ceiling lets nothing through, and the filter's
+// own fallback says so on the console rather than freezing the sequence.
+function setvecmin(k, n) {
+	k = Math.round(k);
+	if (k < 1 || k > 6) return;
+	n = Math.round(n);
+	if (n < 0) n = 0;
+	if (n > 12) n = 12;
+	vecMin[k - 1] = n;
+	vecCondRefresh();
+	buildFilter();
+}
+
+function setvecmax(k, n) {
+	k = Math.round(k);
+	if (k < 1 || k > 6) return;
+	n = Math.round(n);
+	if (n < 0) n = 0;
+	if (n > 12) n = 12;
+	vecMax[k - 1] = n;
+	vecCondRefresh();
+	buildFilter();
+}
+
+// Marks the set that is playing right now, which is what makes the button usable while browsing:
+// oir algo, marcarlo, seguir. The value it already holds is ignored, because the echo that
+// repaints the toggle comes straight back in as if a hand had moved it.
+function setfav(f) {
+	var v = f ? 1 : 0;
+	if (favs[setIndex] === v) return;
+	favs[setIndex] = v;
+	if (favOnly) buildFilter();
+	post("forteseq2: " + favCount() + " favoritos\n");
+	sendFavList();
+}
+
+function setfavonly(f) {
+	favOnly = f ? 1 : 0;
+	buildFilter();
+}
+
+function clearfavs() {
+	for (var i = 0; i < favs.length; i++) favs[i] = 0;
+	favEcho = -1;
+	if (favOnly) buildFilter();
+	post("forteseq2: lista de favoritos vacia\n");
+	sendFavList();
+	outlet(4, ["fav", 0]);
+}
+
+// setfavlist -1 <index> ...: the whole list at once, from the pattr that saves it with the Live
+// set. It answers rather than announces -- no sendFavList() from here -- so the round trip that
+// follows every mark ends instead of bouncing.
+function setfavlist() {
+	// The -1 is also the shape check: a pattr that has never been written outputs whatever it
+	// happens to hold, and a bare 0 arriving here would silently make set 1 a favourite.
+	if (arguments.length < 1 || Math.round(arguments[0]) !== -1) return;
+	var was = favCount();
+	for (var i = 0; i < favs.length; i++) favs[i] = 0;
+	for (var a = 0; a < arguments.length; a++) {
+		var idx = Math.round(arguments[a]);
+		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
+	}
+	favEcho = -1;
+	if (favOnly) buildFilter();
+	var now = favCount();
+	// Silent when the list comes back unchanged, which is what the echo of a single mark looks
+	// like; loud when the Live set actually hands us a list at load.
+	if (now !== was) post("forteseq2: " + now + " favoritos\n");
 }
 
 buildSets();
@@ -1098,6 +1221,9 @@ function storepreset(slot) {
 		rootSeqPos: rootSeqPos,
 		voicingMode: voicingMode,
 		voiceLead: voiceLead,
+		vecMin: vecMin.slice(),
+		vecMax: vecMax.slice(),
+		favOnly: favOnly,
 		// sequence position, so recall picks up exactly where it was instead of restarting
 		setIndex: setIndex,
 		noteIndex: noteIndex,
@@ -1151,6 +1277,10 @@ function recallpreset(slot) {
 	maskMode = p.maskMode || 0;
 	maskK = p.maskK || 1;
 	maskFit = (p.maskFit === undefined) ? 1 : p.maskFit;
+	vecMin = p.vecMin ? p.vecMin.slice() : [0, 0, 0, 0, 0, 0];
+	vecMax = p.vecMax ? p.vecMax.slice() : [12, 12, 12, 12, 12, 12];
+	vecCondRefresh();
+	favOnly = p.favOnly || 0;
 	buildOrder();
 	buildFilter();
 
@@ -1232,6 +1362,10 @@ function recallpreset(slot) {
 	outlet(4, ["rootseq", rootSeqIdx]);
 	outlet(4, ["voicing", voicingMode]);
 	outlet(4, ["voicelead", voiceLead]);
+	outlet(4, ["favonly", favOnly]);
+	outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
+	outlet(4, ["vecmin"].concat(vecMin));
+	outlet(4, ["vecmax"].concat(vecMax));
 	outlet(4, ["accentgrid"].concat(accentGrid));
 	for (var g = GROUP_NORMAL; g <= GROUP_ACCENT; g++) {
 		outlet(4, ["g" + g + "vel", groupVelMin[g], groupVelMax[g]]);
