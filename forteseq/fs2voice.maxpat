@@ -698,6 +698,130 @@
      "text": "prepend setvoiceoctavesimple #1",
      "varname": "v_oct_prep"
     }
+   },
+   {
+    "box": {
+     "annotation": "Cuantos GRADOS del set queda esta voz por encima de su propia lectura. 0,1,2,3 en cuatro voces da un acorde a cuatro partes; negativo la pone debajo. Solo actua con Indep encendido.",
+     "id": "obj-30",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "patching_rect": [
+      420.0,
+      380.0,
+      44.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      392.0,
+      4.0,
+      32.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Grado",
+       "parameter_shortname": "Grado",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": -8.0,
+       "parameter_mmax": 8.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "varname": "v_grado"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-31",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      20.0,
+      510.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicedegoffset #1",
+     "varname": "v_grado_prep"
+    }
+   },
+   {
+    "box": {
+     "annotation": "Divisor de reloj: esta voz suena una vez cada N pasos y su cursor solo avanza cuando suena. Con divisores distintos las voces se desfasan y vuelven a juntarse en su multiplo comun. Solo actua con Indep encendido.",
+     "id": "obj-32",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "patching_rect": [
+      480.0,
+      380.0,
+      44.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      426.0,
+      4.0,
+      32.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Div",
+       "parameter_shortname": "Div",
+       "parameter_type": 1,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "varname": "v_div"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-33",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      260.0,
+      510.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicediv #1",
+     "varname": "v_div_prep"
+    }
    }
   ],
   "lines": [
@@ -1060,6 +1184,78 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-30",
+      0
+     ],
+     "source": [
+      "obj-13",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-32",
+      0
+     ],
+     "source": [
+      "obj-13",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-31",
+      0
+     ],
+     "source": [
+      "obj-30",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-14",
+      0
+     ],
+     "source": [
+      "obj-31",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-33",
+      0
+     ],
+     "source": [
+      "obj-32",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-14",
+      0
+     ],
+     "source": [
+      "obj-33",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -1107,6 +1303,16 @@
    "obj-24": [
     "V#1 Pasos",
     "V#1 Pasos",
+    0
+   ],
+   "obj-30": [
+    "V#1 Grado",
+    "V#1 Grado",
+    0
+   ],
+   "obj-32": [
+    "V#1 Div",
+    "V#1 Div",
     0
    ]
   },

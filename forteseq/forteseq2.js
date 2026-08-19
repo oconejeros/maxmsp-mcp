@@ -29,6 +29,13 @@ var voicePos = filled(MAX_VOICES, 0);            // independent per-voice cursor
 var voiceExternal = filled(MAX_VOICES, 0);       // 1 = this voice is skipped by the shared clock and only sounds via triggervoice()
 var voiceRangeMin = filled(MAX_VOICES, 0);       // per-voice register clamp, low bound (MIDI note); default 0-127 = no effective clamp
 var voiceRangeMax = filled(MAX_VOICES, 127);     // per-voice register clamp, high bound (MIDI note)
+// Independent voices. voicePos above was already a per-voice cursor, but only triggervoice()
+// ever moved it: under the shared clock every voice was handed the SAME note and could differ
+// only by octave, which is why four voices sounded like one voice doubled. Turning voiceIndep
+// on lets the clock walk each voice's own cursor, so the voice count finally buys texture.
+var voiceIndep = 0;                              // 0 = one shared note per step (historic behavior), 1 = every voice reads for itself
+var voiceDegOffset = filled(MAX_VOICES, 0);      // how many DEGREES of the current set this voice sits above its own reading
+var voiceDiv = filled(MAX_VOICES, 1);            // clock divider: this voice sounds on 1 of every N steps
 for (var initV = 0; initV < MAX_VOICES; initV++) voiceOctaveList[initV] = [0];
 voiceMute[0] = 0;
 
@@ -66,8 +73,10 @@ var noteIndex = 0;     // position within current set's arpeggio (arpeggio mode)
 var rotation = 0;      // round-robin rotation offset for arpeggio starting note (normal mode)
 
 var PERM_CAP = 6;          // max cardinality for full superpermutation cycling (6! = 720)
-var permList = [];         // cached permutations of the current set (brute-force superpermutation mode)
-var permCachedFor = -1;    // which setIndex permList was built for
+var permList = [];         // cached index permutations for one cardinality (superpermutation modes)
+var permCachedForN = -1;   // which CARDINALITY permList holds. Permutations of indices depend on
+                           // nothing but n, so every set of that size reuses the same list.
+var permSetTag = -1;       // which setIndex the SHARED permutation walk (permIndex) is currently on
 var permIndex = 0;         // which permutation in permList we're on
 
 // Proven-minimal superpermutations for n=1..5 (0-indexed positions into the set's pcs array).
@@ -258,21 +267,10 @@ function triggervoice(v) {
 	// Walk the same permuted order the shared clock uses, so an externally triggered
 	// voice permutes too instead of falling back to a plain linear pass through the
 	// chord. Not gated on `mode` (Acordes/Arp): triggervoice always emits one note per
-	// trigger, so only permMode is meaningful here. Same cardinality limits as step():
-	// minimal superpermutations exist for n<=5, brute force up to PERM_CAP, else linear.
-	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) {
-		var minSeq = MINIMAL_SUPERPERMS[n];
-		pc = pcs[minSeq[pos % minSeq.length]];
-	} else if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
-		if (permCachedFor !== setIndex) {
-			permList = heapPermutations(pcs);
-			permCachedFor = setIndex;
-		}
-		// each voice advances through the permutation list at its own pace
-		pc = permList[Math.floor(pos / n) % permList.length][pos % n];
-	} else {
-		pc = pcs[pos % n];
-	}
+	// trigger, so only permMode is meaningful here. degreeAt() is now the only copy of that
+	// reading order, shared with the clock-driven voices, so a voice sounds the same whether
+	// the clock or an external trigger moved it.
+	pc = pitchForDegree(pcs, degreeAt(n, pos) + voiceDegOffset[idx]);
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
@@ -363,6 +361,42 @@ function setvoiceexternal(v, e) {
 	voiceExternal[idx] = e ? 1 : 0;
 }
 
+// 0 = every clock-driven voice gets the same note and can differ only by octave and register
+// (what the device did until now). 1 = every voice reads the set through its own cursor,
+// degree offset and clock divider. Deliberately global rather than per-voice: with a degree
+// offset of 0 and a divider of 1 an independent voice already reproduces the shared reading,
+// so a per-voice switch would only be a second way of saying the same thing.
+function setvoiceindep(x) {
+	voiceIndep = x ? 1 : 0;
+}
+
+// How many degrees of the CURRENT set this voice sits above its own reading. Degrees, not
+// semitones: offset 2 is "a third within this set", so the interval re-spells itself as the
+// harmony changes instead of dragging one fixed transposition through every chord. Offsets
+// 0,1,2,3 across four voices give a four-part voicing of whatever set is playing; negative
+// values put the voice below. Voices cannot cross, because pitchForDegree() adds an octave
+// every time the index runs past the end of the set.
+function setvoicedegoffset(v, d) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	d = Math.round(d);
+	if (!isFinite(d)) return;
+	voiceDegOffset[idx] = d;
+}
+
+// Clock divider: the voice sounds on one step out of every N, and its cursor advances only when
+// it sounds. This is what turns independent cursors from parallel motion into counterpoint,
+// since voices on different dividers drift apart and meet again on their common multiple.
+// Phase comes from the global patternStep rather than a per-voice counter, so every divider
+// lands together on the step where the pattern restarts instead of drifting off the grid.
+function setvoicediv(v, d) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	d = Math.round(d);
+	if (d < 1) d = 1;
+	voiceDiv[idx] = d;
+}
+
 // Register clamp per voice: min + span (like Tritonet's Min/Range), so max is always >= min.
 function setvoicerange(v, min, span) {
 	var idx = Math.round(v) - 1;
@@ -412,6 +446,10 @@ function storepreset(slot) {
 		voiceOctaveList: voiceOctaveList.map(function (l) { return l.slice(); }),
 		voiceMute: voiceMute.slice(),
 		voiceExternal: voiceExternal.slice(),
+		voiceIndep: voiceIndep,
+		voiceDegOffset: voiceDegOffset.slice(),
+		voiceDiv: voiceDiv.slice(),
+		voicePos: voicePos.slice(),      // part of the sequence position once voices read independently
 		voiceRangeMin: voiceRangeMin.slice(),
 		voiceRangeMax: voiceRangeMax.slice(),
 		accentGrid: accentGrid.slice(),
@@ -452,6 +490,12 @@ function recallpreset(slot) {
 		function (l) { return l ? l.slice() : [0]; });
 	voiceMute = padVoices(p.voiceMute, 1);
 	voiceExternal = padVoices(p.voiceExternal, 0);
+	// Slots stored before independent voices existed carry none of these four; the fallbacks
+	// are exactly the shared-note behavior such a slot was saved as.
+	voiceIndep = p.voiceIndep || 0;
+	voiceDegOffset = padVoices(p.voiceDegOffset, 0);
+	voiceDiv = padVoices(p.voiceDiv, 1);
+	voicePos = padVoices(p.voicePos, 0);
 	voiceRangeMin = padVoices(p.voiceRangeMin, 0);
 	voiceRangeMax = padVoices(p.voiceRangeMax, 127);
 
@@ -477,10 +521,11 @@ function recallpreset(slot) {
 	// rebuild the permutation caches for the restored setIndex so permIndex/minimalPos stay valid
 	// (without this, step()'s cache-miss check would silently reset them back to 0)
 	var restoredPcs = sets[setIndex];
-	permList = heapPermutations(restoredPcs);
-	permCachedFor = setIndex;
+	ensurePermCache(restoredPcs.length);
+	permSetTag = setIndex;
 	minimalCachedFor = setIndex;
 
+	outlet(4, ["indep", voiceIndep]);
 	outlet(4, ["masteroct", masterOctave]);
 	outlet(4, ["mode", mode]);
 	outlet(4, ["shape", rotShape]);
@@ -503,6 +548,8 @@ function recallpreset(slot) {
 		outlet(4, ["v" + (v + 1) + "external", voiceExternal[v]]);
 		outlet(4, ["v" + (v + 1) + "range", voiceRangeMin[v], voiceRangeMax[v] - voiceRangeMin[v]]);
 		outlet(4, ["v" + (v + 1) + "phase", voicePhase[v]]);
+		outlet(4, ["v" + (v + 1) + "grado", voiceDegOffset[v]]);
+		outlet(4, ["v" + (v + 1) + "div", voiceDiv[v]]);
 	}
 	post("preset: recalled slot " + slot + "\n");
 }
@@ -599,10 +646,16 @@ function displayNotes(pcs) {
 	return names;
 }
 
-function heapPermutations(arr) {
+// Every permutation of the INDICES 0..n-1, in Heap's algorithm order. Indices rather than the
+// pitch classes themselves for two reasons: one cached list now serves every set of that
+// cardinality instead of being rebuilt per set, and a permutation can be composed with a
+// per-voice degree offset before it is turned into a pitch. Heap's order depends only on
+// positions, so pcs[heapPermutations(n)[k][j]] is exactly the sequence the old value-based
+// version produced -- the audible result is unchanged.
+function heapPermutations(n) {
 	var result = [];
-	var a = arr.slice();
-	var n = a.length;
+	var a = [];
+	for (var k0 = 0; k0 < n; k0++) a.push(k0);
 	var c = new Array(n);
 	for (var k = 0; k < n; k++) c[k] = 0;
 	result.push(a.slice());
@@ -626,6 +679,121 @@ function heapPermutations(arr) {
 	return result;
 }
 
+// permList holds the index permutations for ONE cardinality, shared by every set of that size.
+function ensurePermCache(n) {
+	if (permCachedForN === n && permList.length) return;
+	permList = heapPermutations(n);
+	permCachedForN = n;
+}
+
+// Which degree (0..n-1) the reading order says to play at position pos. This is the ONE place
+// the reading order lives: the shared clock, the independent voices and triggervoice() all go
+// through it. permMode picks the order -- 2 = proven-minimal superpermutation where one exists
+// (n<=5), 1 or 2 = brute-force superpermutation up to PERM_CAP, anything else = a straight
+// ascending pass. Cardinalities past those limits fall back to the linear pass, as before.
+function degreeAt(n, pos) {
+	pos = Math.round(pos);
+	if (!isFinite(pos) || pos < 0) pos = 0;
+	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) {
+		var minSeq = MINIMAL_SUPERPERMS[n];
+		return minSeq[pos % minSeq.length];
+	}
+	if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
+		ensurePermCache(n);
+		// each voice advances through the permutation list at its own pace
+		return permList[Math.floor(pos / n) % permList.length][pos % n];
+	}
+	return pos % n;
+}
+
+// How many steps one complete pass through the reading order takes. It decides when the set is
+// allowed to change, so no reading order is ever cut off half way -- a superpermutation gets to
+// finish before the harmony moves, exactly as the shared-clock path already does.
+function readCycleLength(n) {
+	if (permMode === 2 && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n].length;
+	if ((permMode === 1 || permMode === 2) && n <= PERM_CAP) {
+		ensurePermCache(n);
+		return permList.length * n;
+	}
+	return n;
+}
+
+// Turns a degree index into a pitch, letting the index run past the end of the set: degree n is
+// degree 0 an octave up. That is what makes a per-voice degree offset stack into a chord
+// (offsets 0,1,2,3 on a three-note set give root, third, fifth, root+12) and what stops two
+// voices from crossing, since a larger offset always lands higher.
+function pitchForDegree(pcs, deg) {
+	var n = pcs.length;
+	var wrapped = ((deg % n) + n) % n;
+	return pcs[wrapped] + 12 * Math.floor(deg / n);
+}
+
+// The independent-voice counterpart of emitVoices(): instead of one note handed to every voice,
+// each voice resolves its own pitch from its own cursor. Muted voices and rests still advance
+// the cursor -- a mute is a gate, not a pause, so unmuting mid-phrase drops the voice back in
+// where it would have been rather than where it left off.
+function emitVoicesIndependent(pcs, n) {
+	var summary = [];
+	var names = [];
+	for (var v = 0; v < NUM_VOICES; v++) {
+		// external voices belong to triggervoice(); the clock must not move their cursor too
+		if (voiceExternal[v]) { summary.push(0); names.push("--"); continue; }
+		var div = voiceDiv[v] > 0 ? voiceDiv[v] : 1;
+		if (((patternStep - 1) % div) !== 0) { summary.push(0); names.push("--"); continue; }
+
+		var pos = voicePos[v];
+		// Acordes: the cursor is frozen at 0, so the voice holds its degree and the chord changes
+		// only when the set does -- four voices at offsets 0,1,2,3 read as a four-part chorale.
+		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
+		var readIdx = (mode === 1) ? pos : 0;
+		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v]);
+		var list = voiceOctaveList[v];
+		var oct = list[pos % list.length];
+		var note = foldToRange(MELODY_BASE + pc + oct * 12 + root + masterOctave * 12,
+			voiceRangeMin[v], voiceRangeMax[v]);
+		// the accent grid is read at this voice's own cursor for the same reason triggervoice()
+		// does it: a voice on a divider advances slower, and its accents have to follow its notes
+		var art = articulationFor(v, pos, n);
+		voicePos[v] = pos + 1;
+
+		if (DEBUG_STEP) {
+			post("  IND v" + (v + 1) + " | pos=" + pos + " deg+" + voiceDegOffset[v] +
+				" div=" + div + " -> note " + note +
+				" | grp=" + (art.group ? "ACC" : "nrm") + " vel=" + art.vel +
+				(voiceMute[v] ? " MUTED" : "") + (art.rest ? " REST" : "") + "\n");
+		}
+		if (voiceMute[v] || art.rest) { summary.push(0); names.push("--"); continue; }
+
+		summary.push(note);
+		names.push(noteName(note));
+		emitNote(v, art, note);
+	}
+	outlet(3, summary);
+	var labelled = [];
+	for (var m = 0; m < NUM_VOICES; m++) labelled.push("V" + (m + 1) + ":" + names[m]);
+	outlet(5, labelled);
+}
+
+// One clock step with independent voices. The shared permutation walk (permIndex/minimalPos) is
+// not used here at all: every voice derives its position from its own cursor, so the only thing
+// left for the step to decide is when the harmony moves on.
+function stepIndependent(pcs, n) {
+	outlet(1, setIndex + 1);
+	outlet(2, displayNotes(pcs));
+	emitVoicesIndependent(pcs, n);
+
+	if (locked) return;
+	if (mode === 0) {
+		setIndex = (setIndex + 1) % sets.length;   // acordes: one set per step, same as the shared path
+		return;
+	}
+	noteIndex++;
+	if (noteIndex >= readCycleLength(n)) {
+		noteIndex = 0;
+		setIndex = (setIndex + 1) % sets.length;
+	}
+}
+
 function step() {
 	patternStep++;
 	if (locked) setIndex = lockIndex;
@@ -638,6 +806,11 @@ function step() {
 			" | noteIdx=" + noteIndex + " permIdx=" + permIndex + " minPos=" + minimalPos + "\n");
 	}
 	outlet(6, pcs.map(function(p) { return ((p + root) % 12 + 12) % 12; }));
+
+	if (voiceIndep) {
+		stepIndependent(pcs, n);
+		return;
+	}
 
 	if (mode === 1 && permMode === 2 && MINIMAL_SUPERPERMS[n]) {
 		var minSeq = MINIMAL_SUPERPERMS[n];
@@ -663,17 +836,19 @@ function step() {
 	}
 
 	if (mode === 1 && (permMode === 1 || permMode === 2) && n <= PERM_CAP) {
-		if (permCachedFor !== setIndex) {
-			permList = heapPermutations(pcs);
-			permCachedFor = setIndex;
+		ensurePermCache(n);
+		if (permSetTag !== setIndex) {
+			permSetTag = setIndex;
 			permIndex = 0;
 			noteIndex = 0;
 		}
-		var curPerm = permList[permIndex];
+		var curPerm = permList[permIndex];   // indices into pcs, not pitch classes
+		var permPcs = [];
+		for (var pi = 0; pi < curPerm.length; pi++) permPcs.push(pcs[curPerm[pi]]);
 
 		outlet(1, setIndex + 1);
-		outlet(2, displayNotes(curPerm));
-		emitVoices(MELODY_BASE + curPerm[noteIndex]);
+		outlet(2, displayNotes(permPcs));
+		emitVoices(MELODY_BASE + permPcs[noteIndex]);
 
 		noteIndex++;
 		if (noteIndex >= n) {
@@ -684,7 +859,7 @@ function step() {
 				if (!locked) {
 					setIndex++;
 					if (setIndex >= sets.length) setIndex = 0;
-					permCachedFor = -1;   // force rebuild for the new set next step
+					permSetTag = -1;   // force the permIndex reset above on the new set next step
 				}
 			}
 		}
@@ -733,7 +908,7 @@ function setpermmode(p) {
 	if (permMode > 2) permMode = 2;
 	noteIndex = 0;
 	permIndex = 0;
-	permCachedFor = -1;
+	permSetTag = -1;
 	minimalPos = 0;
 	minimalCachedFor = -1;
 }
