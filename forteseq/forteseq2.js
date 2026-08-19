@@ -1,10 +1,11 @@
 autowatch = 1;
 inlets = 1;
-outlets = 7;   // 0 = note events (see emitNote), 1 = current set index (1-351),
+outlets = 8;   // 0 = note events (see emitNote), 1 = current set index (1-351),
                // 2 = notes for display (names), 3 = all-voice summary for viz,
                // 4 = preset recall broadcast (tagged pairs, routed in Max),
                // 5 = voice note names for monitor,
-               // 6 = current set's pitch classes (0-11, transposed by root) for circle-of-fifths.
+               // 6 = current set's pitch classes (0-11, transposed by root) for circle-of-fifths,
+               // 7 = Forte name and interval vector of the current set, as two symbols.
                //
                // v1 spent one outlet per voice (0/3/4/5) plus a separate articulation outlet (10)
                // that HAD to fire before the pitch so makenote's cold inlets were already loaded.
@@ -166,10 +167,455 @@ function buildSets() {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Set-class theory: Forte numbers, interval vectors, traversal order, filters
+// ---------------------------------------------------------------------------
+// The 351 sets this engine plays are Tn-classes: transposition only, so a major triad (047) and
+// a minor one (037) are two different sets. Forte's catalogue is coarser -- 224 Tn/TnI classes,
+// where a set and its inversion share one number -- so it is used here as a LABEL on top of the
+// 351, never as a replacement. Two Tn-classes share a Forte number: the one whose own prime form
+// IS Forte's gets the suffix A, its inversion gets B, and a set that inverts onto itself gets no
+// suffix at all. That is the convention the Wikipedia list uses.
+
+var VEC_DIGITS = "0123456789ABC";   // an interval vector entry reaches 12 in the aggregate
+var PC_DIGITS = "0123456789TE";
+
+// Normal order: the rotation of the set with the smallest span, ties going to whichever is
+// packed furthest to the left. Returned transposed to start on 0, which is what every
+// comparison below wants.
+function zeroedNormalOrder(pcs) {
+	var p = pcs.slice().sort(function (a, b) { return a - b; });
+	var n = p.length;
+	if (n === 0) return [];
+	var best = null;
+	for (var i = 0; i < n; i++) {
+		var rot = [];
+		for (var k = 0; k < n; k++) rot.push((((p[(i + k) % n] - p[i]) % 12) + 12) % 12);
+		if (best === null || betterNormal(rot, best)) best = rot;
+	}
+	return best;
+}
+
+function betterNormal(a, b) {
+	var n = a.length;
+	if (a[n - 1] !== b[n - 1]) return a[n - 1] < b[n - 1];        // smaller span wins
+	for (var i = 1; i < n; i++) if (a[i] !== b[i]) return a[i] < b[i];   // then packed left
+	return false;
+}
+
+function lexLess(a, b) {
+	for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
+	return false;
+}
+
+function invertPcs(pcs) {
+	var out = [];
+	for (var i = 0; i < pcs.length; i++) out.push(((-pcs[i] % 12) + 12) % 12);
+	return out;
+}
+
+// Forte's prime form, not Rahn's. The two disagree on exactly five classes (5-20, 6-Z29, 6-31,
+// 7-20, 8-26), where Forte packs from the left and Rahn from the right: 5-20 is 01378 here and
+// 01568 in Rahn. Forte's is the one that goes with Forte's numbering.
+function primeFormOf(pcs) {
+	var a = zeroedNormalOrder(pcs);
+	var b = zeroedNormalOrder(invertPcs(pcs));
+	return lexLess(b, a) ? b : a;
+}
+
+function intervalVectorOf(pcs) {
+	var v = [0, 0, 0, 0, 0, 0];
+	for (var i = 0; i < pcs.length; i++) {
+		for (var j = i + 1; j < pcs.length; j++) {
+			var d = (((pcs[j] - pcs[i]) % 12) + 12) % 12;
+			if (d > 6) d = 12 - d;
+			v[d - 1]++;
+		}
+	}
+	return v;
+}
+
+function pcsDigits(pcs) {
+	var s = "";
+	for (var i = 0; i < pcs.length; i++) s += PC_DIGITS[pcs[i]];
+	return s;
+}
+
+// Within each cardinality Forte ordered the classes by interval vector, descending. That rule
+// recovers the whole numbering except for one thing: when two classes share a vector (a Z pair)
+// one keeps its place and the other is pushed to the end of the cardinality, and which is which
+// is historical. Those 19 are listed here -- one tetrachord, three pentachords, fifteen
+// hexachords. Cardinalities 7..12 are not sorted at all; Forte numbered them as the complements
+// of 5..0. Derived here and cross-checked row by row against the 224 entries of
+// en.wikipedia.org/wiki/List_of_set_classes.
+var LATE_Z = ["0137",
+	"01247", "03458", "01258",
+	"012347", "012348", "012378", "023458", "012358", "012368", "012369", "012568",
+	"012569", "023469", "012469", "012479", "012579", "013479", "014679"];
+
+var forteClass = {};   // prime-form digit string -> {vec, num, ord, card}
+
+function buildForte() {
+	var byCard = {};
+	// every Tn/TnI class shows up as the prime form of some Tn-class, and sets[] holds all 351
+	// of those; the empty set is the only one missing, and card 12 needs it as its complement
+	var seedSets = [[]];
+	for (var i = 0; i < sets.length; i++) seedSets.push(sets[i]);
+	for (var s = 0; s < seedSets.length; s++) {
+		var pf = primeFormOf(seedSets[s]);
+		var key = pcsDigits(pf);
+		if (forteClass[key]) continue;
+		forteClass[key] = { pf: pf, vec: intervalVectorOf(pf), card: pf.length };
+		if (!byCard[pf.length]) byCard[pf.length] = [];
+		byCard[pf.length].push(key);
+	}
+
+	var isLate = {};
+	for (var z = 0; z < LATE_Z.length; z++) isLate[LATE_Z[z]] = true;
+
+	for (var card = 0; card <= 6; card++) {
+		var keys = byCard[card] || [];
+		var early = [], late = [];
+		for (var k = 0; k < keys.length; k++) {
+			if (isLate[keys[k]]) late.push(keys[k]); else early.push(keys[k]);
+		}
+		early.sort(function (a, b) {
+			var va = forteClass[a].vec, vb = forteClass[b].vec;
+			for (var q = 0; q < 6; q++) if (va[q] !== vb[q]) return vb[q] - va[q];
+			return 0;
+		});
+		// a late member sits at the end, but the late members keep the order of their partners
+		var partnerPos = function (key) {
+			var v = forteClass[key].vec;
+			for (var q = 0; q < early.length; q++) {
+				var w = forteClass[early[q]].vec;
+				if (v[0] === w[0] && v[1] === w[1] && v[2] === w[2] &&
+					v[3] === w[3] && v[4] === w[4] && v[5] === w[5]) return q;
+			}
+			return 9999;
+		};
+		late.sort(function (a, b) { return partnerPos(a) - partnerPos(b); });
+		var zVec = {};
+		for (var m = 0; m < late.length; m++) zVec[forteClass[late[m]].vec.join(",")] = true;
+		var all = early.concat(late);
+		for (var n = 0; n < all.length; n++) {
+			var e = forteClass[all[n]];
+			e.ord = n;
+			e.num = card + "-" + (zVec[e.vec.join(",")] ? "Z" : "") + (n + 1);
+		}
+	}
+
+	for (var big = 7; big <= 12; big++) {
+		var list = byCard[big] || [];
+		for (var b = 0; b < list.length; b++) {
+			var ent = forteClass[list[b]];
+			var comp = [];
+			for (var p = 0; p < 12; p++) {
+				var found = 0;
+				for (var q2 = 0; q2 < ent.pf.length; q2++) if (ent.pf[q2] === p) found = 1;
+				if (!found) comp.push(p);
+			}
+			var cKey = pcsDigits(primeFormOf(comp));
+			var cEnt = forteClass[cKey];
+			ent.num = big + "-" + cEnt.num.split("-")[1];
+			ent.ord = cEnt.ord;
+		}
+	}
+
+	// The catalogue has a known shape, and a wrong prime-form routine would break it. Post rather
+	// than throw: a device that labels sets wrongly is still a device that plays.
+	var EXPECT = [1, 1, 6, 12, 29, 38, 50, 38, 29, 12, 6, 1, 1];
+	var total = 0;
+	for (var c2 = 0; c2 <= 12; c2++) {
+		var got = (byCard[c2] || []).length;
+		total += got;
+		if (got !== EXPECT[c2]) post("forteseq2: WARNING cardinalidad " + c2 + " tiene " + got +
+			" clases, se esperaban " + EXPECT[c2] + "\n");
+	}
+	if (total !== 224) post("forteseq2: WARNING catalogo de Forte con " + total + " clases, no 224\n");
+}
+
+// Per-set labels, parallel to sets[].
+var setBits = [];        // bitmask of the set, for fast filtering
+var setCard = [];        // cardinality
+var setVec = [];         // interval vector
+var setForte = [];       // "4-Z15A"
+var setForteOrd = [];    // position within its cardinality, for the Forte traversal order
+
+function buildSetLabels() {
+	for (var i = 0; i < sets.length; i++) {
+		var pcs = sets[i];
+		var bits = 0;
+		for (var j = 0; j < pcs.length; j++) bits |= (1 << pcs[j]);
+		setBits.push(bits);
+		setCard.push(pcs.length);
+		setVec.push(intervalVectorOf(pcs));
+
+		var tn = zeroedNormalOrder(pcs);
+		var tnInv = zeroedNormalOrder(invertPcs(pcs));
+		var pf = lexLess(tnInv, tn) ? tnInv : tn;
+		var ent = forteClass[pcsDigits(pf)];
+		var letter = "";
+		var symmetric = 1;
+		for (var t = 0; t < tn.length; t++) if (tn[t] !== tnInv[t]) symmetric = 0;
+		if (!symmetric) letter = lexLess(tnInv, tn) ? "B" : "A";
+		setForte.push(ent ? ent.num + letter : "?");
+		setForteOrd.push(ent ? ent.ord : 0);
+	}
+}
+
+function vecString(i) {
+	var v = setVec[i], s = "<";
+	for (var k = 0; k < 6; k++) s += VEC_DIGITS[v[k]];
+	return s + ">";
+}
+
+// --- traversal order -------------------------------------------------------------------
+// sets[] is never reordered: presets store setIndex raw, and the Set numbox names a set by its
+// place in the catalogue. An alternative order is a permutation of indices laid over the top.
+
+var ORDER_CARD = 0, ORDER_FORTE = 1, ORDER_CONS = 2, ORDER_NEIGH = 3;
+var orderMode = ORDER_CARD;
+var order = [];
+var orderPosOf = [];
+
+// Huron's aggregate dyadic consonance, one weight per interval class. Positive = consonant, so
+// a fifth pulls a set up the list and a semitone pushes it down. Normalised by the number of
+// intervals in the set, otherwise a big set would always outweigh a small one.
+var IC_CONSONANCE = [-1.428, -0.582, 0.594, 0.386, 1.240, -0.453];
+
+function consonanceOf(i) {
+	var n = setCard[i];
+	var pairs = n * (n - 1) / 2;
+	if (pairs <= 0) return 0;
+	var v = setVec[i], t = 0;
+	for (var k = 0; k < 6; k++) t += IC_CONSONANCE[k] * v[k];
+	return t / pairs;
+}
+
+// Walks the catalogue by common tones instead of by number: from each set the chain goes to
+// whichever unvisited set shares the most pitch classes with it, so a full pass drifts through
+// the harmony rather than jumping. Ties go to the smaller symmetric difference and then to the
+// lower index, which keeps the chain deterministic across reloads.
+function neighbourChain() {
+	var used = [], chain = [];
+	for (var i = 0; i < sets.length; i++) used.push(0);
+	var cur = 0;
+	used[0] = 1;
+	chain.push(0);
+	for (var s = 1; s < sets.length; s++) {
+		var cb = setBits[cur], bestI = -1, bestShared = -1, bestDiff = 99;
+		for (var j = 0; j < sets.length; j++) {
+			if (used[j]) continue;
+			var shared = popcount(cb & setBits[j]);
+			var diff = popcount(cb ^ setBits[j]);
+			if (shared > bestShared || (shared === bestShared && diff < bestDiff)) {
+				bestShared = shared; bestDiff = diff; bestI = j;
+			}
+		}
+		used[bestI] = 1;
+		chain.push(bestI);
+		cur = bestI;
+	}
+	return chain;
+}
+
+function buildOrder() {
+	var idx = [];
+	for (var i = 0; i < sets.length; i++) idx.push(i);
+	if (orderMode === ORDER_FORTE) {
+		idx.sort(function (a, b) {
+			if (setCard[a] !== setCard[b]) return setCard[a] - setCard[b];
+			if (setForteOrd[a] !== setForteOrd[b]) return setForteOrd[a] - setForteOrd[b];
+			var la = setForte[a], lb = setForte[b];   // A before B
+			return la < lb ? -1 : (la > lb ? 1 : 0);
+		});
+	} else if (orderMode === ORDER_CONS) {
+		idx.sort(function (a, b) {
+			var d = consonanceOf(b) - consonanceOf(a);
+			if (d < 0) return -1;
+			if (d > 0) return 1;
+			return a - b;
+		});
+	} else if (orderMode === ORDER_NEIGH) {
+		idx = neighbourChain();
+	}
+	order = idx;
+	orderPosOf = [];
+	for (var k = 0; k < order.length; k++) orderPosOf[order[k]] = k;
+}
+
+// --- filter ----------------------------------------------------------------------------
+var filterOn = 0;
+var cardMin = 1, cardMax = 12;
+var maskBits = 0xFFF;    // 12 chromatic cells, C at bit 0; the toggles are absolute pitch classes
+var maskMode = 0;        // 0 = set fits inside the mask, 1 = set contains the mask, 2 = shares >= k
+var maskK = 1;
+var maskFit = 1;         // 1 = a set may move to the transposition where it satisfies the mask
+var allowed = [];
+var setFit = [];         // the transposition each set was fitted to; equals root when fit is off
+
+// Transpositions to try, nearest to the root first, so a fitted set stays as close to the key
+// the root names as the mask allows.
+var FIT_ORDER = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6];
+
+function maskOk(b) {
+	if (maskMode === 0) return (b & (~maskBits) & 0xFFF) === 0;   // fits inside the mask
+	if (maskMode === 1) return (b & maskBits) === maskBits;        // contains the whole mask
+	return popcount(b & maskBits) >= maskK;                        // shares at least k notes
+}
+
+// The transposition the current set actually sounds at. Normally that is the root; with the mask
+// fitting sets into place it is the transposition that made this set fit, which is the whole
+// point of fit -- otherwise "only what fits in C major" leaves out C major.
+function effRoot() {
+	if (filterOn && maskFit && setIndex < setFit.length) return setFit[setIndex];
+	return root;
+}
+
+function rotl12(bits, r) {
+	r = ((r % 12) + 12) % 12;
+	if (r === 0) return bits & 0xFFF;
+	return ((bits << r) | (bits >> (12 - r))) & 0xFFF;
+}
+
+// Rebuilt whenever a filter control or the root moves. The mask is written in absolute pitch
+// classes -- toggle 1 is C, whatever the root is -- and sets[] stores them untransposed, so the
+// comparison has to happen at the transposition that will actually sound.
+function buildFilter() {
+	allowed = [];
+	setFit = [];
+	var pass = 0;
+	for (var i = 0; i < sets.length; i++) {
+		var ok = 1;
+		var fit = root;
+		if (filterOn) {
+			if (setCard[i] < cardMin || setCard[i] > cardMax) ok = 0;
+			if (ok && maskFit) {
+				// Sets are stored at one canonical rotation each, which is rarely the rotation
+				// that fits: the diatonic class is stored as 013568T, so testing it in place
+				// would keep the major scale out of "fits inside C major". Move it instead.
+				ok = 0;
+				for (var d = 0; d < FIT_ORDER.length; d++) {
+					var t = (((root + FIT_ORDER[d]) % 12) + 12) % 12;
+					if (maskOk(rotl12(setBits[i], t))) { ok = 1; fit = t; break; }
+				}
+			} else if (ok) {
+				ok = maskOk(rotl12(setBits[i], root)) ? 1 : 0;
+			}
+		}
+		allowed.push(ok);
+		setFit.push(fit);
+		pass += ok;
+	}
+	if (pass === 0) {
+		// A filter nothing passes would freeze the sequence on whatever set happened to be
+		// playing, which reads as a broken device. Falling back to the whole catalogue at least
+		// keeps it moving, and the console says why.
+		post("forteseq2: el filtro no deja pasar ningun set, se ignora\n");
+		for (var k = 0; k < allowed.length; k++) allowed[k] = 1;
+	}
+}
+
+// Moves to the next playable set and reports whether the catalogue wrapped, which is what the
+// rotation-per-pass option keys off. Order and filter both live here, so every caller in step()
+// gets them without knowing about either.
+function advanceSet() {
+	var total = order.length;
+	if (!total) return 0;
+	var pos = orderPosOf[setIndex];
+	if (pos === undefined) pos = 0;
+	for (var i = 1; i <= total; i++) {
+		var raw = pos + i;
+		var p = raw % total;
+		if (allowed[order[p]]) {
+			setIndex = order[p];
+			return raw >= total ? 1 : 0;
+		}
+	}
+	return 0;
+}
+
+function emitSetReadouts(displayPcs) {
+	outlet(1, setIndex + 1);
+	outlet(2, displayNotes(displayPcs));
+	outlet(7, [setForte[setIndex], vecString(setIndex)]);
+}
+
+// --- setters ---------------------------------------------------------------------------
+
+function setorder(m) {
+	m = Math.round(m);
+	if (m < 0) m = 0;
+	if (m > 3) m = 3;
+	orderMode = m;
+	buildOrder();
+}
+
+function setfilter(f) {
+	filterOn = f ? 1 : 0;
+	buildFilter();
+}
+
+// Two setters rather than one taking a pair: Live restores parameters one at a time on set
+// reload, so a combined message would pair whichever arrived first with the other's stale value.
+function setcardmin(n) {
+	n = Math.round(n);
+	if (n < 1) n = 1;
+	if (n > 12) n = 12;
+	cardMin = n;
+	buildFilter();
+}
+
+function setcardmax(n) {
+	n = Math.round(n);
+	if (n < 1) n = 1;
+	if (n > 12) n = 12;
+	cardMax = n;
+	buildFilter();
+}
+
+// setmask <c1> ... <c12>: the whole mask arrives as one list, so a redraw can never leave it
+// half applied between two notes -- same reason setaccentgrid takes a list.
+function setmask() {
+	var bits = 0;
+	for (var i = 0; i < 12 && i < arguments.length; i++) if (arguments[i]) bits |= (1 << i);
+	maskBits = bits;
+	buildFilter();
+}
+
+function setmaskmode(m) {
+	m = Math.round(m);
+	if (m < 0) m = 0;
+	if (m > 2) m = 2;
+	maskMode = m;
+	buildFilter();
+}
+
+// 1 = a set that does not satisfy the mask where it sits may move to a transposition where it
+// does, and then plays there. 0 = it is tested exactly where it sits, which is stricter and
+// keeps the root meaning what it says, at the cost of letting very few sets through.
+function setmaskfit(f) {
+	maskFit = f ? 1 : 0;
+	buildFilter();
+}
+
+function setmaskk(k) {
+	k = Math.round(k);
+	if (k < 1) k = 1;
+	if (k > 12) k = 12;
+	maskK = k;
+	buildFilter();
+}
+
 buildSets();
+buildForte();
+buildSetLabels();
+buildOrder();
+buildFilter();
 
 function loadbang() {
-	post("forteseq2: built " + sets.length + " Tn-classes, bus " + busId +
+	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
 		", " + NUM_VOICES + "/" + MAX_VOICES + " voices\n");
 }
 
@@ -195,8 +641,7 @@ function setlockindex(i) {
 	// note bus and made picking a set in the numbox audibly fire a stray note.
 	// Only the set-level index/notes readouts preview immediately; the per-voice MIDI
 	// monitor only updates from an actual clock tick/trigger, same as real playback.
-	outlet(1, setIndex + 1);
-	outlet(2, displayNotes(sets[setIndex]));
+	emitSetReadouts(sets[setIndex]);
 }
 
 function setvoiceoctavelist() {
@@ -274,7 +719,7 @@ function triggervoice(v) {
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
-	var shift = oct * 12 + root + masterOctave * 12;
+	var shift = oct * 12 + effRoot() + masterOctave * 12;
 	var vmin = voiceRangeMin[idx], vmax = voiceRangeMax[idx];
 	var shifted = foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
@@ -421,6 +866,7 @@ function foldToRange(note, min, max) {
 
 function setroot(r) {
 	root = Math.round(r);
+	buildFilter();   // the mask is absolute, so what fits inside it changes when the root moves
 }
 
 function setmasteroctave(o) {
@@ -452,6 +898,14 @@ function storepreset(slot) {
 		voicePos: voicePos.slice(),      // part of the sequence position once voices read independently
 		voiceRangeMin: voiceRangeMin.slice(),
 		voiceRangeMax: voiceRangeMax.slice(),
+		orderMode: orderMode,
+		filterOn: filterOn,
+		cardMin: cardMin,
+		cardMax: cardMax,
+		maskBits: maskBits,
+		maskMode: maskMode,
+		maskK: maskK,
+		maskFit: maskFit,
 		accentGrid: accentGrid.slice(),
 		accentCycle: accentCycle,
 		accentTieToN: accentTieToN,
@@ -499,6 +953,19 @@ function recallpreset(slot) {
 	voiceRangeMin = padVoices(p.voiceRangeMin, 0);
 	voiceRangeMax = padVoices(p.voiceRangeMax, 127);
 
+	// Slots stored before the theory layer carry no order or filter; the fallbacks are the plain
+	// catalogue order with no filter, which is what such a slot played.
+	orderMode = p.orderMode || 0;
+	filterOn = p.filterOn || 0;
+	cardMin = p.cardMin || 1;
+	cardMax = p.cardMax || 12;
+	maskBits = (p.maskBits === undefined) ? 0xFFF : p.maskBits;
+	maskMode = p.maskMode || 0;
+	maskK = p.maskK || 1;
+	maskFit = (p.maskFit === undefined) ? 1 : p.maskFit;
+	buildOrder();
+	buildFilter();
+
 	// Presets stored before the articulation engine existed have none of these fields; fall
 	// back to the module defaults so an old slot recalls as the plain fixed-velocity device
 	// it was saved as, instead of throwing.
@@ -526,6 +993,16 @@ function recallpreset(slot) {
 	minimalCachedFor = setIndex;
 
 	outlet(4, ["indep", voiceIndep]);
+	outlet(4, ["order", orderMode]);
+	outlet(4, ["filter", filterOn]);
+	outlet(4, ["cardmin", cardMin]);
+	outlet(4, ["cardmax", cardMax]);
+	outlet(4, ["maskmode", maskMode]);
+	outlet(4, ["maskk", maskK]);
+	outlet(4, ["maskfit", maskFit]);
+	var maskCells = ["mask"];
+	for (var mc = 0; mc < 12; mc++) maskCells.push((maskBits & (1 << mc)) ? 1 : 0);
+	outlet(4, maskCells);
 	outlet(4, ["masteroct", masterOctave]);
 	outlet(4, ["mode", mode]);
 	outlet(4, ["shape", rotShape]);
@@ -603,7 +1080,7 @@ function emitVoices(noteData) {
 		if (voiceMute[v] || voiceExternal[v]) { summary.push(0); names.push("--"); continue; }
 		var list = voiceOctaveList[v];
 		var oct = list[patternStep % list.length];
-		var shift = oct * 12 + root + masterOctave * 12;
+		var shift = oct * 12 + effRoot() + masterOctave * 12;
 		var shifted;
 		var repr;
 		var vmin = voiceRangeMin[v], vmax = voiceRangeMax[v];
@@ -642,7 +1119,7 @@ function expandChord(pcs) {
 
 function displayNotes(pcs) {
 	var names = [];
-	for (var i = 0; i < pcs.length; i++) names.push(noteName(MELODY_BASE + pcs[i] + root + masterOctave * 12));
+	for (var i = 0; i < pcs.length; i++) names.push(noteName(MELODY_BASE + pcs[i] + effRoot() + masterOctave * 12));
 	return names;
 }
 
@@ -749,7 +1226,7 @@ function emitVoicesIndependent(pcs, n) {
 		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v]);
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
-		var note = foldToRange(MELODY_BASE + pc + oct * 12 + root + masterOctave * 12,
+		var note = foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
 			voiceRangeMin[v], voiceRangeMax[v]);
 		// the accent grid is read at this voice's own cursor for the same reason triggervoice()
 		// does it: a voice on a divider advances slower, and its accents have to follow its notes
@@ -778,19 +1255,18 @@ function emitVoicesIndependent(pcs, n) {
 // not used here at all: every voice derives its position from its own cursor, so the only thing
 // left for the step to decide is when the harmony moves on.
 function stepIndependent(pcs, n) {
-	outlet(1, setIndex + 1);
-	outlet(2, displayNotes(pcs));
+	emitSetReadouts(pcs);
 	emitVoicesIndependent(pcs, n);
 
 	if (locked) return;
 	if (mode === 0) {
-		setIndex = (setIndex + 1) % sets.length;   // acordes: one set per step, same as the shared path
+		advanceSet();   // acordes: one set per step, same as the shared path
 		return;
 	}
 	noteIndex++;
 	if (noteIndex >= readCycleLength(n)) {
 		noteIndex = 0;
-		setIndex = (setIndex + 1) % sets.length;
+		advanceSet();
 	}
 }
 
@@ -805,7 +1281,8 @@ function step() {
 			" | locked=" + locked + " mode=" + mode + " perm=" + permMode +
 			" | noteIdx=" + noteIndex + " permIdx=" + permIndex + " minPos=" + minimalPos + "\n");
 	}
-	outlet(6, pcs.map(function(p) { return ((p + root) % 12 + 12) % 12; }));
+	var er = effRoot();
+	outlet(6, pcs.map(function(p) { return ((p + er) % 12 + 12) % 12; }));
 
 	if (voiceIndep) {
 		stepIndependent(pcs, n);
@@ -819,16 +1296,14 @@ function step() {
 			minimalPos = 0;
 		}
 
-		outlet(1, setIndex + 1);
-		outlet(2, displayNotes(pcs));
+		emitSetReadouts(pcs);
 		emitVoices(MELODY_BASE + pcs[minSeq[minimalPos]]);
 
 		minimalPos++;
 		if (minimalPos >= minSeq.length) {
 			minimalPos = 0;
 			if (!locked) {
-				setIndex++;
-				if (setIndex >= sets.length) setIndex = 0;
+				advanceSet();
 				minimalCachedFor = -1;
 			}
 		}
@@ -846,8 +1321,7 @@ function step() {
 		var permPcs = [];
 		for (var pi = 0; pi < curPerm.length; pi++) permPcs.push(pcs[curPerm[pi]]);
 
-		outlet(1, setIndex + 1);
-		outlet(2, displayNotes(permPcs));
+		emitSetReadouts(permPcs);
 		emitVoices(MELODY_BASE + permPcs[noteIndex]);
 
 		noteIndex++;
@@ -857,8 +1331,7 @@ function step() {
 			if (permIndex >= permList.length) {
 				permIndex = 0;
 				if (!locked) {
-					setIndex++;
-					if (setIndex >= sets.length) setIndex = 0;
+					advanceSet();
 					permSetTag = -1;   // force the permIndex reset above on the new set next step
 				}
 			}
@@ -866,13 +1339,12 @@ function step() {
 		return;
 	}
 
-	outlet(1, setIndex + 1);
-	outlet(2, displayNotes(pcs));
+	emitSetReadouts(pcs);
 
 	if (mode === 0) {
 		emitVoices(expandChord(pcs));
 		if (!locked) {
-			setIndex = (setIndex + 1) % sets.length;
+			advanceSet();
 		}
 	} else {
 		var playPos = (noteIndex + rotation) % n;
@@ -886,12 +1358,11 @@ function step() {
 				if (rotShape === 1) {
 					rotation = (rotation + 1) % n;
 				}
-				setIndex++;
-				if (setIndex >= sets.length) {
-					setIndex = 0;
-					if (rotShape === 0) {
-						rotation++;
-					}
+				// advanceSet() reports the wrap, which is what "rotate once per full pass" keys
+				// off -- with an alternative order or a filter in play, "wrapped" is no longer
+				// the same thing as "setIndex came back to 0"
+				if (advanceSet() && rotShape === 0) {
+					rotation++;
 				}
 			}
 		}
