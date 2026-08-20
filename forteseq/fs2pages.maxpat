@@ -8249,6 +8249,371 @@
      ],
      "id": "obj-281"
     }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "es_init",
+     "patching_rect": [
+      20.0,
+      5100.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-282"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Escuchar",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1050.0,
+      70.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5140.0,
+      70.0,
+      18.0
+     ],
+     "id": "obj-283"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.tab",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_escuchar",
+     "annotation": "Off: el device no escucha. Sigue: mientras sostengas notas, la armonia es la clase que estas tocando, en el tono en que la tocaste, y la secuencia se queda quieta; al soltar vuelve exactamente donde estaba. Latch: la agarra y se queda con ella, y la secuencia sigue desde ahi. Cualquier acorde sirve: el catalogo tiene las 351 clases Tn, que por doce transposiciones son los 4095 conjuntos posibles, asi que identificar es una busqueda que no puede fallar.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1069.0,
+      160.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5160.0,
+      160.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_enum": [
+        "Off",
+        "Sigue",
+        "Latch"
+       ],
+       "parameter_mmax": 2,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Escuchar",
+       "parameter_shortname": "Escuchar"
+      }
+     },
+     "id": "obj-284"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setlisten",
+     "patching_rect": [
+      20.0,
+      5220.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-285"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Emitir",
+     "presentation": 1,
+     "presentation_rect": [
+      176.0,
+      1050.0,
+      50.0,
+      18.0
+     ],
+     "patching_rect": [
+      196.0,
+      5140.0,
+      50.0,
+      18.0
+     ],
+     "id": "obj-286"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_emitir",
+     "annotation": "Difunde por que clase va este device, en su bus. Solo viaja CUAL set: la raiz, la octava, el voicing y el registro quedan de cada uno, porque dos motores en registros o tonos distintos sobre una misma armonia es justamente para lo que sirven dos.",
+     "presentation": 1,
+     "presentation_rect": [
+      176.0,
+      1069.0,
+      15.0,
+      15.0
+     ],
+     "patching_rect": [
+      196.0,
+      5160.0,
+      15.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Emitir",
+       "parameter_shortname": "Emitir"
+      }
+     },
+     "id": "obj-287"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setbroadcast",
+     "patching_rect": [
+      372.0,
+      5220.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-288"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Seguir",
+     "presentation": 1,
+     "presentation_rect": [
+      232.0,
+      1050.0,
+      50.0,
+      18.0
+     ],
+     "patching_rect": [
+      252.0,
+      5140.0,
+      50.0,
+      18.0
+     ],
+     "id": "obj-289"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_seguir",
+     "annotation": "Toma la armonia del bus en vez de elegirla. Con esto encendido el reloj de este device ya no mueve el catalogo: manda el que difunde. Un motor que sigue nunca difunde, asi que no hay lazo posible.",
+     "presentation": 1,
+     "presentation_rect": [
+      232.0,
+      1069.0,
+      15.0,
+      15.0
+     ],
+     "patching_rect": [
+      252.0,
+      5160.0,
+      15.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Seguir",
+       "parameter_shortname": "Seguir"
+      }
+     },
+     "id": "obj-290"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setfollow",
+     "patching_rect": [
+      484.0,
+      5220.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-291"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 1,
+     "text": "Panic",
+     "varname": "fs2_lpanic",
+     "parameter_enable": 0,
+     "annotation": "Suelta la mano a la fuerza. Los note-off no siempre llegan -- cambiaste de modo con el acorde apretado, o rearmaste la pista -- y sin esto el device se queda creyendo que seguis tocando.",
+     "presentation": 1,
+     "presentation_rect": [
+      292.0,
+      1069.0,
+      56.0,
+      18.0
+     ],
+     "patching_rect": [
+      320.0,
+      5160.0,
+      56.0,
+      18.0
+     ],
+     "id": "obj-292"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "text": "sel 1",
+     "patching_rect": [
+      320.0,
+      5190.0,
+      50.0,
+      22.0
+     ],
+     "id": "obj-293"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "listenpanic",
+     "patching_rect": [
+      320.0,
+      5220.0,
+      90.0,
+      22.0
+     ],
+     "id": "obj-294"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "es_nota",
+     "text": "Escuchar manda sobre todo lo de la pagina Camino: una mano en el teclado ES la armonia. Seguir tambien. Emitir y Seguir usan el mismo Bus que las notas, asi que dos motores en el bus 1 comparten armonia y dos en buses distintos se ignoran.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1094.0,
+      512.0,
+      76.0
+     ],
+     "patching_rect": [
+      20.0,
+      5270.0,
+      512.0,
+      76.0
+     ],
+     "id": "obj-295"
+    }
    }
   ],
   "lines": [
@@ -12595,6 +12960,162 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-282",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-282",
+      0
+     ],
+     "destination": [
+      "obj-284",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-284",
+      0
+     ],
+     "destination": [
+      "obj-285",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-285",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-282",
+      0
+     ],
+     "destination": [
+      "obj-287",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-287",
+      0
+     ],
+     "destination": [
+      "obj-288",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-288",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-282",
+      0
+     ],
+     "destination": [
+      "obj-290",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-290",
+      0
+     ],
+     "destination": [
+      "obj-291",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-291",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-292",
+      0
+     ],
+     "destination": [
+      "obj-293",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-293",
+      0
+     ],
+     "destination": [
+      "obj-294",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-294",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -13116,6 +13637,21 @@
    "obj-279": [
     "Prog",
     "Prog",
+    0
+   ],
+   "obj-284": [
+    "Escuchar",
+    "Escuchar",
+    0
+   ],
+   "obj-287": [
+    "Emitir",
+    "Emitir",
+    0
+   ],
+   "obj-290": [
+    "Seguir",
+    "Seguir",
     0
    ]
   },

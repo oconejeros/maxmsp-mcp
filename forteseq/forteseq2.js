@@ -683,7 +683,12 @@ function rootSeqAdvance() {
 // sequence then carries it away from there -- asking for a root walk is the more deliberate of
 // the two requests, so it wins, and the mask stops describing what you hear.
 function effRoot() {
-	var base = (filterOn && maskFit && setIndex < setFit.length) ? setFit[setIndex] : root;
+	// While the listener owns the harmony the chord sounds in the key it was played in, and
+	// the Raiz dial steps aside rather than fighting it. Latch keeps that key; releasing in
+	// Sigue hands it straight back. The root SEQUENCE is added either way -- it carries the
+	// whole harmony around by design, and that does not stop being true because you played it.
+	var base = listenOn ? listenTr
+		: ((filterOn && maskFit && setIndex < setFit.length) ? setFit[setIndex] : root);
 	return base + rootSeqOffset;
 }
 
@@ -878,9 +883,127 @@ function advanceFavSeq() {
 
 function advanceSet() {
 	if (!order.length) return 0;
+	// Two ways the harmony stops being this device's to choose. A hand on the keys IS the
+	// harmony, and an engine following the bus is being told one.
+	if (listenMode && heldBits) return 0;
+	if (followOn) return 0;
 	if (favSeqOn) return advanceFavSeq();
 	if (tensLen > 0) return advanceByTension();
 	return advanceInOrder();
+}
+
+// --- listening ----------------------------------------------------------------------------
+// The catalogue holds every Tn-class of every cardinality, so ANY chord you can play is in it:
+// 351 classes times 12 transpositions covers all 4095 non-empty pitch-class sets. Identifying
+// what a hand is holding is therefore a lookup and never a search, and never fails.
+//
+// Built once from setBits. Where a set maps to the same sounding notes at several transpositions
+// -- the whole-tone scale at 0 and at 2, the diminished seventh at 0, 3, 6, 9 -- the first one
+// wins, which keeps a symmetrical chord from jumping key every time you replay it.
+var classOf = {};
+
+function buildClassIndex() {
+	classOf = {};
+	var n = 0;
+	for (var i = 0; i < sets.length; i++) {
+		for (var t = 0; t < 12; t++) {
+			var b = rotl12(setBits[i], t);
+			if (classOf[b] === undefined) { classOf[b] = [i, t]; n++; }
+		}
+	}
+	// Every one of the 4095 non-empty pitch-class sets, and no more: the catalogue holds no
+	// empty class, so bitmask 0 is never produced. Anything less means this ran before
+	// setBits was filled -- which it did, the first time -- and the only symptom would be a
+	// listener that silently never identifies anything.
+	if (n !== 4095) post("forteseq2: WARNING el indice de clases cubre " + n + " de 4095\n");
+}
+
+var listenMode = 0;      // 0 = off, 1 = follows the hand, 2 = latch
+var listenOn = 0;        // 1 while the listener owns the harmony
+var listenTr = 0;        // the transposition it was heard at
+var listenPrev = -1;     // where the sequence was when the hand went down
+var heldCount = filled(12, 0);   // per pitch class, how many keys are down
+var heldBits = 0;
+
+// Counted per pitch class rather than flagged, so a chord doubled at the octave survives one of
+// the two notes being lifted, and so a re-articulated note cannot clear a class still held.
+function noteheard(pitch, vel) {
+	var pc = ((Math.round(pitch) % 12) + 12) % 12;
+	var on = Math.round(vel) > 0;
+	if (on) heldCount[pc]++;
+	else if (heldCount[pc] > 0) heldCount[pc]--;
+	var bits = 0;
+	for (var i = 0; i < 12; i++) if (heldCount[i] > 0) bits |= (1 << i);
+	if (bits === heldBits) return;
+	var wasEmpty = (heldBits === 0);
+	heldBits = bits;
+	if (!listenMode) return;
+
+	if (on) {
+		// Only a note going DOWN takes a chord. Adding one to what is held extends the chord
+		// and is heard at once, which is what makes it feel responsive.
+		if (wasEmpty) listenPrev = setIndex;
+		var e = classOf[bits];
+		if (!e) return;                 // cannot happen; costs one branch to be sure of it
+		setIndex = e[0];
+		listenTr = e[1];
+		listenOn = 1;
+	} else if (bits) {
+		// A chord let go note by note must NOT be re-read on the way out. Reading the
+		// leftovers would mean latching a major triad usually caught whichever single note
+		// your finger left last -- which is what it did before this branch existed.
+		return;
+	} else if (listenMode === 1) {
+		// Sigue: the hand comes off and the sequence gets its harmony back, where it was.
+		listenOn = 0;
+		if (listenPrev >= 0) setIndex = listenPrev;
+	}
+	// Latch keeps both the set and the key, and the sequence carries on from there.
+	readoutInvalidate();
+}
+
+function setlisten(m) {
+	m = Math.round(m);
+	if (!isFinite(m) || m < 0 || m > 2) m = 0;
+	listenMode = m;
+	if (!m) { listenOn = 0; readoutInvalidate(); }
+}
+
+// Clears the hand without needing the note-offs to arrive -- which they do not, if the mode was
+// switched or the track re-armed mid-chord. The same reason the Hub has a PANIC button.
+function listenpanic() {
+	for (var i = 0; i < 12; i++) heldCount[i] = 0;
+	heldBits = 0;
+	listenOn = 0;
+	if (listenPrev >= 0 && listenMode === 1) setIndex = listenPrev;
+	readoutInvalidate();
+}
+
+// --- one harmony across several engines -----------------------------------------------------
+// emitVoices() drives every voice from a single setIndex, so one engine is one harmony in N
+// registers and a second device has always been a second harmony. These two close that: the
+// leader says which class it is on, and a follower on the same bus takes it. Only which SET
+// travels -- root, octave, voicing and register stay local, because two engines in different
+// keys or registers over one harmony is the point of having two.
+var bcastOn = 0;
+var followOn = 0;
+
+function setbroadcast(b) { bcastOn = b ? 1 : 0; }
+
+function setfollow(f) {
+	followOn = f ? 1 : 0;
+	readoutInvalidate();
+}
+
+// A follower does not re-broadcast -- it only ever sends from its own choosing -- so there is no
+// loop to break here. The filter is not consulted for the same reason the progression does not:
+// something outside this device already decided.
+function followset(b, i) {
+	if (!followOn || Math.round(b) !== busId) return;
+	i = Math.round(i);
+	if (!isFinite(i) || i < 0 || i >= sets.length || i === setIndex) return;
+	setIndex = i;
+	readoutInvalidate();
 }
 
 // The harmony follows the reading -- a set change when the pass ends, how the device has always
@@ -949,6 +1072,9 @@ function emitSetReadouts(displayPcs) {
 		favEcho = setIndex;
 		outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
 	}
+	// The memo above is what makes this affordable: it fires once per harmonic change, not
+	// once per note, so a follower hears the harmony move and nothing else.
+	if (bcastOn) outlet(4, ["setbcast", busId, setIndex]);
 }
 
 // The circle-of-fifths feed: the current set's pitch classes at sounding transposition. Same story
@@ -1159,7 +1285,8 @@ function setfavlist() {
 
 buildSets();
 buildForte();
-buildSetLabels();
+buildSetLabels();   // fills setBits, which the class index reads
+buildClassIndex();
 buildOrder();
 buildFilter();
 
@@ -1761,6 +1888,9 @@ function storepreset(slot) {
 		tensShape: tensShape,
 		favSeqOn: favSeqOn,
 		favSeq: favSeq.slice(),
+		listenMode: listenMode,
+		bcastOn: bcastOn,
+		followOn: followOn,
 		groupVelMin: groupVelMin.slice(),
 		groupVelMax: groupVelMax.slice(),
 		groupDurDiv: groupDurDiv.slice(),
@@ -1866,6 +1996,10 @@ function recallpreset(slot) {
 	tensPos = 0;
 	favSeqOn = p.favSeqOn || 0;
 	if (p.favSeq) favSetAll(p.favSeq, 0);
+	listenMode = p.listenMode || 0;
+	bcastOn = p.bcastOn || 0;
+	followOn = p.followOn || 0;
+	listenpanic();
 	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
 	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
 	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
@@ -1936,6 +2070,9 @@ function recallpreset(slot) {
 	outlet(4, ["bpm", currentBpm]);
 	outlet(4, ["accentcycle", accentCycle]);
 	outlet(4, ["accenttie", accentTieToN]);
+	outlet(4, ["listen", listenMode]);
+	outlet(4, ["broadcast", bcastOn]);
+	outlet(4, ["follow", followOn]);
 	outlet(4, ["link", linkMin]);
 	outlet(4, ["tension", tensLen]);
 	outlet(4, ["tenshape", tensShape]);

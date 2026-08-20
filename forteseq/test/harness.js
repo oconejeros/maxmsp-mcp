@@ -458,6 +458,51 @@ function runScenario(e) {
 	c.setharmrate(0);
 	mark('camino armonico apagado');
 	run(16);
+
+	// --- escuchar y responder -------------------------------------------------------------
+	// A hand on the keys IS the harmony, so these blocks are about what the sequence does while
+	// it is being told what to play and what it does when it is let go.
+	c.setharmrate(4);
+	const chord = (pitches, vel) => pitches.forEach((p) => c.noteheard(p, vel));
+	c.setlisten(1);
+	chord([60, 64, 67], 100);           // do mayor
+	mark('escuchar Sigue: sosteniendo una triada mayor');
+	run(32);
+	chord([60, 64, 67], 0);
+	mark('escuchar Sigue: soltada, la secuencia vuelve');
+	run(24);
+	c.setlisten(2);
+	chord([62, 65, 69, 72], 100);       // re menor con septima
+	chord([62, 65, 69, 72], 0);
+	mark('escuchar Latch: agarrada y soltada');
+	run(32);
+	// A chord let go note by note must not be re-read on the way out, and a doubled octave must
+	// not clear a pitch class that is still down. Both are silent failures if they regress.
+	chord([60, 64, 67, 72], 100);
+	c.noteheard(72, 0);
+	c.noteheard(64, 0);
+	mark('escuchar Latch: soltando de a una');
+	run(16);
+	c.listenpanic();
+	c.setlisten(0);
+	mark('escuchar apagado despues del panic');
+	run(16);
+	// Following: the clock stops choosing the harmony and the bus provides it.
+	c.setfollow(1);
+	mark('siguiendo el bus, sin que llegue nada');
+	run(24);
+	for (const s of [300, 12, 175]) {
+		c.followset(c.busId, s);
+		mark('el bus manda el set ' + s);
+		run(16);
+	}
+	c.followset(c.busId + 1, 40);       // otro bus: no tiene que moverse
+	mark('un set de otro bus, que se ignora');
+	run(16);
+	c.setfollow(0);
+	c.setharmrate(0);
+	mark('escuchar y responder apagados');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------
