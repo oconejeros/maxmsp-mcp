@@ -2101,6 +2101,25 @@
      "text": "prepend setgroupdur 1",
      "varname": "fs2_fig_a_prep"
     }
+   },
+   {
+    "box": {
+     "id": "obj-66",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "pg_accent_prep",
+     "patching_rect": [
+      692.0,
+      614.0,
+      132.0,
+      22.0
+     ],
+     "text": "prepend setaccentgrid"
+    }
    }
   ],
   "lines": [
@@ -2827,18 +2846,6 @@
    {
     "patchline": {
      "source": [
-      "obj-60",
-      0
-     ],
-     "destination": [
-      "obj-3",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
       "obj-61",
       0
      ],
@@ -3300,6 +3307,30 @@
      ],
      "destination": [
       "obj-44",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-60",
+      0
+     ],
+     "destination": [
+      "obj-66",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-66",
+      0
+     ],
+     "destination": [
+      "obj-3",
       0
      ]
     }

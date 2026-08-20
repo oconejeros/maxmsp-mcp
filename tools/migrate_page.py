@@ -16,8 +16,11 @@ below is only a name and a rectangle:
 
   * HELPERS -- the prepends and action messages downstream of the panel. Asserted to be fed ONLY
     from inside it, which is what lets the whole panel leave through a single outlet.
-  * ADOPTED -- boxes like the accent-grid and vector `unpack`s, which sit between fs2_echo and the
-    panel and serve nothing else.
+  * ADOPTED -- boxes outside the rectangle that serve nothing but it: the accent-grid and vector
+    `unpack`s hanging off fs2_echo, and the `prepend set` that drives a readout comment.
+  * EXTRA INLETS -- anything else in the parent that still has to reach inside (the js outlets that
+    feed the readouts). One inlet per source outlet, placed left to right, because a bpatcher
+    orders its inlets by the horizontal position of the `inlet` objects.
   * The echo map -- read off fs2_echo's own arguments and cords, so the page's internal route gets
     exactly the tags that reached this panel before and no others. fs2_echo keeps its arguments;
     the outlets the page took over simply stop having anything wired to them.
@@ -35,9 +38,11 @@ import amxd
 DEVICE = os.path.join('forteseq', 'FORTESEQ2.amxd')
 
 PAGES = {
-    # name: (file, x_min, x_max_exclusive, y_max_exclusive, page width, page height)
-    'musical': ('fs2page_musical.maxpat', 1130.0, 1e9, 1e9, 312.0, 159.0),
-    'artic':   ('fs2page_artic.maxpat',    856.0, 1125.0, 146.0, 258.0, 159.0),
+    # name: (file, x_min, x_max_excl, y_min, y_max_excl, page width, page height)
+    'musical': ('fs2page_musical.maxpat', 1130.0, 1e9,   -1e9, 1e9,  312.0, 159.0),
+    'artic':   ('fs2page_artic.maxpat',    856.0, 1125.0, -1e9, 146.0, 258.0, 159.0),
+    'teoria':  ('fs2page_teoria.maxpat',   756.0, 1e9,    140.0, 1e9,  365.0,  18.0),
+    'armonia': ('fs2page_armonia.maxpat',  512.0, 856.0, -1e9, 126.0, 340.0, 119.0),
 }
 
 
@@ -47,7 +52,7 @@ def main():
         return
     key = sys.argv[1]
     apply_it = '--apply' in sys.argv
-    fname, xmin, xmax, ymax, PW, PH = PAGES[key]
+    fname, xmin, xmax, ymin, ymax, PW, PH = PAGES[key]
     page_path = os.path.join('forteseq', fname)
 
     data, s, e, doc = amxd.load(DEVICE)
@@ -62,37 +67,66 @@ def main():
         if b.get('maxclass') == 'bpatcher':
             continue                       # a page already
         r = b.get('presentation_rect')
-        if b.get('presentation') and r and xmin <= r[0] < xmax and r[1] < ymax:
+        if b.get('presentation') and r and xmin <= r[0] < xmax and ymin <= r[1] < ymax:
             region.add(i)
     assert region, 'the rectangle caught nothing'
 
     echo = byvar['fs2_echo']
     echo_args = box[echo]['text'].split()[1:]
 
-    # boxes between fs2_echo and the panel that serve nothing else
-    adopted = set()
-    for c in cords:
-        if c['source'][0] == echo and c['destination'][0] not in region:
-            mid = c['destination'][0]
-            outs = {x['destination'][0] for x in cords if x['source'][0] == mid}
-            if outs and outs <= region:
-                adopted.add(mid)
+    init_box = byvar['fs2_harm_init']
 
-    # downstream helpers, which must be fed only from inside
-    helpers = set()
-    for c in cords:
-        sid, did = c['source'][0], c['destination'][0]
-        if sid in region | adopted and did not in region | adopted:
-            if did == echo:
+    # boxes upstream of the panel that serve nothing else: the unpacks hanging off fs2_echo, and
+    # the `prepend set` that drives a readout. Grown to a fixed point so a chain comes along whole.
+    adopted = set()
+    while True:
+        grew = False
+        for mid in box:
+            if mid in region or mid in adopted or mid in (echo, init_box):
                 continue
-            feeders = {x['source'][0] for x in cords if x['destination'][0] == did}
-            assert feeders <= region | adopted, \
-                '%s is also fed from outside: %s' % (nm(did), [nm(f) for f in feeders - region - adopted])
-            helpers.add(did)
+            outs = {x['destination'][0] for x in cords if x['source'][0] == mid}
+            if outs and outs <= region | adopted:
+                adopted.add(mid)
+                grew = True
+        if not grew:
+            break
+
+    # Downstream helpers: a box comes along when everything feeding it is already inside. Grown to
+    # a fixed point, because these run in chains -- a `pak` of toggles feeds the `prepend` that
+    # names the message, and taking only the first hop leaves the prepend orphaned in the parent
+    # while the page shouts a bare list at the js. (That is exactly what happened to the accent
+    # grid in 545da81.) Whatever the page still reaches afterwards is its real boundary, and the
+    # only thing it is allowed to be is the js itself.
+    helpers = set()
+    while True:
+        inside = region | adopted | helpers
+        grew = False
+        for c in cords:
+            sid, did = c['source'][0], c['destination'][0]
+            if sid in inside and did not in inside:
+                feeders = {x['source'][0] for x in cords if x['destination'][0] == did}
+                if feeders <= inside:
+                    helpers.add(did)
+                    grew = True
+        if not grew:
+            break
+    inside = region | adopted | helpers
+    boundary = {c['destination'][0] for c in cords
+                if c['source'][0] in inside and c['destination'][0] not in inside}
+    assert boundary <= {byvar['fs2_gen']}, \
+        'la pagina sale hacia %s, que no es el js' % [nm(i) for i in boundary]
 
     moving = region | adopted | helpers
     params_moving = [i for i in moving
                      if (box[i].get('saved_attribute_attributes') or {}).get('valueof')]
+
+    # whatever else in the parent still has to reach inside: one extra inlet per source outlet
+    extern = []
+    for c in cords:
+        sid, so = c['source']
+        if c['destination'][0] in moving and sid not in moving and sid not in (echo, init_box):
+            if (sid, so) not in extern:
+                extern.append((sid, so))
 
     X0 = min(box[i]['presentation_rect'][0] for i in region)
     Y0 = min(box[i]['presentation_rect'][1] for i in region)
@@ -102,6 +136,8 @@ def main():
           % (len(adopted), ', '.join(sorted(nm(i) for i in adopted)) or '-'))
     print('auxiliares  %3d (prepends y mensajes aguas abajo)' % len(helpers))
     print('se mudan    %3d cajas, de las cuales %d son parametros' % (len(moving), len(params_moving)))
+    print('entradas    %3d extra: %s'
+          % (len(extern), ', '.join('%s out%d' % (nm(s), o) for s, o in extern) or '-'))
     print('origen      x=%.0f y=%.0f, pagina de %.0fx%.0f' % (X0, Y0, PW, PH))
 
     # ---- build the page ---------------------------------------------------------------------
@@ -141,6 +177,14 @@ def main():
              'text': 'route ' + ' '.join(tags), 'varname': 'pg_echo'})
         lines.append({'patchline': {'source': ['obj-2', 0], 'destination': [rt, 0]}})
 
+    xin = {}
+    for k, (sid, so) in enumerate(extern):
+        iid = 'obj-%d' % (n + 2 + k)
+        add({'id': iid, 'maxclass': 'inlet', 'numinlets': 0, 'numoutlets': 1, 'outlettype': [''],
+             'patching_rect': [160.0 + k * 70.0, 20.0, 30.0, 30.0],
+             'comment': '%s, salida %d' % (nm(sid), so)})
+        xin[(sid, so)] = iid
+
     for k, old in enumerate(order):
         b = json.loads(json.dumps(box[old]))
         b['id'] = newid[old]
@@ -174,6 +218,11 @@ def main():
         lines.append({'patchline': {'source': ['obj-4', 0], 'destination': [t, 0]}})
     for k, tag in enumerate(tags):
         lines.append({'patchline': {'source': [rt, k], 'destination': [echo_dst[tag], 0]}})
+    for c in cords:
+        key_ = (c['source'][0], c['source'][1])
+        if key_ in xin and c['destination'][0] in newid:
+            lines.append({'patchline': {'source': [xin[key_], 0],
+                                        'destination': [newid[c['destination'][0]], c['destination'][1]]}})
     print('init        %d controles reciben el outputvalue de %d parametros'
           % (len(init), len(params_moving)))
 
@@ -195,14 +244,16 @@ def main():
     P['boxes'] = [b for b in P['boxes'] if b['box']['id'] not in moving]
     P['boxes'].append({'box': {
         'id': bpid, 'maxclass': 'bpatcher', 'name': fname,
-        'numinlets': 2, 'numoutlets': 1, 'outlettype': [''], 'offset': [0.0, 0.0],
+        'numinlets': 2 + len(extern), 'numoutlets': 1, 'outlettype': [''], 'offset': [0.0, 0.0],
         'varname': 'fs2_page_' + key,
         'patching_rect': [X0, 560.0, PW, PH],
         'presentation': 1, 'presentation_rect': [X0, Y0, PW, PH]}})
     mk = lambda a, b_, c, d: {'patchline': {'source': [a, b_], 'destination': [c, d]}}
-    kept.append(mk(byvar['fs2_harm_init'], 0, bpid, 0))
+    kept.append(mk(init_box, 0, bpid, 0))
     kept.append(mk(byvar['fs2_gen'], 4, bpid, 1))
     kept.append(mk(bpid, 0, byvar['fs2_gen'], 0))
+    for k, (sid, so) in enumerate(extern):
+        kept.append(mk(sid, so, bpid, 2 + k))
 
     PP = P['parameters']
     for i in params_moving:
