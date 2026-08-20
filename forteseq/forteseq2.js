@@ -146,6 +146,19 @@ var accentCycle = 4;         // how many leading cells of accentGrid are in play
 var accentTieToN = 0;        // 1 = ignore accentCycle and use the current set's cardinality instead
 var voicePhase = filled(MAX_VOICES, 0);  // per-voice read offset into the grid, so voices accent at different points
 
+// Per-voice rhythm. The accent grid decides how loud a voice speaks; this decides whether it
+// speaks at all. Each voice carries its own E(k, n) and is silent on the cells that are not
+// onsets -- so four voices on the same clock, given lengths that do not divide each other, stop
+// being four copies of one rhythm and start being counterpoint. Coprime lengths are the whole
+// point: 3 against 5 against 8 realigns once every 120 steps.
+//
+// Length 0 means no pattern at all, which is what every voice did before this existed, and is
+// why there is no separate on/off per voice: a rhythm of no length is no rhythm.
+var voiceRhyLen = filled(MAX_VOICES, 0);   // n: cells in this voice's pattern, 0 = sounds always
+var voiceRhyK = filled(MAX_VOICES, 1);     // k: onsets spread over those cells
+var voiceRhyRot = filled(MAX_VOICES, 0);   // where the pattern starts, which is what offsets voices
+var voiceRhyPat = [];                      // the resolved pattern, rebuilt only when one of the three moves
+
 var GROUP_NORMAL = 0, GROUP_ACCENT = 1;
 var groupVelMin = [55, 95];    // low edge of each group's velocity band
 var groupVelMax = [80, 115];   // high edge; velocity is uniform-random between the two
@@ -1581,6 +1594,9 @@ function storepreset(slot) {
 		euclidK: euclidK,
 		euclidRot: euclidRot,
 		voicePhase: voicePhase.slice(),
+		voiceRhyLen: voiceRhyLen.slice(),
+		voiceRhyK: voiceRhyK.slice(),
+		voiceRhyRot: voiceRhyRot.slice(),
 		groupVelMin: groupVelMin.slice(),
 		groupVelMax: groupVelMax.slice(),
 		groupDurDiv: groupDurDiv.slice(),
@@ -1676,6 +1692,10 @@ function recallpreset(slot) {
 	euclidK = p.euclidK || 4;
 	euclidRot = p.euclidRot || 0;
 	voicePhase = padVoices(p.voicePhase, 0);
+	voiceRhyLen = padVoices(p.voiceRhyLen, 0);
+	voiceRhyK = padVoices(p.voiceRhyK, 1);
+	voiceRhyRot = padVoices(p.voiceRhyRot, 0);
+	rebuildAllVoiceRhythms();
 	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
 	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
 	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
@@ -1782,6 +1802,9 @@ function recallpreset(slot) {
 		outlet(4, ["v" + (v + 1) + "grado", voiceDegOffset[v]]);
 		outlet(4, ["v" + (v + 1) + "div", voiceDiv[v]]);
 		outlet(4, ["v" + (v + 1) + "desf", voiceTimeOffset[v]]);
+		outlet(4, ["v" + (v + 1) + "rlen", voiceRhyLen[v]]);
+		outlet(4, ["v" + (v + 1) + "rpuls", voiceRhyK[v]]);
+		outlet(4, ["v" + (v + 1) + "rgir", voiceRhyRot[v]]);
 	}
 	post("preset: recalled slot " + slot + "\n");
 }
@@ -1876,6 +1899,9 @@ function emitVoices(noteData) {
 	var card = curSet ? curSet.length : 1;
 	for (var v = 0; v < NUM_VOICES; v++) {
 		if (voiceMute[v] || voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
+		// The voice's own pattern, read against the shared step because here every voice is
+		// handed the same one. Off-cells drop out before any of the pitch work is done.
+		if (!voiceSoundsAt(v, patternStep)) { monScratch[v] = MON_SILENT; continue; }
 		var list = voiceOctaveList[v];
 		var oct = list[patternStep % list.length];
 		var shift = oct * 12 + effRoot() + masterOctave * 12;
@@ -2200,6 +2226,17 @@ function emitVoicesIndependent(pcs, n) {
 		if (((patternStep - 1) % div) !== 0) { monScratch[v] = MON_SILENT; continue; }
 
 		var pos = voicePos[v];
+		// The pattern is read against the steps this voice is actually given, not against the
+		// clock -- with a divider of 3 the voice sees every third step, and its rhythm counts
+		// those. Reading it against the raw step instead would let a divider and a pattern land
+		// on disjoint cells and silence the voice for good, which is a trap and not a feature.
+		// The cursor still advances: an off-cell is a gate, like a mute or a rest, so the voice
+		// keeps its place in the harmony instead of playing a slower melody.
+		if (!voiceSoundsAt(v, (patternStep - 1) / div)) {
+			voicePos[v] = pos + 1;
+			monScratch[v] = MON_SILENT;
+			continue;
+		}
 		// Acordes: the cursor is frozen at 0, so the voice holds its degree and the chord changes
 		// only when the set does -- four voices at offsets 0,1,2,3 read as a four-part chorale.
 		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
@@ -2492,6 +2529,66 @@ function setvoicephase(v, p) {
 	if (p < 0) p = 0;
 	if (p > ACCENT_MAX - 1) p = ACCENT_MAX - 1;
 	voicePhase[idx] = p;
+}
+
+// --- per-voice rhythm -------------------------------------------------------------------
+
+// Resolved once per change rather than once per step: bjorklund() allocates, and a voice's
+// pattern only moves when someone turns one of its three dials.
+function rebuildVoiceRhythm(v) {
+	var n = voiceRhyLen[v];
+	if (!(n >= 1)) { voiceRhyPat[v] = null; return; }
+	var k = voiceRhyK[v] > n ? n : voiceRhyK[v];
+	var pat = bjorklund(k, n);
+	var r = ((voiceRhyRot[v] % n) + n) % n;
+	var out = [];
+	for (var i = 0; i < n; i++) out.push(pat[(i + r) % n]);
+	voiceRhyPat[v] = out;
+}
+
+function rebuildAllVoiceRhythms() {
+	for (var v = 0; v < MAX_VOICES; v++) rebuildVoiceRhythm(v);
+}
+
+// Does this voice speak on this cell of its own pattern? No pattern means yes, always, which
+// keeps every voice exactly where it was before per-voice rhythm existed.
+function voiceSoundsAt(v, idx) {
+	var pat = voiceRhyPat[v];
+	if (!pat) return 1;
+	var n = pat.length;
+	var i = Math.round(idx) % n;
+	if (i < 0) i += n;
+	return pat[i];
+}
+
+function setvoiceeuclen(v, n) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	n = Math.round(n);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > ACCENT_MAX) n = ACCENT_MAX;
+	voiceRhyLen[idx] = n;
+	rebuildVoiceRhythm(idx);
+}
+
+function setvoiceeuck(v, k) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	k = Math.round(k);
+	if (!isFinite(k) || k < 0) k = 0;
+	if (k > ACCENT_MAX) k = ACCENT_MAX;
+	voiceRhyK[idx] = k;
+	rebuildVoiceRhythm(idx);
+}
+
+function setvoiceeucrot(v, r) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	r = Math.round(r);
+	if (!isFinite(r) || r < 0) r = 0;
+	if (r > ACCENT_MAX - 1) r = ACCENT_MAX - 1;
+	voiceRhyRot[idx] = r;
+	rebuildVoiceRhythm(idx);
 }
 
 // group index for every setter below: 0 = normal, 1 = accent. Returns -1 for anything else

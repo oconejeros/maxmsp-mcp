@@ -6941,6 +6941,934 @@
      ],
      "id": "obj-234"
     }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "rt_init",
+     "patching_rect": [
+      20.0,
+      3700.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-235"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Larg",
+     "presentation": 1,
+     "presentation_rect": [
+      40.0,
+      750.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      60.0,
+      3740.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-236"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Puls",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      750.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      120.0,
+      3740.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-237"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Gir",
+     "presentation": 1,
+     "presentation_rect": [
+      160.0,
+      750.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      180.0,
+      3740.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-238"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "V1",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      769.0,
+      30.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3802.0,
+      30.0,
+      18.0
+     ],
+     "id": "obj-239"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v1_larg",
+     "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
+     "presentation": 1,
+     "presentation_rect": [
+      40.0,
+      770.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      60.0,
+      3802.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V1 Larg",
+       "parameter_shortname": "V1 Larg",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-240"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuclen 1",
+     "patching_rect": [
+      180.0,
+      3930.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-241"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v1_puls",
+     "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      770.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      3802.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V1 Puls",
+       "parameter_shortname": "V1 Puls",
+       "parameter_type": 1,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-242"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuck 1",
+     "patching_rect": [
+      420.0,
+      3930.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-243"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v1_gir",
+     "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
+     "presentation": 1,
+     "presentation_rect": [
+      160.0,
+      770.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      180.0,
+      3802.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V1 Gir",
+       "parameter_shortname": "V1 Gir",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 15.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-244"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeucrot 1",
+     "patching_rect": [
+      660.0,
+      3930.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-245"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "V2",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      791.0,
+      30.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3824.0,
+      30.0,
+      18.0
+     ],
+     "id": "obj-246"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v2_larg",
+     "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
+     "presentation": 1,
+     "presentation_rect": [
+      40.0,
+      792.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      60.0,
+      3824.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V2 Larg",
+       "parameter_shortname": "V2 Larg",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-247"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuclen 2",
+     "patching_rect": [
+      180.0,
+      3960.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-248"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v2_puls",
+     "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      792.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      3824.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V2 Puls",
+       "parameter_shortname": "V2 Puls",
+       "parameter_type": 1,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-249"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuck 2",
+     "patching_rect": [
+      420.0,
+      3960.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-250"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v2_gir",
+     "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
+     "presentation": 1,
+     "presentation_rect": [
+      160.0,
+      792.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      180.0,
+      3824.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V2 Gir",
+       "parameter_shortname": "V2 Gir",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 15.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-251"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeucrot 2",
+     "patching_rect": [
+      660.0,
+      3960.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-252"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "V3",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      813.0,
+      30.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3846.0,
+      30.0,
+      18.0
+     ],
+     "id": "obj-253"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v3_larg",
+     "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
+     "presentation": 1,
+     "presentation_rect": [
+      40.0,
+      814.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      60.0,
+      3846.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V3 Larg",
+       "parameter_shortname": "V3 Larg",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-254"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuclen 3",
+     "patching_rect": [
+      180.0,
+      3990.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-255"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v3_puls",
+     "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      814.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      3846.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V3 Puls",
+       "parameter_shortname": "V3 Puls",
+       "parameter_type": 1,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-256"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuck 3",
+     "patching_rect": [
+      420.0,
+      3990.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-257"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v3_gir",
+     "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
+     "presentation": 1,
+     "presentation_rect": [
+      160.0,
+      814.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      180.0,
+      3846.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V3 Gir",
+       "parameter_shortname": "V3 Gir",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 15.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-258"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeucrot 3",
+     "patching_rect": [
+      660.0,
+      3990.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-259"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "V4",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      835.0,
+      30.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3868.0,
+      30.0,
+      18.0
+     ],
+     "id": "obj-260"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v4_larg",
+     "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
+     "presentation": 1,
+     "presentation_rect": [
+      40.0,
+      836.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      60.0,
+      3868.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V4 Larg",
+       "parameter_shortname": "V4 Larg",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-261"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuclen 4",
+     "patching_rect": [
+      180.0,
+      4020.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-262"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v4_puls",
+     "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      836.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      3868.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V4 Puls",
+       "parameter_shortname": "V4 Puls",
+       "parameter_type": 1,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-263"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeuck 4",
+     "patching_rect": [
+      420.0,
+      4020.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-264"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "rt_v4_gir",
+     "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
+     "presentation": 1,
+     "presentation_rect": [
+      160.0,
+      836.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      180.0,
+      3868.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V4 Gir",
+       "parameter_shortname": "V4 Gir",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 15.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     },
+     "id": "obj-265"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setvoiceeucrot 4",
+     "patching_rect": [
+      660.0,
+      4020.0,
+      220.0,
+      22.0
+     ],
+     "id": "obj-266"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "rt_nota",
+     "text": "Cada voz lleva su propio E(Puls, Larg). La reja de acentos decide con cuanta fuerza habla una voz; esto decide si habla. Una celda apagada es una compuerta, no una pausa: el cursor de la voz igual avanza, asi que la voz guarda su lugar en la armonia en vez de tocar una melodia mas lenta. Con Indep encendido el patron se lee contra los pasos que el divisor le entrega a la voz, no contra el reloj, para que un divisor y un patron no puedan caer en celdas distintas y callarla para siempre.",
+     "presentation": 1,
+     "presentation_rect": [
+      220.0,
+      752.0,
+      292.0,
+      110.0
+     ],
+     "patching_rect": [
+      600.0,
+      3740.0,
+      292.0,
+      110.0
+     ],
+     "id": "obj-267"
+    }
    }
   ],
   "lines": [
@@ -10687,6 +11615,450 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-235",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-240",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-240",
+      0
+     ],
+     "destination": [
+      "obj-241",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-241",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-242",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-242",
+      0
+     ],
+     "destination": [
+      "obj-243",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-243",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-244",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-244",
+      0
+     ],
+     "destination": [
+      "obj-245",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-245",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-247",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-247",
+      0
+     ],
+     "destination": [
+      "obj-248",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-248",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-249",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-249",
+      0
+     ],
+     "destination": [
+      "obj-250",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-250",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-251",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-251",
+      0
+     ],
+     "destination": [
+      "obj-252",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-252",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-254",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-254",
+      0
+     ],
+     "destination": [
+      "obj-255",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-255",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-256",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-256",
+      0
+     ],
+     "destination": [
+      "obj-257",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-257",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-258",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-258",
+      0
+     ],
+     "destination": [
+      "obj-259",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-259",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-261",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-261",
+      0
+     ],
+     "destination": [
+      "obj-262",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-262",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-263",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-263",
+      0
+     ],
+     "destination": [
+      "obj-264",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-264",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-265",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-265",
+      0
+     ],
+     "destination": [
+      "obj-266",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-266",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -11128,6 +12500,66 @@
    "obj-216": [
     "Caida",
     "Caida",
+    0
+   ],
+   "obj-240": [
+    "V1 Larg",
+    "V1 Larg",
+    0
+   ],
+   "obj-242": [
+    "V1 Puls",
+    "V1 Puls",
+    0
+   ],
+   "obj-244": [
+    "V1 Gir",
+    "V1 Gir",
+    0
+   ],
+   "obj-247": [
+    "V2 Larg",
+    "V2 Larg",
+    0
+   ],
+   "obj-249": [
+    "V2 Puls",
+    "V2 Puls",
+    0
+   ],
+   "obj-251": [
+    "V2 Gir",
+    "V2 Gir",
+    0
+   ],
+   "obj-254": [
+    "V3 Larg",
+    "V3 Larg",
+    0
+   ],
+   "obj-256": [
+    "V3 Puls",
+    "V3 Puls",
+    0
+   ],
+   "obj-258": [
+    "V3 Gir",
+    "V3 Gir",
+    0
+   ],
+   "obj-261": [
+    "V4 Larg",
+    "V4 Larg",
+    0
+   ],
+   "obj-263": [
+    "V4 Puls",
+    "V4 Puls",
+    0
+   ],
+   "obj-265": [
+    "V4 Gir",
+    "V4 Gir",
     0
    ]
   },

@@ -382,6 +382,37 @@ function runScenario(e) {
 	c.setsub(1);
 	mark('vuelta a sub=1');
 	run(16);
+
+	// --- ritmo por voz ------------------------------------------------------------------
+	// Coprime lengths, which is the case the feature exists for: 3 against 5 against 7 against
+	// 8 only realigns after 840 steps, so every step in this block is a different combination
+	// of which voices speak. Run long enough that a rebuild bug shows up as a stuck voice.
+	c.setvoiceeuclen(1, 3); c.setvoiceeuck(1, 2);
+	c.setvoiceeuclen(2, 5); c.setvoiceeuck(2, 3);
+	c.setvoiceeuclen(3, 7); c.setvoiceeuck(3, 3);
+	c.setvoiceeuclen(4, 8); c.setvoiceeuck(4, 5);
+	mark('ritmo por voz, largos coprimos 3/5/7/8');
+	run(64);
+	// Rotation is what puts two voices with the same pattern out of phase with each other.
+	for (let v = 1; v <= 4; v++) c.setvoiceeucrot(v, v);
+	mark('ritmo por voz, girado');
+	run(32);
+	// Same block on the independent path, where the pattern is read against the steps the
+	// divider actually hands the voice rather than against the clock.
+	c.setvoiceindep(1);
+	c.setvoicediv(2, 2); c.setvoicediv(3, 3);
+	mark('ritmo por voz + indep + divisores');
+	run(48);
+	c.setvoicediv(2, 1); c.setvoicediv(3, 1);
+	c.setvoiceindep(0);
+	// k >= n is every cell, k = 0 is none: the two edges that must not throw.
+	c.setvoiceeuclen(1, 4); c.setvoiceeuck(1, 9);
+	c.setvoiceeuclen(2, 4); c.setvoiceeuck(2, 0);
+	mark('ritmo por voz, bordes k>=n y k=0');
+	run(16);
+	for (let v = 1; v <= 4; v++) { c.setvoiceeuclen(v, 0); c.setvoiceeuck(v, 1); c.setvoiceeucrot(v, 0); }
+	mark('ritmo por voz apagado');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------
