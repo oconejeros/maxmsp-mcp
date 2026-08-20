@@ -25,7 +25,6 @@ outlets = 8;   // 0 = note events (see emitNote), 1 = current set index (1-351),
 // from how often notes arrive. (An older comment here claimed it was kept "purely for presets";
 // that stopped being true when articulation started reading it.)
 var currentBpm = 120;
-var presets = {};        // in-memory preset store: slot -> captured state object
 
 var MAX_VOICES = 16;    // hard ceiling: every per-voice array is allocated at this size once, so
                         // changing NUM_VOICES never reallocates and never invalidates a stored preset
@@ -592,14 +591,16 @@ var favSaveWarned = 0;
 
 // Next to the .amxd, not wherever Max happens to think the current folder is. A bare filename is
 // only resolved by the search path when READING; writing one would land somewhere unpredictable.
-function favPath() {
+function devPath(file) {
 	var fp = "";
 	try { fp = this.patcher.filepath; } catch (e) { fp = ""; }
-	if (!fp) return FAV_FILE;
+	if (!fp) return file;
 	var cut = fp.lastIndexOf("/");
 	if (cut < 0) cut = fp.lastIndexOf("\\");
-	return cut >= 0 ? fp.slice(0, cut + 1) + FAV_FILE : FAV_FILE;
+	return cut >= 0 ? fp.slice(0, cut + 1) + file : file;
 }
+
+function favPath() { return devPath(FAV_FILE); }
 
 function savefavs() {
 	if (typeof File === "undefined") return;   // fuera de Max no hay disco, y los tests corren igual
@@ -1294,6 +1295,7 @@ function loadbang() {
 	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
 		", " + NUM_VOICES + "/" + MAX_VOICES + " voices\n");
 	loadfavs();
+	loadpresets();
 }
 
 function setmode(m) {
@@ -2018,306 +2020,244 @@ function setbpmtrack(b) {
 	currentBpm = b;
 }
 
+// --- presets ------------------------------------------------------------------------------------
+// What replaced the ~190 lines that used to sit here.
+//
+// The old store was a JavaScript object mirroring every setting field by field. It had three
+// problems and only the first was obvious. It lived in memory, so it did not survive reopening
+// the Live set. It needed editing in two more places for every parameter added, on top of the
+// setter and the three registries inside the .amxd. And -- the one that would have bitten
+// hardest -- recalling a slot moved the ENGINE without moving the CONTROLS, so every dial in the
+// device would have been left lying about what was playing.
+//
+// Live already knows all of these values: they are device parameters, it saves them with the set
+// and it can set them back. So a preset here is a list of (name, value) read through the Live API
+// and written next to the .amxd, exactly where savefavs() puts the favourites -- which makes the
+// slots follow you from one set to the next instead of being trapped inside one song.
+//
+// Recall sets the parameters and then asks the controls to speak. That second half is the whole
+// trick: setting a parameter through the API changes what a control DISPLAYS but does not fire
+// its outlet, so the engine would never hear about it. `outputvalue` is the message that makes a
+// live.* object emit what it holds, and the device already fans that message out to every control
+// -- it is how the engine gets loaded when the set opens. Recall simply runs that path again.
+var PRESET_FILE = "forteseq2_presets.txt";
+var PRESET_SLOTS = 8;
+var presetSlot = 1;
+var presetBank = [];      // slot -> {name: value}; index 0 goes unused so slots read as they look
+var presetIdOf = null;    // parameter longname -> Live API id, built once
+var presetApi = null;     // ONE LiveAPI object, re-pointed by id rather than 183 of them
+
+// Deliberately kept out of every slot. Run is the transport, and a preset that starts or stops
+// the sequencer is a preset you cannot audition. Bus is an address rather than a sound, which is
+// the same reason the old store left it out. Trig is momentary. Pagina is only where you happen
+// to be looking, and Slot is the control you are about to press.
+var PRESET_SKIP = { "Run": 1, "Bus": 1, "Trig": 1, "Pagina": 1, "Slot": 1 };
+
+// Builds the name -> id map once. Doing it lazily rather than at load time matters: the device's
+// own parameters are not all reachable through the API at the instant the js object is created,
+// and a map built too early would be short without ever saying so.
+function presetScan() {
+	if (presetIdOf) return presetIdOf;
+	if (typeof LiveAPI === "undefined") return null;   // fuera de Live no hay API, y los tests corren igual
+	var map = {}, n = 0;
+	try {
+		var dev = new LiveAPI(null, "this_device");
+		var ids = dev.get("parameters");   // ["id", 1, "id", 2, ...]
+		presetApi = new LiveAPI(null);
+		for (var i = 0; i < ids.length; i++) {
+			if (typeof ids[i] !== "number") continue;
+			presetApi.id = ids[i];
+			var raw = presetApi.get("name");
+			// A name with a space in it comes back as several atoms, so joining is not optional:
+			// taking [0] would turn "Oct Maestra" into "Oct" and collide with anything shorter.
+			// Duck-typed rather than tested with `instanceof Array`, for the same reason the test
+			// harness uses Array.isArray: an array built in another realm is not an instance of
+			// THIS realm's Array, instanceof answers false, and the name quietly becomes
+			// "Oct,Maestra" -- near enough to look right in the file, wrong enough that it would
+			// never match a parameter again.
+			var nm = (raw && typeof raw.join === "function") ? raw.join(" ") : ("" + raw);
+			if (nm && !map.hasOwnProperty(nm)) { map[nm] = ids[i]; n++; }
+		}
+	} catch (e) {
+		post("forteseq2: no pude leer los parametros del device: " + e + "\n");
+		return null;
+	}
+	presetIdOf = map;
+	post("forteseq2: los presets ven " + n + " parametros\n");
+	return map;
+}
+
+// Drops the map so the next store or recall rebuilds it. Worth having as a message rather than
+// only as internal state: if the device is edited while the set is open, the ids move.
+function presetrescan() {
+	presetIdOf = null;
+	presetApi = null;
+	post("forteseq2: mapa de parametros descartado, se rearma en el proximo guardar o cargar\n");
+}
+
+function setpresetslot(n) {
+	n = Math.round(n);
+	if (!isFinite(n) || n < 1) n = 1;
+	if (n > PRESET_SLOTS) n = PRESET_SLOTS;
+	presetSlot = n;
+}
+
+// Both messages take the slot either as an argument or from the Slot control, so the buttons can
+// stay bare `storepreset` / `recallpreset` messages and the number lives in one place.
+function presetSlotOf(slot) {
+	var s = (slot === undefined || slot === null) ? presetSlot : Math.round(slot);
+	if (!(s >= 1 && s <= PRESET_SLOTS)) {
+		post("forteseq2: el slot " + s + " esta fuera de rango (1.." + PRESET_SLOTS + ")\n");
+		return -1;
+	}
+	return s;
+}
+
 function storepreset(slot) {
-	slot = Math.round(slot);
-	if (slot < 1) return;
-	presets[slot] = {
-		mode: mode,
-		rotShape: rotShape,
-		permMode: readMode,       // stored under its old key: a slot stays readable both ways
-		readDir: readDir,
-		coprimeSkip: coprimeSkip,
-		locked: locked,
-		lockIndex: lockIndex,
-		root: root,
-		masterOctave: masterOctave,
-		bpm: currentBpm,
-		voiceOctaveList: voiceOctaveList.map(function (l) { return l.slice(); }),
-		voiceMute: voiceMute.slice(),
-		voiceExternal: voiceExternal.slice(),
-		voiceIndep: voiceIndep,
-		voiceDegOffset: voiceDegOffset.slice(),
-		voiceDiv: voiceDiv.slice(),
-		voicePos: voicePos.slice(),      // part of the sequence position once voices read independently
-		voiceRangeMin: voiceRangeMin.slice(),
-		voiceRangeMax: voiceRangeMax.slice(),
-		orderMode: orderMode,
-		filterOn: filterOn,
-		cardMin: cardMin,
-		cardMax: cardMax,
-		maskBits: maskBits,
-		maskMode: maskMode,
-		maskK: maskK,
-		maskFit: maskFit,
-		accentGrid: accentGrid.slice(),
-		accentCycle: accentCycle,
-		accentTieToN: accentTieToN,
-		euclidOn: euclidOn,
-		euclidK: euclidK,
-		euclidRot: euclidRot,
-		voicePhase: voicePhase.slice(),
-		voiceRhyLen: voiceRhyLen.slice(),
-		voiceRhyK: voiceRhyK.slice(),
-		voiceRhyRot: voiceRhyRot.slice(),
-		linkMin: linkMin,
-		tensLen: tensLen,
-		tensShape: tensShape,
-		favSeqOn: favSeqOn,
-		favSeq: favSeq.slice(),
-		listenMode: listenMode,
-		bcastOn: bcastOn,
-		followOn: followOn,
-		groupVelMin: groupVelMin.slice(),
-		groupVelMax: groupVelMax.slice(),
-		groupDurDiv: groupDurDiv.slice(),
-		groupSilence: groupSilence.slice(),
-		drumOn: drumOn,
-		drumBase: drumBase,
-		harmRate: harmRate,
-		rootSeqIdx: rootSeqIdx,
-		rootSeqPos: rootSeqPos,
-		voicingMode: voicingMode,
-		voiceLead: voiceLead,
-		subDiv: subDiv,
-		swingPct: swingPct,
-		humanizePct: humanizePct,
-		strumSub: strumSub,
-		strumDir: strumDir,
-		ratchetN: ratchetN.slice(),
-		ratchetPct: ratchetPct,
-		ratchetDecay: ratchetDecay,
-		voiceTimeOffset: voiceTimeOffset.slice(),
-		modShape: modShape.slice(),
-		modCycle: modCycle.slice(),
-		modDepth: modDepth.slice(),
-		modPhase: modPhase.slice(),
-		modDest: modDest.slice(),
-		vecMin: vecMin.slice(),
-		vecMax: vecMax.slice(),
-		favOnly: favOnly,
-		// sequence position, so recall picks up exactly where it was instead of restarting
-		setIndex: setIndex,
-		noteIndex: noteIndex,
-		rotation: rotation,
-		permIndex: permIndex,
-		minimalPos: minimalPos,
-		patternStep: patternStep
-	};
-	post("preset: stored slot " + slot + "\n");
+	var s = presetSlotOf(slot);
+	if (s < 0) return;
+	var map = presetScan();
+	if (!map) {
+		post("forteseq2: los presets necesitan la Live API, que solo existe dentro de Live\n");
+		return;
+	}
+	var vals = {}, n = 0;
+	// Wrapped because an exception thrown inside a js object stops the whole script in Live:
+	// the sequencer would go silent and the only clue would be one line in the console.
+	try {
+		for (var nm in map) {
+			if (PRESET_SKIP[nm]) continue;
+			presetApi.id = map[nm];
+			var v = presetApi.get("value");
+			vals[nm] = (v && typeof v.join === "function") ? v[0] : v;
+			n++;
+		}
+	} catch (e) {
+		post("forteseq2: fallo leyendo " + nm + ": " + e + "\n");
+		return;
+	}
+	presetBank[s] = vals;
+	savepresets();
+	sendPresetList();
+	post("forteseq2: slot " + s + " guardado, " + n + " parametros\n");
 }
 
 function recallpreset(slot) {
-	slot = Math.round(slot);
-	var p = presets[slot];
-	if (!p) {
-		post("preset: slot " + slot + " is empty\n");
+	var s = presetSlotOf(slot);
+	if (s < 0) return;
+	var vals = presetBank[s];
+	if (!vals) {
+		post("forteseq2: el slot " + s + " esta vacio\n");
 		return;
 	}
-	mode = p.mode;
-	rotShape = p.rotShape;
-	readMode = p.permMode;
-	// Slots stored before the other reading orders existed have neither field; the fallbacks are
-	// forward motion and the default skip, which is what such a slot played.
-	readDir = p.readDir || 0;
-	coprimeSkip = p.coprimeSkip || 2;
-	locked = p.locked;
-	lockIndex = p.lockIndex;
-	root = p.root;
-	masterOctave = p.masterOctave || 0;
-	currentBpm = p.bpm;
-	voiceOctaveList = padVoices(p.voiceOctaveList, null).map(
-		function (l) { return l ? l.slice() : [0]; });
-	voiceMute = padVoices(p.voiceMute, 1);
-	voiceExternal = padVoices(p.voiceExternal, 0);
-	// Slots stored before independent voices existed carry none of these four; the fallbacks
-	// are exactly the shared-note behavior such a slot was saved as.
-	voiceIndep = p.voiceIndep || 0;
-	voiceDegOffset = padVoices(p.voiceDegOffset, 0);
-	voiceDiv = padVoices(p.voiceDiv, 1);
-	voicePos = padVoices(p.voicePos, 0);
-	voiceRangeMin = padVoices(p.voiceRangeMin, 0);
-	voiceRangeMax = padVoices(p.voiceRangeMax, 127);
-
-	// Slots stored before the theory layer carry no order or filter; the fallbacks are the plain
-	// catalogue order with no filter, which is what such a slot played.
-	orderMode = p.orderMode || 0;
-	filterOn = p.filterOn || 0;
-	cardMin = p.cardMin || 1;
-	cardMax = p.cardMax || 12;
-	maskBits = (p.maskBits === undefined) ? 0xFFF : p.maskBits;
-	maskMode = p.maskMode || 0;
-	maskK = p.maskK || 1;
-	maskFit = (p.maskFit === undefined) ? 1 : p.maskFit;
-	vecMin = p.vecMin ? p.vecMin.slice() : [0, 0, 0, 0, 0, 0];
-	vecMax = p.vecMax ? p.vecMax.slice() : [12, 12, 12, 12, 12, 12];
-	vecCondRefresh();
-	favOnly = p.favOnly || 0;
-	buildOrder();
-	requestFilter();
-
-	// Presets stored before the articulation engine existed have none of these fields; fall
-	// back to the module defaults so an old slot recalls as the plain fixed-velocity device
-	// it was saved as, instead of throwing.
-	accentGrid = p.accentGrid ? p.accentGrid.slice() : [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-	accentCycle = p.accentCycle || 4;
-	accentTieToN = p.accentTieToN || 0;
-	// A slot stored before the generator existed carries a hand-drawn grid and nothing else; off
-	// is the only reading that leaves that grid alone.
-	euclidOn = p.euclidOn || 0;
-	euclidK = p.euclidK || 4;
-	euclidRot = p.euclidRot || 0;
-	voicePhase = padVoices(p.voicePhase, 0);
-	voiceRhyLen = padVoices(p.voiceRhyLen, 0);
-	voiceRhyK = padVoices(p.voiceRhyK, 1);
-	voiceRhyRot = padVoices(p.voiceRhyRot, 0);
-	rebuildAllVoiceRhythms();
-	linkMin = p.linkMin || 0;
-	tensLen = p.tensLen || 0;
-	tensShape = p.tensShape || 0;
-	tensPos = 0;
-	favSeqOn = p.favSeqOn || 0;
-	if (p.favSeq) favSetAll(p.favSeq, 0);
-	listenMode = p.listenMode || 0;
-	bcastOn = p.bcastOn || 0;
-	followOn = p.followOn || 0;
-	listenpanic();
-	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
-	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
-	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
-	groupSilence = p.groupSilence ? p.groupSilence.slice() : [0, 0];
-	// A slot stored before this phase existed played notes, on the reading's own harmonic rhythm,
-	// with a fixed root and the historic spread -- which is exactly what all six defaults are.
-	drumOn = p.drumOn || 0;
-	drumBase = (p.drumBase === undefined) ? 36 : p.drumBase;
-	harmRate = p.harmRate || 0;
-	harmCount = 0;
-	rootSeqIdx = p.rootSeqIdx || 0;
-	rootSeqPos = p.rootSeqPos || 0;
-	// The offset is derived rather than stored: it is whatever the sequence says at that position,
-	// so a slot cannot recall a root the sequence would never produce.
-	var rseq = ROOT_SEQUENCES[rootSeqIdx];
-	rootSeqOffset = rseq ? rseq[rootSeqPos % rseq.length] : 0;
-	voicingMode = p.voicingMode || 0;
-	voiceLead = p.voiceLead || 0;
-	// A slot stored before the sub-clock existed carries none of these; every fallback is the
-	// value that produces offset 0, which is the square grid such a slot was saved as.
-	subDiv = p.subDiv || 1;
-	swingPct = p.swingPct || 50;
-	humanizePct = p.humanizePct || 0;
-	strumSub = p.strumSub || 0;
-	strumDir = p.strumDir || 0;
-	ratchetN = p.ratchetN ? p.ratchetN.slice() : [1, 1];
-	ratchetPct = (p.ratchetPct === undefined) ? 100 : p.ratchetPct;
-	ratchetDecay = p.ratchetDecay || 0;
-	voiceTimeOffset = padVoices(p.voiceTimeOffset, 0);
-
-	// A slot stored before the modulators existed has none of these fields, and the fallbacks
-	// are the inert defaults -- so an old slot recalls as an unmodulated device rather than
-	// inheriting whatever the four modulators happen to be doing right now.
-	modShape = padVoices(p.modShape, 0).slice(0, MOD_N);
-	modCycle = padVoices(p.modCycle, 8).slice(0, MOD_N);
-	modDepth = padVoices(p.modDepth, 0).slice(0, MOD_N);
-	modPhase = padVoices(p.modPhase, 0).slice(0, MOD_N);
-	modDest = padVoices(p.modDest, 0).slice(0, MOD_N);
-	modCell = filled(MOD_N, -1);
-	modRefresh();
-	subPos = 0;
-	flushAllPending();   // queued notes belong to the grid being left behind
-	lastChord = null;   // the chord that sounded before the recall is not the one to lead from
-
-	// restore sequence position exactly, so recall continues instead of restarting
-	setIndex = p.setIndex;
-	noteIndex = p.noteIndex;
-	rotation = p.rotation;
-	permIndex = p.permIndex;
-	minimalPos = p.minimalPos;
-	patternStep = p.patternStep;
-	// rebuild the permutation caches for the restored setIndex so permIndex/minimalPos stay valid
-	// (without this, step()'s cache-miss check would silently reset them back to 0)
-	var restoredPcs = sets[setIndex];
-	ensurePermCache(restoredPcs.length);
-	permSetTag = setIndex;
-	minimalCachedFor = setIndex;
-
-	outlet(4, ["indep", voiceIndep]);
-	outlet(4, ["order", orderMode]);
-	outlet(4, ["filter", filterOn]);
-	outlet(4, ["cardmin", cardMin]);
-	outlet(4, ["cardmax", cardMax]);
-	outlet(4, ["maskmode", maskMode]);
-	outlet(4, ["maskk", maskK]);
-	outlet(4, ["maskfit", maskFit]);
-	var maskCells = ["mask"];
-	for (var mc = 0; mc < 12; mc++) maskCells.push((maskBits & (1 << mc)) ? 1 : 0);
-	outlet(4, maskCells);
-	outlet(4, ["masteroct", masterOctave]);
-	outlet(4, ["mode", mode]);
-	outlet(4, ["shape", rotShape]);
-	outlet(4, ["permmode", readMode]);
-	outlet(4, ["readdir", readDir]);
-	outlet(4, ["coprime", coprimeSkip]);
-	outlet(4, ["locked", locked]);
-	outlet(4, ["lockindex", lockIndex + 1]);
-	outlet(4, ["root", root]);
-	outlet(4, ["bpm", currentBpm]);
-	outlet(4, ["accentcycle", accentCycle]);
-	outlet(4, ["accenttie", accentTieToN]);
-	outlet(4, ["listen", listenMode]);
-	outlet(4, ["broadcast", bcastOn]);
-	outlet(4, ["follow", followOn]);
-	outlet(4, ["link", linkMin]);
-	outlet(4, ["tension", tensLen]);
-	outlet(4, ["tenshape", tensShape]);
-	outlet(4, ["favseq", favSeqOn]);
-	outlet(4, ["euclid", euclidOn]);
-	outlet(4, ["euclidk", euclidK]);
-	outlet(4, ["euclidrot", euclidRot]);
-	outlet(4, ["drum", drumOn]);
-	outlet(4, ["drumbase", drumBase]);
-	outlet(4, ["harmrate", harmRate]);
-	outlet(4, ["rootseq", rootSeqIdx]);
-	outlet(4, ["voicing", voicingMode]);
-	outlet(4, ["voicelead", voiceLead]);
-	outlet(4, ["sub", subDiv]);
-	outlet(4, ["swing", swingPct]);
-	outlet(4, ["human", humanizePct]);
-	outlet(4, ["strum", strumSub]);
-	outlet(4, ["strumdir", strumDir]);
-	outlet(4, ["ratchetprob", ratchetPct]);
-	outlet(4, ["ratchetdecay", ratchetDecay]);
-	for (var rg = GROUP_NORMAL; rg <= GROUP_ACCENT; rg++) outlet(4, ["g" + rg + "ratchet", ratchetN[rg]]);
-	outlet(4, ["favonly", favOnly]);
-	outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
-	outlet(4, ["vecmin"].concat(vecMin));
-	outlet(4, ["vecmax"].concat(vecMax));
-	outlet(4, ["accentgrid"].concat(accentGrid));
-	for (var g = GROUP_NORMAL; g <= GROUP_ACCENT; g++) {
-		outlet(4, ["g" + g + "vel", groupVelMin[g], groupVelMax[g]]);
-		outlet(4, ["g" + g + "dur", groupDurDiv[g]]);
-		outlet(4, ["g" + g + "silence", groupSilence[g]]);
+	var map = presetScan();
+	if (!map) {
+		post("forteseq2: los presets necesitan la Live API, que solo existe dentro de Live\n");
+		return;
 	}
-	for (var v = 0; v < NUM_VOICES; v++) {
-		outlet(4, ["v" + (v + 1) + "octlist"].concat(voiceOctaveList[v]));
-		outlet(4, ["v" + (v + 1) + "mute", voiceMute[v]]);
-		outlet(4, ["v" + (v + 1) + "external", voiceExternal[v]]);
-		outlet(4, ["v" + (v + 1) + "range", voiceRangeMin[v], voiceRangeMax[v] - voiceRangeMin[v]]);
-		outlet(4, ["v" + (v + 1) + "phase", voicePhase[v]]);
-		outlet(4, ["v" + (v + 1) + "grado", voiceDegOffset[v]]);
-		outlet(4, ["v" + (v + 1) + "div", voiceDiv[v]]);
-		outlet(4, ["v" + (v + 1) + "desf", voiceTimeOffset[v]]);
-		outlet(4, ["v" + (v + 1) + "rlen", voiceRhyLen[v]]);
-		outlet(4, ["v" + (v + 1) + "rpuls", voiceRhyK[v]]);
-		outlet(4, ["v" + (v + 1) + "rgir", voiceRhyRot[v]]);
+	var n = 0, miss = 0, nm = "";
+	// Same reason as in storepreset(): a throw here would take the sequencer down with it.
+	try {
+		for (nm in vals) {
+			// A name the device no longer has means a slot written by an older version. Skipping
+			// it silently is the right call: the rest of the slot is still exactly what was saved,
+			// and refusing the whole recall over one retired control would throw away the good part.
+			if (!map.hasOwnProperty(nm)) { miss++; continue; }
+			presetApi.id = map[nm];
+			presetApi.set("value", vals[nm]);
+			n++;
+		}
+	} catch (e) {
+		post("forteseq2: fallo escribiendo " + nm + ": " + e + "\n");
 	}
-	for (var mk = 0; mk < MOD_N; mk++) {
-		outlet(4, ["m" + (mk + 1) + "forma", modShape[mk]]);
-		outlet(4, ["m" + (mk + 1) + "ciclo", modCycle[mk]]);
-		outlet(4, ["m" + (mk + 1) + "prof", modDepth[mk]]);
-		outlet(4, ["m" + (mk + 1) + "fase", modPhase[mk]]);
-		outlet(4, ["m" + (mk + 1) + "dest", modDest[mk]]);
-	}
-	post("preset: recalled slot " + slot + "\n");
+	// Sent even after a failure: a half-applied slot still has to reach the engine, or the
+	// dials would be showing one thing while the sequencer plays another.
+	// The controls now DISPLAY the slot but have not said so out loud. This is what makes them
+	// speak, and it is the same message the device sends itself when the Live set opens.
+	outlet(4, ["initui"]);
+	post("forteseq2: slot " + s + " cargado, " + n + " parametros" +
+		(miss ? " (" + miss + " que este device ya no tiene)" : "") + "\n");
 }
+
+function clearpreset(slot) {
+	var s = presetSlotOf(slot);
+	if (s < 0) return;
+	presetBank[s] = null;
+	savepresets();
+	sendPresetList();
+	post("forteseq2: slot " + s + " borrado\n");
+}
+
+// Which slots have something in them, as one symbol for a comment. Cheap enough to resend on
+// every change, and without it the eight slots are eight identical blanks.
+function sendPresetList() {
+	var s = "";
+	for (var i = 1; i <= PRESET_SLOTS; i++) s += (i > 1 ? " " : "") + (presetBank[i] ? i : "-");
+	outlet(4, ["presetslots", s]);
+}
+
+// --- the slots on disk ---------------------------------------------------------------------------
+// Tab separated rather than JSON, for one reason that outweighs the extra parsing: parameter
+// names have spaces in them ("Oct Maestra", "V1 Grado", "M1 Forma"), so a space cannot separate
+// fields, and a tab cannot appear inside a name. The file stays something you can open and read.
+function savepresets() {
+	if (typeof File === "undefined") return;
+	var f = new File(devPath(PRESET_FILE), "write", "TEXT");
+	if (!f.isopen) {
+		post("forteseq2: no pude escribir " + devPath(PRESET_FILE) +
+			", los slots duran hasta cerrar\n");
+		return;
+	}
+	try {
+		f.eof = 0;        // un banco mas chico no puede dejar la cola del anterior atras
+		f.position = 0;
+		f.writeline("forteseq2 presets 1");
+		for (var s = 1; s <= PRESET_SLOTS; s++) {
+			var vals = presetBank[s];
+			if (!vals) continue;
+			var line = "" + s;
+			for (var nm in vals) line += "\t" + nm + "=" + vals[nm];
+			f.writeline(line);
+		}
+	} catch (e) {
+		post("forteseq2: fallo al guardar los presets: " + e + "\n");
+	}
+	f.close();
+}
+
+function loadpresets() {
+	if (typeof File === "undefined") return;
+	var f = new File(devPath(PRESET_FILE), "read", "TEXT");
+	if (!f.isopen) return;   // todavia no hay archivo, que es el primer arranque y no un error
+	presetBank = [];
+	var count = 0;
+	try {
+		f.readline(200);   // la cabecera, que solo esta para que el archivo se explique solo
+		while (f.position < f.eof) {
+			var line = "" + f.readline(65536);
+			var parts = line.split("\t");
+			var s = Math.round(parseFloat(parts[0]));
+			if (!(s >= 1 && s <= PRESET_SLOTS)) continue;
+			var vals = {};
+			for (var i = 1; i < parts.length; i++) {
+				// lastIndexOf, not indexOf: a name may not contain "=" today, but splitting from
+				// the right costs nothing and cannot be broken by one that does later.
+				var eq = parts[i].lastIndexOf("=");
+				if (eq <= 0) continue;
+				var v = parseFloat(parts[i].slice(eq + 1));
+				if (isFinite(v)) vals[parts[i].slice(0, eq)] = v;
+			}
+			presetBank[s] = vals;
+			count++;
+		}
+	} catch (e) {
+		post("forteseq2: fallo al leer los presets: " + e + "\n");
+	}
+	f.close();
+	sendPresetList();
+	post("forteseq2: " + count + " slots leidos de " + devPath(PRESET_FILE) + "\n");
+}
+
 
 // A pitch class as a Drum Rack pad. Nothing that moves a note vertically applies: the octave
 // pattern, the master octave and the register clamp all exist to put a note in a register, and

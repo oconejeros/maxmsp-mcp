@@ -587,6 +587,24 @@ function runScenario(e) {
 	}
 	mark('modulacion apagada');
 	run(24);
+
+	// --- presets ---------------------------------------------------------------------------
+	// Off Max there is no Live API and no File, and both halves of the preset system are meant
+	// to notice that and do nothing rather than throw. That is worth pinning down here because
+	// an exception inside a js object stops the script dead in Live -- the sequencer would go
+	// silent, and the only clue would be one line in the console.
+	c.setpresetslot(3);
+	c.storepreset();
+	c.recallpreset();
+	c.recallpreset(2);
+	c.clearpreset(3);
+	c.setpresetslot(99);          // se recorta al ultimo slot, no explota
+	c.storepreset(0);             // fuera de rango: se rechaza
+	c.loadpresets();
+	c.savepresets();
+	c.presetrescan();
+	mark('presets sin Live: inertes');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------

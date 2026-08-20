@@ -194,3 +194,6 @@ Ableton Folder Info/
 
 # La lista de favoritos de FORTESEQ2: curaduria personal, no fuente.
 forteseq/forteseq2_favs.txt
+
+# Los ocho slots de preset, por la misma razon: son tus configuraciones, no el device.
+forteseq/forteseq2_presets.txt

@@ -10154,6 +10154,416 @@
      ],
      "id": "obj-346"
     }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "pr_init",
+     "patching_rect": [
+      20.0,
+      6500.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-347"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Slot",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1350.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      6540.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-348"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "pr_slot",
+     "annotation": "En cual de los ocho slots trabajan Guardar, Cargar y Borrar. El slot mismo no entra en ningun preset: si entrara, cargar uno te moveria el slot y el click siguiente iria a parar a otro lado.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1369.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      20.0,
+      6570.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Slot",
+       "parameter_shortname": "Slot",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 8.0,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-349"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setpresetslot",
+     "patching_rect": [
+      20.0,
+      6610.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-350"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 1,
+     "text": "Guardar",
+     "varname": "pr_save",
+     "parameter_enable": 0,
+     "annotation": "Lee el valor de todos los parametros del device y los escribe en el slot y en el archivo, en el acto. Quedan afuera Run, Bus, Trig, Pagina y Slot. Run es el transporte, y un preset que arranca o para la secuencia es un preset que no podes escuchar; Bus es una direccion y no un sonido; los otros son donde estas mirando y el boton que estas por apretar.",
+     "presentation": 1,
+     "presentation_rect": [
+      54.0,
+      1369.0,
+      64.0,
+      18.0
+     ],
+     "patching_rect": [
+      200.0,
+      6570.0,
+      64.0,
+      18.0
+     ],
+     "id": "obj-351"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "text": "sel 1",
+     "patching_rect": [
+      200.0,
+      6610.0,
+      50.0,
+      22.0
+     ],
+     "id": "obj-352"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "storepreset",
+     "patching_rect": [
+      200.0,
+      6645.0,
+      110.0,
+      22.0
+     ],
+     "id": "obj-353"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 1,
+     "text": "Cargar",
+     "varname": "pr_load",
+     "parameter_enable": 0,
+     "annotation": "Pone esos valores de vuelta y despues le pide a los controles que hablen. Esa segunda mitad es todo el truco: escribir un parametro por la API de Live cambia lo que el control MUESTRA pero no dispara su salida, asi que el motor no se enteraria de nada. Es el mismo camino que corre solo cuando abris el set. Un slot guardado por una version anterior carga igual: los nombres que este device ya no tiene se saltean, y el resto entra.",
+     "presentation": 1,
+     "presentation_rect": [
+      124.0,
+      1369.0,
+      64.0,
+      18.0
+     ],
+     "patching_rect": [
+      400.0,
+      6570.0,
+      64.0,
+      18.0
+     ],
+     "id": "obj-354"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "text": "sel 1",
+     "patching_rect": [
+      400.0,
+      6610.0,
+      50.0,
+      22.0
+     ],
+     "id": "obj-355"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "recallpreset",
+     "patching_rect": [
+      400.0,
+      6645.0,
+      110.0,
+      22.0
+     ],
+     "id": "obj-356"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 1,
+     "text": "Borrar",
+     "varname": "pr_clear",
+     "parameter_enable": 0,
+     "annotation": "Vacia el slot y reescribe el archivo.",
+     "presentation": 1,
+     "presentation_rect": [
+      194.0,
+      1369.0,
+      64.0,
+      18.0
+     ],
+     "patching_rect": [
+      600.0,
+      6570.0,
+      64.0,
+      18.0
+     ],
+     "id": "obj-357"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "text": "sel 1",
+     "patching_rect": [
+      600.0,
+      6610.0,
+      50.0,
+      22.0
+     ],
+     "id": "obj-358"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "clearpreset",
+     "patching_rect": [
+      600.0,
+      6645.0,
+      110.0,
+      22.0
+     ],
+     "id": "obj-359"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Llenos",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1392.0,
+      54.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      6690.0,
+      54.0,
+      18.0
+     ],
+     "id": "obj-360"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "- - - - - - - -",
+     "presentation": 1,
+     "presentation_rect": [
+      56.0,
+      1392.0,
+      202.0,
+      18.0
+     ],
+     "patching_rect": [
+      120.0,
+      6730.0,
+      202.0,
+      18.0
+     ],
+     "varname": "pr_list",
+     "annotation": "Que slots tienen algo. Un guion es un slot vacio.",
+     "id": "obj-361"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "pr_echo",
+     "text": "route presetslots",
+     "patching_rect": [
+      120.0,
+      6690.0,
+      130.0,
+      22.0
+     ],
+     "id": "obj-362"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend set",
+     "patching_rect": [
+      120.0,
+      6710.0,
+      90.0,
+      22.0
+     ],
+     "id": "obj-363"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Los ocho slots viven en forteseq2_presets.txt, al lado del .amxd, y no adentro del set de Live. Eso los hace tuyos y no de la cancion: los mismos ocho te siguen a cualquier set, igual que los favoritos, y varias instancias del device comparten el archivo. Se escribe en cada Guardar y en cada Borrar, y se lee al cargar el device.",
+     "presentation": 1,
+     "presentation_rect": [
+      264.0,
+      1352.0,
+      252.0,
+      130.0
+     ],
+     "patching_rect": [
+      700.0,
+      6540.0,
+      252.0,
+      130.0
+     ],
+     "varname": "pr_nota",
+     "id": "obj-364"
+    }
    }
   ],
   "lines": [
@@ -15388,6 +15798,198 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-347",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-347",
+      0
+     ],
+     "destination": [
+      "obj-349",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-349",
+      0
+     ],
+     "destination": [
+      "obj-350",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-350",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-351",
+      0
+     ],
+     "destination": [
+      "obj-352",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-352",
+      0
+     ],
+     "destination": [
+      "obj-353",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-353",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-354",
+      0
+     ],
+     "destination": [
+      "obj-355",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-355",
+      0
+     ],
+     "destination": [
+      "obj-356",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-356",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-357",
+      0
+     ],
+     "destination": [
+      "obj-358",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-358",
+      0
+     ],
+     "destination": [
+      "obj-359",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-359",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-2",
+      0
+     ],
+     "destination": [
+      "obj-362",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-362",
+      0
+     ],
+     "destination": [
+      "obj-363",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-363",
+      0
+     ],
+     "destination": [
+      "obj-361",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -16024,6 +16626,11 @@
    "obj-344": [
     "M4 Dest",
     "M4 Dest",
+    0
+   ],
+   "obj-349": [
+    "Slot",
+    "Slot",
     0
    ]
   },
