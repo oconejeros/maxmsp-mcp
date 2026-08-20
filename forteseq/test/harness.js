@@ -92,6 +92,11 @@ function makeEngine(seed) {
 // Coverage aimed at the paths a refactor could plausibly break: every reading order, every
 // direction, both emit paths (shared and independent), chords with and without voice leading,
 // every voicing, the filter, the drum path, the harmonic clock and the root sequences.
+//
+// ADD NEW BLOCKS AT THE END. A block inserted in the middle shifts the state every later block
+// inherits -- cursors, patternStep, the PRNG -- so all of them rewrite themselves in golden.txt
+// and the diff stops being readable as "these notes changed". Appended, the diff is purely
+// additive and a regression anywhere earlier is impossible to miss.
 // ---------------------------------------------------------------------------------------------
 function runScenario(e) {
 	const c = e.ctx;
@@ -318,6 +323,65 @@ function runScenario(e) {
 		mark('voces=' + n);
 		run(20);
 	}
+
+	// --- Fase 5: the sub-clock ------------------------------------------------------------------
+	// Sub 1 first, to pin the claim that the scheduler changes nothing when it has nothing to do.
+	c.setsub(1);
+	mark('sub=1 (identico al reloj cuadrado)');
+	run(24);
+	for (const sd of [2, 3, 4, 6, 8]) {
+		c.setsub(sd);
+		mark('sub=' + sd);
+		run(24);
+	}
+	c.setsub(4);
+	for (const sw of [50, 58, 66, 75]) {
+		c.setswing(sw);
+		mark('swing=' + sw);
+		run(24);
+	}
+	c.setswing(50);
+	for (const h of [25, 100]) {
+		c.sethumanize(h);
+		mark('humanize=' + h);
+		run(24);
+	}
+	c.sethumanize(0);
+	// Strum only bites on chords, so this block goes through Acordes.
+	c.setmode(0);
+	for (const sd of [0, 1, 2, 3]) {
+		c.setstrumdir(sd);
+		c.setstrum(1);
+		mark('rasgueo dir=' + sd);
+		run(20);
+	}
+	c.setstrum(0);
+	c.setstrumdir(0);
+	c.setmode(1);
+	for (const rn of [2, 3, 4]) {
+		c.setratchet(0, rn);
+		c.setratchet(1, rn);
+		for (const dec of [0, 60]) {
+			c.setratchetdecay(dec);
+			mark('ratchet=' + rn + ' caida=' + dec);
+			run(20);
+		}
+	}
+	c.setratchetprob(50);
+	mark('ratchet prob=50');
+	run(24);
+	c.setratchetprob(100);
+	c.setratchet(0, 1); c.setratchet(1, 1);
+	c.setratchetdecay(0);
+	// A fixed shove per voice, which is the one offset that is not random and not per step.
+	for (let v = 1; v <= 4; v++) c.setvoicetimeoffset(v, v - 1);
+	mark('desfase por voz');
+	run(32);
+	for (let v = 1; v <= 4; v++) c.setvoicetimeoffset(v, 0);
+	// Everything back to square, so the block below is not read through a shifted grid.
+	c.setsub(1);
+	mark('vuelta a sub=1');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------

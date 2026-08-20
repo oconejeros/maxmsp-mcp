@@ -1143,11 +1143,208 @@ function trig(b, v) {
 // into makenote -- played only p1, at a velocity equal to p2, silently discarding both the
 // rest of the chord and the articulation velocity that had just been loaded. Rounding the
 // duration keeps every atom an int, which sidesteps the float-truncation traps in [unpack].
+// --- what the sub-clock buys ------------------------------------------------------------------
+// Four features, one mechanism: each decides an offset in sub-ticks and hands it to schedule().
+// Every default here is the value that produces offset 0, so a device that never touches these
+// controls behaves exactly as it did before they existed.
+
+var swingPct = 50;          // 50 = straight; 66 = the offbeat lands two thirds of the way
+var humanizePct = 0;        // 0-100, scaled to +/- half a step of timing jitter
+var strumSub = 0;           // sub-ticks between consecutive notes of one chord
+var strumDir = 0;           // 0 = up, 1 = down, 2 = random, 3 = alternate
+var strumFlip = 0;          // which way the alternating strum is going
+var ratchetN = [1, 1];      // repeats per note, per articulation group (normal, accent)
+var ratchetPct = 100;       // how often a ratchet actually fires
+var ratchetDecay = 0;       // 0-100, how much velocity is lost across the repeats
+var voiceTimeOffset = filled(MAX_VOICES, 0);   // a fixed shove per voice, in sub-ticks
+var stepSwing = 0;          // the swing offset in force for the step being built
+
+function setswing(p) {
+	p = Math.round(p);
+	if (!isFinite(p) || p < 50) p = 50;
+	if (p > 75) p = 75;
+	swingPct = p;
+}
+
+// Every other step is pushed late by a fraction of the gap between steps. The fraction is the
+// familiar swing percentage: 50 is straight, 66 is triplet feel, 75 is a dotted lilt. It can only
+// move in whole sub-ticks, so Sub decides how fine the swing can be -- at Sub 1 there is nowhere
+// to put it and swing does nothing, which is honest rather than surprising.
+function swingOffset() {
+	if (swingPct <= 50 || subDiv < 2) return 0;
+	var step = Math.floor(subPos / subDiv);
+	if ((step % 2) === 0) return 0;
+	return Math.round(subDiv * (swingPct - 50) / 50);
+}
+
+function sethumanize(p) {
+	p = Math.round(p);
+	if (!isFinite(p) || p < 0) p = 0;
+	if (p > 100) p = 100;
+	humanizePct = p;
+}
+
+// Timing jitter, drawn per note so two voices on the same step do not move together -- that
+// independence is most of what makes it read as players rather than as a shifted grid. Never
+// negative on the way out: schedule() clamps at 0, and a note cannot sound before its own step.
+function humanizeOffset() {
+	if (humanizePct <= 0 || subDiv < 2) return 0;
+	var span = subDiv * humanizePct / 200;
+	return Math.round((Math.random() * 2 - 1) * span);
+}
+
+function setstrum(n) {
+	n = Math.round(n);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > SUB_MAX) n = SUB_MAX;
+	strumSub = n;
+}
+
+function setstrumdir(d) {
+	d = Math.round(d);
+	if (!isFinite(d) || d < 0 || d > 3) d = 0;
+	strumDir = d;
+}
+
+// Spreads the notes of one chord across consecutive sub-ticks instead of striking them together.
+// emitVoices() hands chords in ascending pitch, so index order IS low to high.
+function strumOffset(i, n) {
+	if (strumSub <= 0 || n < 2) return 0;
+	if (strumDir === 1) return (n - 1 - i) * strumSub;
+	if (strumDir === 2) return Math.floor(Math.random() * n) * strumSub;
+	if (strumDir === 3) return (strumFlip ? (n - 1 - i) : i) * strumSub;
+	return i * strumSub;
+}
+
+function setratchet(g, n) {
+	var i = groupIndex(g);
+	if (i < 0) return;
+	n = Math.round(n);
+	if (!isFinite(n) || n < 1) n = 1;
+	if (n > 4) n = 4;
+	ratchetN[i] = n;
+}
+
+function setratchetprob(p) {
+	p = Math.round(p);
+	if (!isFinite(p) || p < 0) p = 0;
+	if (p > 100) p = 100;
+	ratchetPct = p;
+}
+
+function setratchetdecay(p) {
+	p = Math.round(p);
+	if (!isFinite(p) || p < 0) p = 0;
+	if (p > 100) p = 100;
+	ratchetDecay = p;
+}
+
+// A fixed shove per voice, which is what turns four voices playing the same rhythm into an
+// ensemble that is not quite together. Distinct from Fase, which offsets a voice's reading of the
+// accent grid rather than when it sounds.
+function setvoicetimeoffset(v, t) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	t = Math.round(t);
+	if (!isFinite(t) || t < 0) t = 0;
+	if (t > SUB_MAX - 1) t = SUB_MAX - 1;
+	voiceTimeOffset[idx] = t;
+}
+
+// One note becomes n, evenly spread over the step and fading if asked. The repeats are shortened
+// to match their spacing, or a ratchet would just be one note with extra note-ons stacked inside
+// it. Ratchet is per articulation group on purpose: with the accent grid driving it, the roll
+// lands on the cells you drew rather than everywhere.
+function scheduleBurst(voiceIdx, art, dur, pitch, off) {
+	var n = ratchetN[art.group];
+	if (n <= 1 || subDiv < 2 || (ratchetPct < 100 && (Math.random() * 100) >= ratchetPct)) {
+		schedule(off, [busId, voiceIdx + 1, art.vel, dur, pitch]);
+		return;
+	}
+	var gap = Math.floor(subDiv / n);
+	if (gap < 1) gap = 1;
+	var sub = Math.round(dur / n);
+	if (sub < 1) sub = 1;
+	for (var r = 0; r < n; r++) {
+		var vel = Math.round(art.vel * (1 - (ratchetDecay / 100) * (r / (n - 1))));
+		if (vel < 1) vel = 1;
+		if (vel > 127) vel = 127;
+		schedule(off + r * gap, [busId, voiceIdx + 1, vel, sub, pitch]);
+	}
+}
+
+// --- the sub-clock ----------------------------------------------------------------------------
+// Everything the engine knows about pitch arrives on a perfectly square grid: one metro, every
+// voice on an integer divider of it, every attack exactly on the beat. Swing, humanize, strum and
+// ratchets all need to place a note BETWEEN two steps, and the note bus is five fixed atoms with
+// no room for an onset offset -- adding a sixth would break every receiver.
+//
+// The way out is not a Task queue. Max runs js in the low-priority thread and a Task would jitter
+// exactly where jitter is least forgivable. Instead the metro beats subDiv times per step and the
+// engine decides which sub-tick each note leaves on. Timing is then the metro's own, the bus keeps
+// its five atoms, and one mechanism serves all four features.
+//
+// With subDiv = 1 and every offset at its default of zero, a note is scheduled at offset 0 and
+// flushed in the same tick it was scheduled: the old code path exactly, which is what lets the
+// regression prove this changed nothing.
+var SUB_MAX = 8;
+var subDiv = 1;      // metro ticks per step; the Max side multiplies the metro to match
+var subPos = 0;      // absolute sub-tick counter, never reset while running
+var RING = 128;      // slots ahead a note may be scheduled; far more than any offset can reach
+var pending = [];    // RING buckets of queued [bus, voice, vel, dur, pitch]
+
+function setsub(n) {
+	n = Math.round(n);
+	if (!isFinite(n) || n < 1) n = 1;
+	if (n > SUB_MAX) n = SUB_MAX;
+	if (n === subDiv) return;
+	subDiv = n;
+	// A change of resolution restarts the count so the next step lands on a sub-tick 0 rather than
+	// wherever the old cycle happened to be. Anything already queued is dropped: it was measured in
+	// the old grid and would land at the wrong moment in the new one.
+	subPos = 0;
+	flushAllPending();
+}
+
+function schedule(offset, msg) {
+	var off = Math.round(offset);
+	if (!isFinite(off) || off < 0) off = 0;
+	if (off >= RING) off = RING - 1;
+	var slot = (subPos + off) % RING;
+	if (!pending[slot]) pending[slot] = [];
+	pending[slot].push(msg);
+}
+
+// Sends whatever is due on this sub-tick, in the order it was queued -- which for the default
+// case is the order emitVoices() produced it, voice by voice.
+function flushPending() {
+	var slot = subPos % RING;
+	var q = pending[slot];
+	if (!q || !q.length) return;
+	for (var i = 0; i < q.length; i++) outlet(0, q[i]);
+	q.length = 0;
+}
+
+function flushAllPending() {
+	for (var i = 0; i < RING; i++) if (pending[i]) pending[i].length = 0;
+}
+
+// One note event per message, ALWAYS exactly five atoms:
+//     <bus> <voice 1-N> <velocity> <duration ms> <pitch>
+// A chord goes out as one message per pitch rather than one message with a pitch list. Two
+// reasons, both learned from v1: a fixed-length payload makes the receiver a plain [unpack],
+// with no zl slice / zl reg dance to peel a variable tail; and makenote's list method reads
+// atom 2 of any list as the VELOCITY, so v1's chord mode -- which sent [p1 p2 p3 ...] straight
+// into makenote -- played only p1, at a velocity equal to p2, silently discarding both the
+// rest of the chord and the articulation velocity that had just been loaded. Rounding the
+// duration keeps every atom an int, which sidesteps the float-truncation traps in [unpack].
 function emitNote(voiceIdx, art, pitches) {
 	var list = (pitches instanceof Array) ? pitches : [pitches];
 	var dur = Math.round(art.dur);
+	var base = stepSwing + voiceTimeOffset[voiceIdx];
 	for (var i = 0; i < list.length; i++) {
-		outlet(0, [busId, voiceIdx + 1, art.vel, dur, list[i]]);
+		var off = base + strumOffset(i, list.length) + humanizeOffset();
+		scheduleBurst(voiceIdx, art, dur, list[i], off);
 	}
 }
 
@@ -1395,6 +1592,15 @@ function storepreset(slot) {
 		rootSeqPos: rootSeqPos,
 		voicingMode: voicingMode,
 		voiceLead: voiceLead,
+		subDiv: subDiv,
+		swingPct: swingPct,
+		humanizePct: humanizePct,
+		strumSub: strumSub,
+		strumDir: strumDir,
+		ratchetN: ratchetN.slice(),
+		ratchetPct: ratchetPct,
+		ratchetDecay: ratchetDecay,
+		voiceTimeOffset: voiceTimeOffset.slice(),
 		vecMin: vecMin.slice(),
 		vecMax: vecMax.slice(),
 		favOnly: favOnly,
@@ -1488,6 +1694,19 @@ function recallpreset(slot) {
 	rootSeqOffset = rseq ? rseq[rootSeqPos % rseq.length] : 0;
 	voicingMode = p.voicingMode || 0;
 	voiceLead = p.voiceLead || 0;
+	// A slot stored before the sub-clock existed carries none of these; every fallback is the
+	// value that produces offset 0, which is the square grid such a slot was saved as.
+	subDiv = p.subDiv || 1;
+	swingPct = p.swingPct || 50;
+	humanizePct = p.humanizePct || 0;
+	strumSub = p.strumSub || 0;
+	strumDir = p.strumDir || 0;
+	ratchetN = p.ratchetN ? p.ratchetN.slice() : [1, 1];
+	ratchetPct = (p.ratchetPct === undefined) ? 100 : p.ratchetPct;
+	ratchetDecay = p.ratchetDecay || 0;
+	voiceTimeOffset = padVoices(p.voiceTimeOffset, 0);
+	subPos = 0;
+	flushAllPending();   // queued notes belong to the grid being left behind
 	lastChord = null;   // the chord that sounded before the recall is not the one to lead from
 
 	// restore sequence position exactly, so recall continues instead of restarting
@@ -1536,6 +1755,14 @@ function recallpreset(slot) {
 	outlet(4, ["rootseq", rootSeqIdx]);
 	outlet(4, ["voicing", voicingMode]);
 	outlet(4, ["voicelead", voiceLead]);
+	outlet(4, ["sub", subDiv]);
+	outlet(4, ["swing", swingPct]);
+	outlet(4, ["human", humanizePct]);
+	outlet(4, ["strum", strumSub]);
+	outlet(4, ["strumdir", strumDir]);
+	outlet(4, ["ratchetprob", ratchetPct]);
+	outlet(4, ["ratchetdecay", ratchetDecay]);
+	for (var rg = GROUP_NORMAL; rg <= GROUP_ACCENT; rg++) outlet(4, ["g" + rg + "ratchet", ratchetN[rg]]);
 	outlet(4, ["favonly", favOnly]);
 	outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
 	outlet(4, ["vecmin"].concat(vecMin));
@@ -1554,6 +1781,7 @@ function recallpreset(slot) {
 		outlet(4, ["v" + (v + 1) + "phase", voicePhase[v]]);
 		outlet(4, ["v" + (v + 1) + "grado", voiceDegOffset[v]]);
 		outlet(4, ["v" + (v + 1) + "div", voiceDiv[v]]);
+		outlet(4, ["v" + (v + 1) + "desf", voiceTimeOffset[v]]);
 	}
 	post("preset: recalled slot " + slot + "\n");
 }
@@ -2348,6 +2576,18 @@ function setsilencepreset(t) {
 	outlet(4, ["g1silence", pr[1]]);
 }
 
+// One metro tick. With subDiv = 1 that is one step, as it always was. Above that, only every
+// subDiv-th tick runs the sequence and the rest exist so a note can be placed between two steps.
+//
+// step() SCHEDULES rather than sends, so the flush has to come after it or a note placed at
+// offset 0 would wait a whole sub-tick. Placing it after also means notes queued by an earlier
+// step and due now leave in the same pass, in the order they were queued.
 function bang() {
-	step();
+	if (subDiv <= 1 || (subPos % subDiv) === 0) {
+		stepSwing = swingOffset();
+		step();
+		if (strumDir === 3) strumFlip = strumFlip ? 0 : 1;
+	}
+	flushPending();
+	subPos++;
 }
