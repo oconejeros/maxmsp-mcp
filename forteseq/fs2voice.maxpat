@@ -880,6 +880,68 @@
      "comment": "grado: el motor escribe el grado de esta voz (boton Apilar)",
      "varname": "v_grado_in"
     }
+   },
+   {
+    "box": {
+     "id": "obj-37",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_desf",
+     "annotation": "Corrimiento fijo de esta voz, en sub-ticks: cuanto sale tarde respecto del paso. Es lo que convierte cuatro voces tocando el mismo ritmo en un conjunto que no esta del todo junto. Distinto de Fase, que corre que celda de la reja lee la voz y no cuando suena. Necesita Sub mayor que 1.",
+     "patching_rect": [
+      530.0,
+      380.0,
+      44.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      462.0,
+      4.0,
+      30.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Desf",
+       "parameter_shortname": "Desf",
+       "parameter_type": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 7.0,
+       "parameter_modmode": 4,
+       "parameter_unitstyle": 0
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-38",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_desf_prep",
+     "patching_rect": [
+      500.0,
+      510.0,
+      240.0,
+      22.0
+     ],
+     "text": "prepend setvoicetimeoffset #1"
+    }
    }
   ],
   "lines": [
@@ -1362,6 +1424,42 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-37",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-37",
+      0
+     ],
+     "destination": [
+      "obj-38",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-38",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -1419,6 +1517,11 @@
    "obj-32": [
     "V#1 Div",
     "V#1 Div",
+    0
+   ],
+   "obj-37": [
+    "V#1 Desf",
+    "V#1 Desf",
     0
    ]
   },
