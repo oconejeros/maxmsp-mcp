@@ -1,11 +1,17 @@
 autowatch = 1;
 inlets = 1;
 outlets = 8;   // 0 = note events (see emitNote), 1 = current set index (1-351),
-               // 2 = notes for display (names), 3 = all-voice summary for viz,
+               // 2 = notes for display (names), 3 = RETIRED - see below,
                // 4 = preset recall broadcast (tagged pairs, routed in Max),
                // 5 = voice note names for monitor,
                // 6 = current set's pitch classes (0-11, transposed by root) for circle-of-fifths,
                // 7 = Forte name and interval vector of the current set, as two symbols.
+               //
+               // Outlet 3 used to carry a per-voice array of raw MIDI numbers. Outlet 5 supersedes
+               // it -- same information, already named -- and its destination in FORTESEQ2.amxd was
+               // never connected, so it was allocating an array per step and sending it nowhere.
+               // The outlet is kept in the count rather than removed: taking it out would renumber
+               // 4 through 7 and silently move every cord attached to them.
                //
                // v1 spent one outlet per voice (0/3/4/5) plus a separate articulation outlet (10)
                // that HAD to fire before the pitch so makenote's cold inlets were already loaded.
@@ -13,7 +19,12 @@ outlets = 8;   // 0 = note events (see emitNote), 1 = current set index (1-351),
                // depend on JS call order. Here every note leaves as one self-describing message on
                // outlet 0, so the voice count is just NUM_VOICES and nothing depends on ordering.
 
-var currentBpm = 120;   // tracked purely for presets; actual timing is handled in Max via expr_ms
+// The tempo Live is running at, delivered by [transport] through setbpmtrack(). It does NOT set
+// the step interval -- that is the metro's job, from the Rate dial or a note value -- but
+// articulationFor() divides it to get note LENGTHS, which is what unhooks how long a note rings
+// from how often notes arrive. (An older comment here claimed it was kept "purely for presets";
+// that stopped being true when articulation started reading it.)
+var currentBpm = 120;
 var presets = {};        // in-memory preset store: slot -> captured state object
 
 var MAX_VOICES = 16;    // hard ceiling: every per-voice array is allocated at this size once, so
@@ -444,7 +455,14 @@ function consonanceOf(i) {
 // whichever unvisited set shares the most pitch classes with it, so a full pass drifts through
 // the harmony rather than jumping. Ties go to the smaller symmetric difference and then to the
 // lower index, which keeps the chain deterministic across reloads.
+// The chain is deterministic and depends on nothing -- not the root, not the filter, not the
+// reading order -- so it is worth computing once. It is O(351 squared) with a popcount in the
+// inner loop, about a million and a half operations, and it used to run in full every time the
+// traversal order was set to Vec, which in Max means on the scheduler thread.
+var neighbourCache = null;
+
 function neighbourChain() {
+	if (neighbourCache) return neighbourCache.slice();
 	var used = [], chain = [];
 	for (var i = 0; i < sets.length; i++) used.push(0);
 	var cur = 0;
@@ -464,7 +482,8 @@ function neighbourChain() {
 		chain.push(bestI);
 		cur = bestI;
 	}
-	return chain;
+	neighbourCache = chain;
+	return chain.slice();   // buildOrder() keeps what it is given; the cache must stay unreachable
 }
 
 function buildOrder() {
@@ -601,7 +620,7 @@ function loadfavs() {
 		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
 	}
 	favEcho = -1;            // que el toggle se repinte en la primera nota
-	if (favOnly) buildFilter();
+	if (favOnly) requestFilter();
 	post("forteseq2: " + favCount() + " favoritos leidos de " + favPath() + "\n");
 }
 
@@ -664,8 +683,7 @@ function rotl12(bits, r) {
 // classes -- toggle 1 is C, whatever the root is -- and sets[] stores them untransposed, so the
 // comparison has to happen at the transposition that will actually sound.
 function buildFilter() {
-	allowed = [];
-	setFit = [];
+	filterDirty = 0;
 	var pass = 0;
 	for (var i = 0; i < sets.length; i++) {
 		var ok = 1;
@@ -687,8 +705,11 @@ function buildFilter() {
 				ok = maskOk(rotl12(setBits[i], root)) ? 1 : 0;
 			}
 		}
-		allowed.push(ok);
-		setFit.push(fit);
+		// Written by index rather than pushed onto two fresh arrays. The length is always
+		// sets.length, so the two arrays are allocated once for the life of the device
+		// instead of twice per rebuild -- and rebuilds are frequent, see requestFilter().
+		allowed[i] = ok;
+		setFit[i] = fit;
 		pass += ok;
 	}
 	if (pass === 0) {
@@ -698,6 +719,26 @@ function buildFilter() {
 		post("forteseq2: el filtro no deja pasar ningun set, se ignora\n");
 		for (var k = 0; k < allowed.length; k++) allowed[k] = 1;
 	}
+}
+
+// buildFilter() walks all 351 sets against up to twelve transpositions each -- some four thousand
+// iterations -- and almost every filter control used to call it outright. Dragging the Raiz dial
+// fired it once per increment, and loading a Live set fired it once per filter parameter as Live
+// restored them one at a time: a burst of dozens at the worst possible moment.
+//
+// So the setters mark the filter dirty and ASK for a rebuild, and a Task collapses however many
+// asks arrive in one scheduler pass into a single one. The cost is that a filter change can land
+// one step late -- the set already chosen keeps playing for that step, which no ear catches.
+// Outside Max there is no Task, so the harness rebuilds synchronously and sees the old ordering.
+var filterDirty = 0;
+var filterTask = null;
+
+function requestFilter() {
+	filterDirty = 1;
+	if (typeof Task === "undefined") { buildFilter(); return; }
+	if (!filterTask) filterTask = new Task(function () { if (filterDirty) buildFilter(); });
+	filterTask.cancel();
+	filterTask.schedule(0);
 }
 
 // Moves to the next playable set and reports whether the catalogue wrapped, which is what the
@@ -740,7 +781,43 @@ function harmonyStep() {
 	if (rotShape === 1 || (wrapped && rotShape === 0)) rotation++;
 }
 
+// --- readouts ---------------------------------------------------------------------------
+// The set number, its note names and its Forte label describe the HARMONY, which typically moves
+// once per pass -- but this used to rebuild and resend all three on every clock step: up to twelve
+// note-name strings from displayNotes(), a vector string from vecString(), three list messages
+// across the JS boundary and three comment redraws, per note. The memo below is the same idea the
+// Fav echo already used one line down, applied to the rest of the readout.
+//
+// The key cannot be setIndex alone. displayNotes() reads effRoot() and masterOctave, so moving the
+// root has to repaint; and the superpermutation branch of step() hands in a REORDERED copy of the
+// set that genuinely changes faster than setIndex does. So the pitch classes are compared element
+// by element -- no allocation, and correct for every caller.
+var readoutIndex = -1, readoutRoot = null, readoutOct = null;
+var readoutPcs = [];
+
+function readoutUnchanged(pcs) {
+	if (setIndex !== readoutIndex || effRoot() !== readoutRoot || masterOctave !== readoutOct) return 0;
+	var n = pcs.length;
+	if (n !== readoutPcs.length) return 0;
+	for (var i = 0; i < n; i++) if (pcs[i] !== readoutPcs[i]) return 0;
+	return 1;
+}
+
+// Forces the next emitSetReadouts() through even if nothing it watches moved. Needed wherever the
+// readouts have to be repainted for a reason the memo cannot see -- a preset recall, say, where
+// the display was overwritten by something else while setIndex happened to stay put.
+function readoutInvalidate() {
+	readoutIndex = -1;
+	readoutPcs = [];
+}
+
 function emitSetReadouts(displayPcs) {
+	if (readoutUnchanged(displayPcs)) return;
+	readoutIndex = setIndex;
+	readoutRoot = effRoot();
+	readoutOct = masterOctave;
+	readoutPcs = displayPcs.slice();   // once per harmonic change, not once per note
+
 	outlet(1, setIndex + 1);
 	outlet(2, displayNotes(displayPcs));
 	outlet(7, [setForte[setIndex], vecString(setIndex)]);
@@ -750,6 +827,22 @@ function emitSetReadouts(displayPcs) {
 		favEcho = setIndex;
 		outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
 	}
+}
+
+// The circle-of-fifths feed: the current set's pitch classes at sounding transposition. Same story
+// as the readouts -- it only changes when the harmony or the root does, and it used to allocate a
+// closure plus an array on every single step. Kept on its own memo rather than folded into
+// emitSetReadouts() because it wants the plain set, not the permuted display copy.
+var circleIndex = -1, circleRoot = null;
+
+function emitCircle(pcs) {
+	var er = effRoot();
+	if (setIndex === circleIndex && er === circleRoot) return;
+	circleIndex = setIndex;
+	circleRoot = er;
+	var out = [];
+	for (var i = 0; i < pcs.length; i++) out.push((((pcs[i] + er) % 12) + 12) % 12);
+	outlet(6, out);
 }
 
 // --- setters ---------------------------------------------------------------------------
@@ -764,7 +857,7 @@ function setorder(m) {
 
 function setfilter(f) {
 	filterOn = f ? 1 : 0;
-	buildFilter();
+	requestFilter();
 }
 
 // Two setters rather than one taking a pair: Live restores parameters one at a time on set
@@ -774,7 +867,7 @@ function setcardmin(n) {
 	if (n < 1) n = 1;
 	if (n > 12) n = 12;
 	cardMin = n;
-	buildFilter();
+	requestFilter();
 }
 
 function setcardmax(n) {
@@ -782,7 +875,7 @@ function setcardmax(n) {
 	if (n < 1) n = 1;
 	if (n > 12) n = 12;
 	cardMax = n;
-	buildFilter();
+	requestFilter();
 }
 
 // setmask <c1> ... <c12>: the whole mask arrives as one list, so a redraw can never leave it
@@ -791,7 +884,7 @@ function setmask() {
 	var bits = 0;
 	for (var i = 0; i < 12 && i < arguments.length; i++) if (arguments[i]) bits |= (1 << i);
 	maskBits = bits;
-	buildFilter();
+	requestFilter();
 }
 
 function setmaskmode(m) {
@@ -799,7 +892,7 @@ function setmaskmode(m) {
 	if (m < 0) m = 0;
 	if (m > 2) m = 2;
 	maskMode = m;
-	buildFilter();
+	requestFilter();
 }
 
 // 1 = a set that does not satisfy the mask where it sits may move to a transposition where it
@@ -807,7 +900,7 @@ function setmaskmode(m) {
 // keeps the root meaning what it says, at the cost of letting very few sets through.
 function setmaskfit(f) {
 	maskFit = f ? 1 : 0;
-	buildFilter();
+	requestFilter();
 }
 
 function setmaskk(k) {
@@ -815,7 +908,7 @@ function setmaskk(k) {
 	if (k < 1) k = 1;
 	if (k > 12) k = 12;
 	maskK = k;
-	buildFilter();
+	requestFilter();
 }
 
 // setvecmin <ic> <n> / setvecmax <ic> <n>: the interval class travels with the value instead of
@@ -830,7 +923,7 @@ function setvecmin(k, n) {
 	if (n > 12) n = 12;
 	vecMin[k - 1] = n;
 	vecCondRefresh();
-	buildFilter();
+	requestFilter();
 }
 
 function setvecmax(k, n) {
@@ -841,7 +934,7 @@ function setvecmax(k, n) {
 	if (n > 12) n = 12;
 	vecMax[k - 1] = n;
 	vecCondRefresh();
-	buildFilter();
+	requestFilter();
 }
 
 // Marks the set that is playing right now, which is what makes the button usable while browsing:
@@ -851,20 +944,20 @@ function setfav(f) {
 	var v = f ? 1 : 0;
 	if (favs[setIndex] === v) return;
 	favs[setIndex] = v;
-	if (favOnly) buildFilter();
+	if (favOnly) requestFilter();
 	post("forteseq2: " + favCount() + " favoritos\n");
 	sendFavList();
 }
 
 function setfavonly(f) {
 	favOnly = f ? 1 : 0;
-	buildFilter();
+	requestFilter();
 }
 
 function clearfavs() {
 	for (var i = 0; i < favs.length; i++) favs[i] = 0;
 	favEcho = -1;
-	if (favOnly) buildFilter();
+	if (favOnly) requestFilter();
 	post("forteseq2: lista de favoritos vacia\n");
 	sendFavList();
 	outlet(4, ["fav", 0]);
@@ -884,7 +977,7 @@ function setfavlist() {
 		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
 	}
 	favEcho = -1;
-	if (favOnly) buildFilter();
+	if (favOnly) requestFilter();
 	savefavs();
 	var now = favCount();
 	// Silent when the list comes back unchanged, which is what the echo of a single mark looks
@@ -1242,7 +1335,7 @@ function setvoicelead(x) {
 
 function setroot(r) {
 	root = Math.round(r);
-	buildFilter();   // the mask is absolute, so what fits inside it changes when the root moves
+	requestFilter();   // the mask is absolute, so what fits inside it changes when the root moves
 }
 
 function setmasteroctave(o) {
@@ -1363,7 +1456,7 @@ function recallpreset(slot) {
 	vecCondRefresh();
 	favOnly = p.favOnly || 0;
 	buildOrder();
-	buildFilter();
+	requestFilter();
 
 	// Presets stored before the articulation engine existed have none of these fields; fall
 	// back to the module defaults so an old slot recalls as the plain fixed-velocity device
@@ -1514,14 +1607,47 @@ function articulationFor(v, pos, n) {
 	};
 }
 
+// --- the per-voice monitor --------------------------------------------------------------------
+// One comment showing what each voice is playing. It used to be rebuilt and resent on every step:
+// NUM_VOICES strings plus a list message plus a comment redraw, per note. Two things changed.
+// It is skippable outright (setmonitor), because at speed nobody can read it anyway; and when it
+// is on it only emits when the notes it names actually differ from the ones on screen, which in
+// Acordes with a slow harmonic rhythm is a handful of times per pass instead of every step.
+var monitorOn = 1;
+var MON_SILENT = -1;                       // muted, external or resting: shows as "--"
+var monShown = filled(MAX_VOICES, -2);     // what the comment currently reads
+var monScratch = filled(MAX_VOICES, -2);   // what this step would put there; reused, never realloc'd
+var monShownCount = -1;                    // the NUM_VOICES the visible line was built for
+
+function setmonitor(x) {
+	monitorOn = x ? 1 : 0;
+	monShownCount = -1;   // switching it back on must repaint, whatever the notes are doing
+}
+
+function emitMonitor() {
+	if (!monitorOn) return;
+	var v;
+	if (monShownCount === NUM_VOICES) {
+		var same = 1;
+		for (v = 0; v < NUM_VOICES; v++) if (monScratch[v] !== monShown[v]) { same = 0; break; }
+		if (same) return;
+	}
+	var labelled = [];
+	for (v = 0; v < NUM_VOICES; v++) {
+		monShown[v] = monScratch[v];
+		labelled.push("V" + (v + 1) + ":" +
+			(monScratch[v] === MON_SILENT ? "--" : noteName(monScratch[v])));
+	}
+	monShownCount = NUM_VOICES;
+	outlet(5, labelled);
+}
+
 function emitVoices(noteData) {
-	var summary = [];
-	var names = [];
 	// cardinality of the set currently sounding, for the "tie the accent cycle to n" option
 	var curSet = sets[setIndex];
 	var card = curSet ? curSet.length : 1;
 	for (var v = 0; v < NUM_VOICES; v++) {
-		if (voiceMute[v] || voiceExternal[v]) { summary.push(0); names.push("--"); continue; }
+		if (voiceMute[v] || voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
 		var list = voiceOctaveList[v];
 		var oct = list[patternStep % list.length];
 		var shift = oct * 12 + effRoot() + masterOctave * 12;
@@ -1541,16 +1667,12 @@ function emitVoices(noteData) {
 		// A rest reads as "--" in the monitor, same as a muted or external voice: from the
 		// listener's side nothing sounds, and the readout should not claim otherwise.
 		var art = articulationFor(v, patternStep, card);
-		if (art.rest) { summary.push(0); names.push("--"); continue; }
+		if (art.rest) { monScratch[v] = MON_SILENT; continue; }
 
-		summary.push(repr);
-		names.push(noteName(repr));
+		monScratch[v] = repr;
 		emitNote(v, art, shifted);
 	}
-	outlet(3, summary);
-	var labelled = [];
-	for (var m = 0; m < NUM_VOICES; m++) labelled.push("V" + (m + 1) + ":" + names[m]);
-	outlet(5, labelled);
+	emitMonitor();
 }
 
 var VOICING_SPREAD = 0, VOICING_CLOSED = 1, VOICING_DROP2 = 2, VOICING_DROP3 = 3,
@@ -1598,16 +1720,21 @@ function applyVoicing(st, m) {
 // chord, counted in both directions. Nearest-note rather than voice against voice because the
 // two chords rarely have the same number of notes -- a triad following a nine-note set still has
 // to be scored, and pairing them up by position would score it as nonsense.
-function chordDistance(a, b) {
-	var total = 0, i, j, d, best;
+// `off` is added to every note of `a` on the way past, which is exactly
+// chordDistance(shiftChord(a, off), b) without building the shifted copy. The voice leading tries
+// sixty candidates per step and this is the inner loop of all sixty, so the array it is not
+// allocating is the point. Order does not matter to the measure, so shifting in place is safe.
+function chordDistance(a, off, b) {
+	var total = 0, i, j, d, best, ai;
 	for (i = 0; i < a.length; i++) {
+		ai = a[i] + off;
 		best = 1e9;
-		for (j = 0; j < b.length; j++) { d = a[i] > b[j] ? a[i] - b[j] : b[j] - a[i]; if (d < best) best = d; }
+		for (j = 0; j < b.length; j++) { d = ai > b[j] ? ai - b[j] : b[j] - ai; if (d < best) best = d; }
 		total += best;
 	}
 	for (j = 0; j < b.length; j++) {
 		best = 1e9;
-		for (i = 0; i < a.length; i++) { d = a[i] > b[j] ? a[i] - b[j] : b[j] - a[i]; if (d < best) best = d; }
+		for (i = 0; i < a.length; i++) { ai = a[i] + off; d = ai > b[j] ? ai - b[j] : b[j] - ai; if (d < best) best = d; }
 		total += best;
 	}
 	return total;
@@ -1625,24 +1752,49 @@ function shiftChord(notes, by) {
 // root is added, because a moving root is exactly what makes two chords far apart. The pull term
 // keeps a long run from wandering off: without it each chord only has to be near its neighbour,
 // and a hundred small steps in the same direction cost nothing.
+// Every inversion of the current set, already voiced. This depends on nothing but (setIndex,
+// voicingMode) -- lastChord does not enter into it -- so the same arrays stand for as long as the
+// harmony holds. Rebuilding them per step was the bulk of what the voice leading cost: twelve
+// closedStack walks, twelve applyVoicing slices and twelve sorts on every single note. Keyed on
+// setIndex because chordFor() is only ever handed sets[setIndex].
+var stackCache = null, stackCacheSet = -1, stackCacheVoicing = -1;
+
+function voicedRotations(pcs) {
+	if (stackCache && stackCacheSet === setIndex && stackCacheVoicing === voicingMode) return stackCache;
+	var out = [];
+	for (var r = 0; r < pcs.length; r++) out.push(applyVoicing(closedStack(pcs, r), voicingMode));
+	stackCache = out;
+	stackCacheSet = setIndex;
+	stackCacheVoicing = voicingMode;
+	return out;
+}
+
 function chordFor(pcs) {
 	var er = effRoot();
-	var plain = applyVoicing(closedStack(pcs, 0), voicingMode);
+	var cands = voicedRotations(pcs);
+	var plain = cands[0];
 	if (!voiceLead || !lastChord) {
+		// A cached array leaves here. That is safe because emitVoices() only ever reads what it is
+		// handed -- it builds its own shifted copy -- and it is the point: no allocation at all on
+		// the path that most sets take.
 		lastChord = shiftChord(plain, er);
 		return plain;
 	}
-	var bestCand = plain, bestScore = 1e9;
-	for (var r = 0; r < pcs.length; r++) {
-		var cand = applyVoicing(closedStack(pcs, r), voicingMode);
+	// The winner is remembered as (which inversion, which octave) rather than as a built array, so
+	// the loop allocates nothing and only the chord that actually won is ever materialised.
+	var bestCand = plain, bestOct = 0, bestScore = 1e9;
+	for (var r = 0; r < cands.length; r++) {
+		var cand = cands[r];
 		for (var o = -2; o <= 2; o++) {
-			var at = shiftChord(cand, o * 12 + er);
-			var score = chordDistance(at, lastChord) + Math.abs(at[0] - (CHORD_BASE + er)) * 0.25;
-			if (score < bestScore) { bestScore = score; bestCand = shiftChord(cand, o * 12); }
+			var off = o * 12 + er;
+			var score = chordDistance(cand, off, lastChord) +
+				Math.abs((cand[0] + off) - (CHORD_BASE + er)) * 0.25;
+			if (score < bestScore) { bestScore = score; bestCand = cand; bestOct = o * 12; }
 		}
 	}
-	lastChord = shiftChord(bestCand, er);
-	return bestCand;
+	var chosen = shiftChord(bestCand, bestOct);
+	lastChord = shiftChord(chosen, er);
+	return chosen;
 }
 
 function displayNotes(pcs) {
@@ -1813,13 +1965,11 @@ function pitchForDegree(pcs, deg) {
 // the cursor -- a mute is a gate, not a pause, so unmuting mid-phrase drops the voice back in
 // where it would have been rather than where it left off.
 function emitVoicesIndependent(pcs, n) {
-	var summary = [];
-	var names = [];
 	for (var v = 0; v < NUM_VOICES; v++) {
 		// external voices belong to triggervoice(); the clock must not move their cursor too
-		if (voiceExternal[v]) { summary.push(0); names.push("--"); continue; }
+		if (voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
 		var div = voiceDiv[v] > 0 ? voiceDiv[v] : 1;
-		if (((patternStep - 1) % div) !== 0) { summary.push(0); names.push("--"); continue; }
+		if (((patternStep - 1) % div) !== 0) { monScratch[v] = MON_SILENT; continue; }
 
 		var pos = voicePos[v];
 		// Acordes: the cursor is frozen at 0, so the voice holds its degree and the chord changes
@@ -1843,16 +1993,12 @@ function emitVoicesIndependent(pcs, n) {
 				" | grp=" + (art.group ? "ACC" : "nrm") + " vel=" + art.vel +
 				(voiceMute[v] ? " MUTED" : "") + (art.rest ? " REST" : "") + "\n");
 		}
-		if (voiceMute[v] || art.rest) { summary.push(0); names.push("--"); continue; }
+		if (voiceMute[v] || art.rest) { monScratch[v] = MON_SILENT; continue; }
 
-		summary.push(note);
-		names.push(noteName(note));
+		monScratch[v] = note;
 		emitNote(v, art, note);
 	}
-	outlet(3, summary);
-	var labelled = [];
-	for (var m = 0; m < NUM_VOICES; m++) labelled.push("V" + (m + 1) + ":" + names[m]);
-	outlet(5, labelled);
+	emitMonitor();
 }
 
 // One clock step with independent voices. The shared permutation walk (permIndex/minimalPos) is
@@ -1886,8 +2032,7 @@ function step() {
 			" | locked=" + locked + " mode=" + mode + " read=" + readMode + "/" + readDir +
 			" | noteIdx=" + noteIndex + " permIdx=" + permIndex + " minPos=" + minimalPos + "\n");
 	}
-	var er = effRoot();
-	outlet(6, pcs.map(function(p) { return ((p + er) % 12 + 12) % 12; }));
+	emitCircle(pcs);
 
 	if (voiceIndep) {
 		stepIndependent(pcs, n);
