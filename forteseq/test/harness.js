@@ -390,7 +390,9 @@ function main() {
 			console.error('no existe ' + GOLDEN + ' -- corre --write primero');
 			process.exit(2);
 		}
-		const golden = fs.readFileSync(GOLDEN, 'utf8').replace(/\n$/, '').split('\n');
+		// Split on either line ending. Git hands Windows checkouts CRLF, and a stray carriage
+		// return on every line would report all 36748 frames as changed at once.
+		const golden = fs.readFileSync(GOLDEN, 'utf8').replace(/\s+$/, '').split(/\r?\n/);
 		const current = generate(seed);
 		const r = report(golden, current);
 		const strict = args.indexOf('--strict') >= 0;
