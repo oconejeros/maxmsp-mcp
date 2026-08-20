@@ -5961,6 +5961,986 @@
      "text": "clearfavs",
      "varname": "fs2_favclr"
     }
+   },
+   {
+    "box": {
+     "maxclass": "outlet",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "comment": "el divisor de Sub, hacia el reloj",
+     "patching_rect": [
+      90.0,
+      90.0,
+      30.0,
+      30.0
+     ],
+     "id": "obj-197"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "tp_init",
+     "patching_rect": [
+      20.0,
+      3000.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-198"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_sub",
+     "text": "Sub",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      600.0,
+      56.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3040.0,
+      56.0,
+      18.0
+     ],
+     "id": "obj-199"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_sub",
+     "annotation": "Cuantas veces late el reloj por paso. Es la resolucion de todo lo demas de esta pagina: en Sub 1 no hay ningun lugar entre un paso y el siguiente, asi que Swing, Humaniz y Ratchet no tienen donde caer y no hacen nada. Sub 4 da cuatro lugares.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      619.0,
+      56.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3060.0,
+      56.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Sub",
+       "parameter_shortname": "Sub",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "6",
+        "8"
+       ],
+       "parameter_mmax": 5,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-200"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_swing",
+     "text": "Swing",
+     "presentation": 1,
+     "presentation_rect": [
+      64.0,
+      600.0,
+      40.0,
+      18.0
+     ],
+     "patching_rect": [
+      84.0,
+      3040.0,
+      40.0,
+      18.0
+     ],
+     "id": "obj-201"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_swing",
+     "annotation": "50 es recto. 66 es tresillo, el pulso par cae a dos tercios del camino. 75 es un balanceo con puntillo. Solo se mueve en sub-ticks enteros, asi que cuanto mas alto el Sub, mas fino el swing.",
+     "presentation": 1,
+     "presentation_rect": [
+      64.0,
+      619.0,
+      40.0,
+      15.0
+     ],
+     "patching_rect": [
+      84.0,
+      3060.0,
+      40.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Swing",
+       "parameter_shortname": "Swing",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 50.0,
+       "parameter_mmax": 75.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        50
+       ]
+      }
+     },
+     "id": "obj-202"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_human",
+     "text": "Human",
+     "presentation": 1,
+     "presentation_rect": [
+      112.0,
+      600.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      132.0,
+      3040.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-203"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_human",
+     "annotation": "Corrimiento al azar, sorteado por nota y no por paso, asi que dos voces en el mismo paso no se mueven juntas. Esa independencia es casi todo lo que lo hace sonar a gente y no a una grilla movida.",
+     "presentation": 1,
+     "presentation_rect": [
+      112.0,
+      619.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      132.0,
+      3060.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Human",
+       "parameter_shortname": "Human",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-204"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_rasg",
+     "text": "Rasg",
+     "presentation": 1,
+     "presentation_rect": [
+      168.0,
+      600.0,
+      38.0,
+      18.0
+     ],
+     "patching_rect": [
+      188.0,
+      3040.0,
+      38.0,
+      18.0
+     ],
+     "id": "obj-205"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_rasg",
+     "annotation": "Sub-ticks entre una nota y la siguiente de un mismo acorde. Con 0 el acorde se ataca junto. Ojo: se mide en sub-ticks, asi que en Sub 1 un rasgueo de 2 reparte el acorde en dos pasos enteros.",
+     "presentation": 1,
+     "presentation_rect": [
+      168.0,
+      619.0,
+      38.0,
+      15.0
+     ],
+     "patching_rect": [
+      188.0,
+      3060.0,
+      38.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Rasg",
+       "parameter_shortname": "Rasg",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 8.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-206"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_dirrasg",
+     "text": "Dir R",
+     "presentation": 1,
+     "presentation_rect": [
+      216.0,
+      600.0,
+      150.0,
+      18.0
+     ],
+     "patching_rect": [
+      236.0,
+      3040.0,
+      150.0,
+      18.0
+     ],
+     "id": "obj-207"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.tab",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_dirrasg",
+     "annotation": "Desde que nota se abre el acorde. Alterna cambia de sentido en cada paso.",
+     "presentation": 1,
+     "presentation_rect": [
+      216.0,
+      619.0,
+      150.0,
+      18.0
+     ],
+     "patching_rect": [
+      236.0,
+      3060.0,
+      150.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Dir Rasg",
+       "parameter_shortname": "Dir Rasg",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Arriba",
+        "Abajo",
+        "Azar",
+        "Alt"
+       ],
+       "parameter_mmax": 3,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-208"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_ratn",
+     "text": "Rat N",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      641.0,
+      38.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      3081.0,
+      38.0,
+      18.0
+     ],
+     "id": "obj-209"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_ratn",
+     "annotation": "Cuantas veces se repite una nota del grupo normal dentro de su paso. Necesita Sub mayor que 1: las repeticiones se reparten en los sub-ticks del paso.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      660.0,
+      38.0,
+      15.0
+     ],
+     "patching_rect": [
+      20.0,
+      3101.0,
+      38.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Rat N",
+       "parameter_shortname": "Rat N",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 4.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        1
+       ]
+      }
+     },
+     "id": "obj-210"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_rata",
+     "text": "Rat A",
+     "presentation": 1,
+     "presentation_rect": [
+      48.0,
+      641.0,
+      38.0,
+      18.0
+     ],
+     "patching_rect": [
+      68.0,
+      3081.0,
+      38.0,
+      18.0
+     ],
+     "id": "obj-211"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_rata",
+     "annotation": "Lo mismo para el grupo acento. Como la reja de 16 celdas decide que paso es acento, el redoble cae en las celdas que dibujaste y no en todas.",
+     "presentation": 1,
+     "presentation_rect": [
+      48.0,
+      660.0,
+      38.0,
+      15.0
+     ],
+     "patching_rect": [
+      68.0,
+      3101.0,
+      38.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Rat A",
+       "parameter_shortname": "Rat A",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 4.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        1
+       ]
+      }
+     },
+     "id": "obj-212"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_ratprob",
+     "text": "Prob",
+     "presentation": 1,
+     "presentation_rect": [
+      96.0,
+      641.0,
+      40.0,
+      18.0
+     ],
+     "patching_rect": [
+      116.0,
+      3081.0,
+      40.0,
+      18.0
+     ],
+     "id": "obj-213"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_ratprob",
+     "annotation": "Cada cuanto el ratchet realmente dispara. En 100 siempre; en 30 uno de cada tres.",
+     "presentation": 1,
+     "presentation_rect": [
+      96.0,
+      660.0,
+      40.0,
+      15.0
+     ],
+     "patching_rect": [
+      116.0,
+      3101.0,
+      40.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Prob Rat",
+       "parameter_shortname": "Prob Rat",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        100
+       ]
+      }
+     },
+     "id": "obj-214"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_lbl_ratcaida",
+     "text": "Caida",
+     "presentation": 1,
+     "presentation_rect": [
+      148.0,
+      641.0,
+      40.0,
+      18.0
+     ],
+     "patching_rect": [
+      168.0,
+      3081.0,
+      40.0,
+      18.0
+     ],
+     "id": "obj-215"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_ratcaida",
+     "annotation": "Cuanta velocidad pierde el redoble entre la primera repeticion y la ultima.",
+     "presentation": 1,
+     "presentation_rect": [
+      148.0,
+      660.0,
+      40.0,
+      15.0
+     ],
+     "patching_rect": [
+      168.0,
+      3101.0,
+      40.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Caida",
+       "parameter_shortname": "Caida",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-216"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "tp_nota",
+     "presentation": 1,
+     "text": "Sub 1 deja el reloj exactamente como estaba: sin lugar entre un paso y el siguiente, Swing, Humaniz y Ratchet no hacen nada.",
+     "presentation_rect": [
+      0.0,
+      686.0,
+      500.0,
+      32.0
+     ],
+     "patching_rect": [
+      20.0,
+      3150.0,
+      500.0,
+      32.0
+     ],
+     "id": "obj-217"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setswing",
+     "patching_rect": [
+      20.0,
+      3200.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-218"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend sethumanize",
+     "patching_rect": [
+      170.0,
+      3200.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-219"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setstrum",
+     "patching_rect": [
+      320.0,
+      3200.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-220"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setstrumdir",
+     "patching_rect": [
+      470.0,
+      3200.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-221"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setratchet 0",
+     "patching_rect": [
+      20.0,
+      3230.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-222"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setratchet 1",
+     "patching_rect": [
+      170.0,
+      3230.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-223"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setratchetprob",
+     "patching_rect": [
+      320.0,
+      3230.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-224"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setratchetdecay",
+     "patching_rect": [
+      470.0,
+      3230.0,
+      140.0,
+      22.0
+     ],
+     "id": "obj-225"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 7,
+     "outlettype": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "varname": "tp_sub_sel",
+     "text": "sel 0 1 2 3 4 5",
+     "patching_rect": [
+      20.0,
+      3280.0,
+      160.0,
+      22.0
+     ],
+     "id": "obj-226"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "tp_sub_t",
+     "text": "t i i",
+     "patching_rect": [
+      20.0,
+      3340.0,
+      60.0,
+      22.0
+     ],
+     "id": "obj-227"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      20.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "1",
+     "id": "obj-228"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      70.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "2",
+     "id": "obj-229"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      120.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "3",
+     "id": "obj-230"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      170.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "4",
+     "id": "obj-231"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      220.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "6",
+     "id": "obj-232"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      270.0,
+      3310.0,
+      40.0,
+      22.0
+     ],
+     "text": "8",
+     "id": "obj-233"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setsub",
+     "patching_rect": [
+      20.0,
+      3370.0,
+      100.0,
+      22.0
+     ],
+     "id": "obj-234"
+    }
    }
   ],
   "lines": [
@@ -9203,6 +10183,510 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-198",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-200",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-202",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-204",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-206",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-208",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-210",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-212",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-214",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-198",
+      0
+     ],
+     "destination": [
+      "obj-216",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-202",
+      0
+     ],
+     "destination": [
+      "obj-218",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-218",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-204",
+      0
+     ],
+     "destination": [
+      "obj-219",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-219",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-206",
+      0
+     ],
+     "destination": [
+      "obj-220",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-220",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-208",
+      0
+     ],
+     "destination": [
+      "obj-221",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-221",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-210",
+      0
+     ],
+     "destination": [
+      "obj-222",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-222",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-212",
+      0
+     ],
+     "destination": [
+      "obj-223",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-223",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-214",
+      0
+     ],
+     "destination": [
+      "obj-224",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-224",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-216",
+      0
+     ],
+     "destination": [
+      "obj-225",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-225",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-200",
+      0
+     ],
+     "destination": [
+      "obj-226",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      0
+     ],
+     "destination": [
+      "obj-228",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-228",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      1
+     ],
+     "destination": [
+      "obj-229",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-229",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      2
+     ],
+     "destination": [
+      "obj-230",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-230",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      3
+     ],
+     "destination": [
+      "obj-231",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-231",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      4
+     ],
+     "destination": [
+      "obj-232",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-232",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-226",
+      5
+     ],
+     "destination": [
+      "obj-233",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-233",
+      0
+     ],
+     "destination": [
+      "obj-227",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-227",
+      1
+     ],
+     "destination": [
+      "obj-234",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-234",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-227",
+      0
+     ],
+     "destination": [
+      "obj-197",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -9599,6 +11083,51 @@
    "obj-171": [
     "IC6 Max",
     "IC6 Max",
+    0
+   ],
+   "obj-200": [
+    "Sub",
+    "Sub",
+    0
+   ],
+   "obj-202": [
+    "Swing",
+    "Swing",
+    0
+   ],
+   "obj-204": [
+    "Human",
+    "Human",
+    0
+   ],
+   "obj-206": [
+    "Rasg",
+    "Rasg",
+    0
+   ],
+   "obj-208": [
+    "Dir Rasg",
+    "Dir Rasg",
+    0
+   ],
+   "obj-210": [
+    "Rat N",
+    "Rat N",
+    0
+   ],
+   "obj-212": [
+    "Rat A",
+    "Rat A",
+    0
+   ],
+   "obj-214": [
+    "Prob Rat",
+    "Prob Rat",
+    0
+   ],
+   "obj-216": [
+    "Caida",
+    "Caida",
     0
    ]
   },
