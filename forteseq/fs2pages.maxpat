@@ -7869,6 +7869,386 @@
      ],
      "id": "obj-267"
     }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "cm_init",
+     "patching_rect": [
+      20.0,
+      4400.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-268"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Enlace",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      900.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      4440.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-269"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_enlace",
+     "annotation": "Cuantas notas, como minimo, tiene que compartir el set que viene con el que suena. Es el camino armonico clasico: en 0 el catalogo se recorre como siempre; en 3 o 4 la armonia se mueve por tonos comunes y deja de saltar. Si en una vuelta entera nadie cumple -- un set de dos notas no puede compartir cuatro con nadie -- pasa al siguiente igual: una regla que puede congelar la secuencia es peor que una que cede.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      919.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      20.0,
+      4460.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Enlace",
+       "parameter_shortname": "Enlace",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 6.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-270"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setlink",
+     "patching_rect": [
+      20.0,
+      4520.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-271"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Tension",
+     "presentation": 1,
+     "presentation_rect": [
+      60.0,
+      900.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      80.0,
+      4440.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-272"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_tension",
+     "annotation": "Largo del ciclo de tension, en cambios de set. En 0 no hay curva. Con 8, la armonia recorre una forma completa cada ocho cambios: en vez de tomar el que sigue, toma el set cuya consonancia mas se acerca a la que la curva pide en ese punto. Los extremos entre los que barre son los que el FILTRO deja pasar, asi que \"lo mas aspero posible\" quiere decir lo mas aspero que quedo en el catalogo.",
+     "presentation": 1,
+     "presentation_rect": [
+      60.0,
+      919.0,
+      44.0,
+      15.0
+     ],
+     "patching_rect": [
+      80.0,
+      4460.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Tension",
+       "parameter_shortname": "Tension",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 16.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-273"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend settension",
+     "patching_rect": [
+      180.0,
+      4520.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-274"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Curva",
+     "presentation": 1,
+     "presentation_rect": [
+      120.0,
+      900.0,
+      130.0,
+      18.0
+     ],
+     "patching_rect": [
+      140.0,
+      4440.0,
+      130.0,
+      18.0
+     ],
+     "id": "obj-275"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.tab",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_curva",
+     "annotation": "La forma del ciclo. Sube: arranca consonante y se tensa. Baja: arranca tensa y afloja. Arco: va y vuelve dentro del mismo ciclo.",
+     "presentation": 1,
+     "presentation_rect": [
+      120.0,
+      919.0,
+      130.0,
+      18.0
+     ],
+     "patching_rect": [
+      140.0,
+      4460.0,
+      130.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Curva",
+       "parameter_shortname": "Curva",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Sube",
+        "Baja",
+        "Arco"
+       ],
+       "parameter_mmax": 2,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-276"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend settenshape",
+     "patching_rect": [
+      340.0,
+      4520.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-277"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Prog",
+     "presentation": 1,
+     "presentation_rect": [
+      262.0,
+      900.0,
+      44.0,
+      18.0
+     ],
+     "patching_rect": [
+      282.0,
+      4440.0,
+      44.0,
+      18.0
+     ],
+     "id": "obj-278"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_progfav",
+     "annotation": "Toca los favoritos en el orden en que los marcaste, y no en el del catalogo. Eso convierte una lista corta en una progresion de acordes. Manda sobre Enlace y sobre Tension, y tampoco consulta el filtro: los elegiste a mano, discutirtelos seria impertinente. Para mover uno al final de la progresion, desmarcalo y volve a marcarlo. Con la lista vacia no hace nada.",
+     "presentation": 1,
+     "presentation_rect": [
+      262.0,
+      919.0,
+      15.0,
+      15.0
+     ],
+     "patching_rect": [
+      282.0,
+      4460.0,
+      15.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Prog",
+       "parameter_shortname": "Prog",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-279"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setfavseq",
+     "patching_rect": [
+      500.0,
+      4520.0,
+      150.0,
+      22.0
+     ],
+     "id": "obj-280"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "cm_nota",
+     "text": "Las tres reglas se pisan en este orden: Prog manda sobre Tension, y Tension sobre el recorrido normal del catalogo. Enlace se aplica a las dos ultimas pero nunca a Prog. Ninguna de las tres hace nada mientras la armonia no se mueva, asi que se escuchan sobre todo con Ritmo Arm. -- en la pagina Musical -- o con pasadas cortas.",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      944.0,
+      512.0,
+      90.0
+     ],
+     "patching_rect": [
+      20.0,
+      4570.0,
+      512.0,
+      90.0
+     ],
+     "id": "obj-281"
+    }
    }
   ],
   "lines": [
@@ -12059,6 +12439,162 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-268",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-268",
+      0
+     ],
+     "destination": [
+      "obj-270",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-270",
+      0
+     ],
+     "destination": [
+      "obj-271",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-271",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-268",
+      0
+     ],
+     "destination": [
+      "obj-273",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-273",
+      0
+     ],
+     "destination": [
+      "obj-274",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-274",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-268",
+      0
+     ],
+     "destination": [
+      "obj-276",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-276",
+      0
+     ],
+     "destination": [
+      "obj-277",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-277",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-268",
+      0
+     ],
+     "destination": [
+      "obj-279",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-279",
+      0
+     ],
+     "destination": [
+      "obj-280",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-280",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -12560,6 +13096,26 @@
    "obj-265": [
     "V4 Gir",
     "V4 Gir",
+    0
+   ],
+   "obj-270": [
+    "Enlace",
+    "Enlace",
+    0
+   ],
+   "obj-273": [
+    "Tension",
+    "Tension",
+    0
+   ],
+   "obj-276": [
+    "Curva",
+    "Curva",
+    0
+   ],
+   "obj-279": [
+    "Prog",
+    "Prog",
     0
    ]
   },
