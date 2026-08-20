@@ -8614,6 +8614,1546 @@
      ],
      "id": "obj-295"
     }
+   },
+   {
+    "box": {
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "md_init",
+     "patching_rect": [
+      20.0,
+      5800.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue",
+     "id": "obj-296"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Forma",
+     "presentation": 1,
+     "presentation_rect": [
+      24.0,
+      1200.0,
+      72.0,
+      18.0
+     ],
+     "patching_rect": [
+      44.0,
+      5840.0,
+      72.0,
+      18.0
+     ],
+     "id": "obj-297"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Ciclo",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      1200.0,
+      42.0,
+      18.0
+     ],
+     "patching_rect": [
+      120.0,
+      5840.0,
+      42.0,
+      18.0
+     ],
+     "id": "obj-298"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Prof",
+     "presentation": 1,
+     "presentation_rect": [
+      146.0,
+      1200.0,
+      46.0,
+      18.0
+     ],
+     "patching_rect": [
+      166.0,
+      5840.0,
+      46.0,
+      18.0
+     ],
+     "id": "obj-299"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Fase",
+     "presentation": 1,
+     "presentation_rect": [
+      196.0,
+      1200.0,
+      42.0,
+      18.0
+     ],
+     "patching_rect": [
+      216.0,
+      5840.0,
+      42.0,
+      18.0
+     ],
+     "id": "obj-300"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Dest",
+     "presentation": 1,
+     "presentation_rect": [
+      242.0,
+      1200.0,
+      80.0,
+      18.0
+     ],
+     "patching_rect": [
+      262.0,
+      5840.0,
+      80.0,
+      18.0
+     ],
+     "id": "obj-301"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "M1",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1221.0,
+      24.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5880.0,
+      24.0,
+      18.0
+     ],
+     "id": "obj-302"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m1_forma",
+     "annotation": "La curva que recorre el modulador. Seno y Triang barren; Diente vuelve de golpe al empezar cada ciclo; Cuadr salta entre los dos extremos y no pasa por el medio; Azar saca un valor nuevo por ciclo y lo sostiene; Paseo se mueve un poco desde donde ya estaba, asi que se aleja de a poco en vez de saltar, y rebota en los bordes en lugar de quedarse pegado a ellos.",
+     "presentation": 1,
+     "presentation_rect": [
+      24.0,
+      1220.0,
+      72.0,
+      18.0
+     ],
+     "patching_rect": [
+      44.0,
+      5880.0,
+      72.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M1 Forma",
+       "parameter_shortname": "M1 Forma",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Seno",
+        "Triang",
+        "Diente",
+        "Cuadr",
+        "Azar",
+        "Paseo"
+       ],
+       "parameter_mmax": 5,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-303"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodshape 1",
+     "patching_rect": [
+      20.0,
+      6050.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-304"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m1_ciclo",
+     "annotation": "Cuantos PASOS dura un ciclo, no cuantos milisegundos. Ocho pasos son ocho pasos a cualquier tempo y siempre caen en la reja, mientras que un LFO en hertz se corre contra ella. Para Azar y Paseo es cuanto sostiene cada valor. Ciclos que no se dividen entre si -- 8 contra 5 -- tardan 40 pasos en volver a coincidir, que es como se consigue que la modulacion no se oiga como un bucle.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      1222.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      5880.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M1 Ciclo",
+       "parameter_shortname": "M1 Ciclo",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 64.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        8
+       ]
+      }
+     },
+     "id": "obj-305"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodcycle 1",
+     "patching_rect": [
+      220.0,
+      6050.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-306"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m1_prof",
+     "annotation": "Cuanto abre el barrido, y hacia donde. Todas las formas son bipolares, asi que el dial del destino queda en el CENTRO del barrido: en 0 el destino vale exactamente lo que dice su dial, y subir la profundidad lo abre parejo hacia los dos lados. Una profundidad negativa da vuelta la forma, que es como se enfrentan dos moduladores puestos en el mismo destino.",
+     "presentation": 1,
+     "presentation_rect": [
+      146.0,
+      1222.0,
+      46.0,
+      15.0
+     ],
+     "patching_rect": [
+      166.0,
+      5880.0,
+      46.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M1 Prof",
+       "parameter_shortname": "M1 Prof",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": -100.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-307"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddepth 1",
+     "patching_rect": [
+      420.0,
+      6050.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-308"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m1_fase",
+     "annotation": "Desde que punto del ciclo arranca, en porcentaje. Es lo unico que separa a dos moduladores con la misma forma y el mismo ciclo: en 25 quedan en cuadratura, en 50 opuestos. Para Azar y Paseo corre tambien el momento en que sacan el valor nuevo, asi que dos de ellos dejan de saltar juntos.",
+     "presentation": 1,
+     "presentation_rect": [
+      196.0,
+      1222.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      216.0,
+      5880.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M1 Fase",
+       "parameter_shortname": "M1 Fase",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-309"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodphase 1",
+     "patching_rect": [
+      620.0,
+      6050.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-310"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m1_dest",
+     "annotation": "Que mueve este modulador. Ninguno escribe el parametro: el dial sigue diciendo lo que vos pusiste y el modulador suma encima al momento de leerlo, asi que apagarlo devuelve el numero exacto que estas viendo. Silencio y Ratchet arrancan en la punta de su rango, asi que conviene bajar el dial a mitad de camino antes de modularlos o la mitad del barrido se pierde contra el tope. Grado corre el grado que se lee del set: se escucha en Arpegio y con Indep, no en Acordes. Swing, Rasgueo y Ratchet necesitan Sub 2 o mas para tener donde caer.",
+     "presentation": 1,
+     "presentation_rect": [
+      242.0,
+      1220.0,
+      80.0,
+      18.0
+     ],
+     "patching_rect": [
+      262.0,
+      5880.0,
+      80.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M1 Dest",
+       "parameter_shortname": "M1 Dest",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "-",
+        "Raiz",
+        "Octava",
+        "Vel",
+        "Largo",
+        "Silencio",
+        "Swing",
+        "Rasgueo",
+        "Ratchet",
+        "Grado"
+       ],
+       "parameter_mmax": 9,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-311"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddest 1",
+     "patching_rect": [
+      820.0,
+      6050.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-312"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "M2",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1246.0,
+      24.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5906.0,
+      24.0,
+      18.0
+     ],
+     "id": "obj-313"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m2_forma",
+     "annotation": "La curva que recorre el modulador. Seno y Triang barren; Diente vuelve de golpe al empezar cada ciclo; Cuadr salta entre los dos extremos y no pasa por el medio; Azar saca un valor nuevo por ciclo y lo sostiene; Paseo se mueve un poco desde donde ya estaba, asi que se aleja de a poco en vez de saltar, y rebota en los bordes en lugar de quedarse pegado a ellos.",
+     "presentation": 1,
+     "presentation_rect": [
+      24.0,
+      1245.0,
+      72.0,
+      18.0
+     ],
+     "patching_rect": [
+      44.0,
+      5906.0,
+      72.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M2 Forma",
+       "parameter_shortname": "M2 Forma",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Seno",
+        "Triang",
+        "Diente",
+        "Cuadr",
+        "Azar",
+        "Paseo"
+       ],
+       "parameter_mmax": 5,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-314"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodshape 2",
+     "patching_rect": [
+      20.0,
+      6080.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-315"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m2_ciclo",
+     "annotation": "Cuantos PASOS dura un ciclo, no cuantos milisegundos. Ocho pasos son ocho pasos a cualquier tempo y siempre caen en la reja, mientras que un LFO en hertz se corre contra ella. Para Azar y Paseo es cuanto sostiene cada valor. Ciclos que no se dividen entre si -- 8 contra 5 -- tardan 40 pasos en volver a coincidir, que es como se consigue que la modulacion no se oiga como un bucle.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      1247.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      5906.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M2 Ciclo",
+       "parameter_shortname": "M2 Ciclo",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 64.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        8
+       ]
+      }
+     },
+     "id": "obj-316"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodcycle 2",
+     "patching_rect": [
+      220.0,
+      6080.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-317"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m2_prof",
+     "annotation": "Cuanto abre el barrido, y hacia donde. Todas las formas son bipolares, asi que el dial del destino queda en el CENTRO del barrido: en 0 el destino vale exactamente lo que dice su dial, y subir la profundidad lo abre parejo hacia los dos lados. Una profundidad negativa da vuelta la forma, que es como se enfrentan dos moduladores puestos en el mismo destino.",
+     "presentation": 1,
+     "presentation_rect": [
+      146.0,
+      1247.0,
+      46.0,
+      15.0
+     ],
+     "patching_rect": [
+      166.0,
+      5906.0,
+      46.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M2 Prof",
+       "parameter_shortname": "M2 Prof",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": -100.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-318"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddepth 2",
+     "patching_rect": [
+      420.0,
+      6080.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-319"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m2_fase",
+     "annotation": "Desde que punto del ciclo arranca, en porcentaje. Es lo unico que separa a dos moduladores con la misma forma y el mismo ciclo: en 25 quedan en cuadratura, en 50 opuestos. Para Azar y Paseo corre tambien el momento en que sacan el valor nuevo, asi que dos de ellos dejan de saltar juntos.",
+     "presentation": 1,
+     "presentation_rect": [
+      196.0,
+      1247.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      216.0,
+      5906.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M2 Fase",
+       "parameter_shortname": "M2 Fase",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-320"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodphase 2",
+     "patching_rect": [
+      620.0,
+      6080.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-321"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m2_dest",
+     "annotation": "Que mueve este modulador. Ninguno escribe el parametro: el dial sigue diciendo lo que vos pusiste y el modulador suma encima al momento de leerlo, asi que apagarlo devuelve el numero exacto que estas viendo. Silencio y Ratchet arrancan en la punta de su rango, asi que conviene bajar el dial a mitad de camino antes de modularlos o la mitad del barrido se pierde contra el tope. Grado corre el grado que se lee del set: se escucha en Arpegio y con Indep, no en Acordes. Swing, Rasgueo y Ratchet necesitan Sub 2 o mas para tener donde caer.",
+     "presentation": 1,
+     "presentation_rect": [
+      242.0,
+      1245.0,
+      80.0,
+      18.0
+     ],
+     "patching_rect": [
+      262.0,
+      5906.0,
+      80.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M2 Dest",
+       "parameter_shortname": "M2 Dest",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "-",
+        "Raiz",
+        "Octava",
+        "Vel",
+        "Largo",
+        "Silencio",
+        "Swing",
+        "Rasgueo",
+        "Ratchet",
+        "Grado"
+       ],
+       "parameter_mmax": 9,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-322"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddest 2",
+     "patching_rect": [
+      820.0,
+      6080.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-323"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "M3",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1271.0,
+      24.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5932.0,
+      24.0,
+      18.0
+     ],
+     "id": "obj-324"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m3_forma",
+     "annotation": "La curva que recorre el modulador. Seno y Triang barren; Diente vuelve de golpe al empezar cada ciclo; Cuadr salta entre los dos extremos y no pasa por el medio; Azar saca un valor nuevo por ciclo y lo sostiene; Paseo se mueve un poco desde donde ya estaba, asi que se aleja de a poco en vez de saltar, y rebota en los bordes en lugar de quedarse pegado a ellos.",
+     "presentation": 1,
+     "presentation_rect": [
+      24.0,
+      1270.0,
+      72.0,
+      18.0
+     ],
+     "patching_rect": [
+      44.0,
+      5932.0,
+      72.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M3 Forma",
+       "parameter_shortname": "M3 Forma",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Seno",
+        "Triang",
+        "Diente",
+        "Cuadr",
+        "Azar",
+        "Paseo"
+       ],
+       "parameter_mmax": 5,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-325"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodshape 3",
+     "patching_rect": [
+      20.0,
+      6110.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-326"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m3_ciclo",
+     "annotation": "Cuantos PASOS dura un ciclo, no cuantos milisegundos. Ocho pasos son ocho pasos a cualquier tempo y siempre caen en la reja, mientras que un LFO en hertz se corre contra ella. Para Azar y Paseo es cuanto sostiene cada valor. Ciclos que no se dividen entre si -- 8 contra 5 -- tardan 40 pasos en volver a coincidir, que es como se consigue que la modulacion no se oiga como un bucle.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      1272.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      5932.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M3 Ciclo",
+       "parameter_shortname": "M3 Ciclo",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 64.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        8
+       ]
+      }
+     },
+     "id": "obj-327"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodcycle 3",
+     "patching_rect": [
+      220.0,
+      6110.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-328"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m3_prof",
+     "annotation": "Cuanto abre el barrido, y hacia donde. Todas las formas son bipolares, asi que el dial del destino queda en el CENTRO del barrido: en 0 el destino vale exactamente lo que dice su dial, y subir la profundidad lo abre parejo hacia los dos lados. Una profundidad negativa da vuelta la forma, que es como se enfrentan dos moduladores puestos en el mismo destino.",
+     "presentation": 1,
+     "presentation_rect": [
+      146.0,
+      1272.0,
+      46.0,
+      15.0
+     ],
+     "patching_rect": [
+      166.0,
+      5932.0,
+      46.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M3 Prof",
+       "parameter_shortname": "M3 Prof",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": -100.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-329"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddepth 3",
+     "patching_rect": [
+      420.0,
+      6110.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-330"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m3_fase",
+     "annotation": "Desde que punto del ciclo arranca, en porcentaje. Es lo unico que separa a dos moduladores con la misma forma y el mismo ciclo: en 25 quedan en cuadratura, en 50 opuestos. Para Azar y Paseo corre tambien el momento en que sacan el valor nuevo, asi que dos de ellos dejan de saltar juntos.",
+     "presentation": 1,
+     "presentation_rect": [
+      196.0,
+      1272.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      216.0,
+      5932.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M3 Fase",
+       "parameter_shortname": "M3 Fase",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-331"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodphase 3",
+     "patching_rect": [
+      620.0,
+      6110.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-332"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m3_dest",
+     "annotation": "Que mueve este modulador. Ninguno escribe el parametro: el dial sigue diciendo lo que vos pusiste y el modulador suma encima al momento de leerlo, asi que apagarlo devuelve el numero exacto que estas viendo. Silencio y Ratchet arrancan en la punta de su rango, asi que conviene bajar el dial a mitad de camino antes de modularlos o la mitad del barrido se pierde contra el tope. Grado corre el grado que se lee del set: se escucha en Arpegio y con Indep, no en Acordes. Swing, Rasgueo y Ratchet necesitan Sub 2 o mas para tener donde caer.",
+     "presentation": 1,
+     "presentation_rect": [
+      242.0,
+      1270.0,
+      80.0,
+      18.0
+     ],
+     "patching_rect": [
+      262.0,
+      5932.0,
+      80.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M3 Dest",
+       "parameter_shortname": "M3 Dest",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "-",
+        "Raiz",
+        "Octava",
+        "Vel",
+        "Largo",
+        "Silencio",
+        "Swing",
+        "Rasgueo",
+        "Ratchet",
+        "Grado"
+       ],
+       "parameter_mmax": 9,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-333"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddest 3",
+     "patching_rect": [
+      820.0,
+      6110.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-334"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "M4",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1296.0,
+      24.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      5958.0,
+      24.0,
+      18.0
+     ],
+     "id": "obj-335"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m4_forma",
+     "annotation": "La curva que recorre el modulador. Seno y Triang barren; Diente vuelve de golpe al empezar cada ciclo; Cuadr salta entre los dos extremos y no pasa por el medio; Azar saca un valor nuevo por ciclo y lo sostiene; Paseo se mueve un poco desde donde ya estaba, asi que se aleja de a poco en vez de saltar, y rebota en los bordes en lugar de quedarse pegado a ellos.",
+     "presentation": 1,
+     "presentation_rect": [
+      24.0,
+      1295.0,
+      72.0,
+      18.0
+     ],
+     "patching_rect": [
+      44.0,
+      5958.0,
+      72.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M4 Forma",
+       "parameter_shortname": "M4 Forma",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Seno",
+        "Triang",
+        "Diente",
+        "Cuadr",
+        "Azar",
+        "Paseo"
+       ],
+       "parameter_mmax": 5,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-336"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodshape 4",
+     "patching_rect": [
+      20.0,
+      6140.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-337"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m4_ciclo",
+     "annotation": "Cuantos PASOS dura un ciclo, no cuantos milisegundos. Ocho pasos son ocho pasos a cualquier tempo y siempre caen en la reja, mientras que un LFO en hertz se corre contra ella. Para Azar y Paseo es cuanto sostiene cada valor. Ciclos que no se dividen entre si -- 8 contra 5 -- tardan 40 pasos en volver a coincidir, que es como se consigue que la modulacion no se oiga como un bucle.",
+     "presentation": 1,
+     "presentation_rect": [
+      100.0,
+      1297.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      120.0,
+      5958.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M4 Ciclo",
+       "parameter_shortname": "M4 Ciclo",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 64.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        8
+       ]
+      }
+     },
+     "id": "obj-338"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodcycle 4",
+     "patching_rect": [
+      220.0,
+      6140.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-339"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m4_prof",
+     "annotation": "Cuanto abre el barrido, y hacia donde. Todas las formas son bipolares, asi que el dial del destino queda en el CENTRO del barrido: en 0 el destino vale exactamente lo que dice su dial, y subir la profundidad lo abre parejo hacia los dos lados. Una profundidad negativa da vuelta la forma, que es como se enfrentan dos moduladores puestos en el mismo destino.",
+     "presentation": 1,
+     "presentation_rect": [
+      146.0,
+      1297.0,
+      46.0,
+      15.0
+     ],
+     "patching_rect": [
+      166.0,
+      5958.0,
+      46.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M4 Prof",
+       "parameter_shortname": "M4 Prof",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": -100.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-340"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddepth 4",
+     "patching_rect": [
+      420.0,
+      6140.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-341"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m4_fase",
+     "annotation": "Desde que punto del ciclo arranca, en porcentaje. Es lo unico que separa a dos moduladores con la misma forma y el mismo ciclo: en 25 quedan en cuadratura, en 50 opuestos. Para Azar y Paseo corre tambien el momento en que sacan el valor nuevo, asi que dos de ellos dejan de saltar juntos.",
+     "presentation": 1,
+     "presentation_rect": [
+      196.0,
+      1297.0,
+      42.0,
+      15.0
+     ],
+     "patching_rect": [
+      216.0,
+      5958.0,
+      42.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M4 Fase",
+       "parameter_shortname": "M4 Fase",
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-342"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmodphase 4",
+     "patching_rect": [
+      620.0,
+      6140.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-343"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.menu",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "md_m4_dest",
+     "annotation": "Que mueve este modulador. Ninguno escribe el parametro: el dial sigue diciendo lo que vos pusiste y el modulador suma encima al momento de leerlo, asi que apagarlo devuelve el numero exacto que estas viendo. Silencio y Ratchet arrancan en la punta de su rango, asi que conviene bajar el dial a mitad de camino antes de modularlos o la mitad del barrido se pierde contra el tope. Grado corre el grado que se lee del set: se escucha en Arpegio y con Indep, no en Acordes. Swing, Rasgueo y Ratchet necesitan Sub 2 o mas para tener donde caer.",
+     "presentation": 1,
+     "presentation_rect": [
+      242.0,
+      1295.0,
+      80.0,
+      18.0
+     ],
+     "patching_rect": [
+      262.0,
+      5958.0,
+      80.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "M4 Dest",
+       "parameter_shortname": "M4 Dest",
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "-",
+        "Raiz",
+        "Octava",
+        "Vel",
+        "Largo",
+        "Silencio",
+        "Swing",
+        "Rasgueo",
+        "Ratchet",
+        "Grado"
+       ],
+       "parameter_mmax": 9,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ]
+      }
+     },
+     "id": "obj-344"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend setmoddest 4",
+     "patching_rect": [
+      820.0,
+      6140.0,
+      190.0,
+      22.0
+     ],
+     "id": "obj-345"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "md_nota",
+     "text": "Cuatro moduladores, uno por fila. Dos apuntados al mismo destino se suman. Ninguno escribe el parametro: el dial sigue diciendo lo tuyo y esto suma encima al leer, asi que Prof en 0 devuelve el numero exacto. Avanzan por paso, no por reloj: con la secuencia detenida no se mueven.",
+     "presentation": 1,
+     "presentation_rect": [
+      328.0,
+      1202.0,
+      188.0,
+      130.0
+     ],
+     "patching_rect": [
+      900.0,
+      5840.0,
+      188.0,
+      130.0
+     ],
+     "id": "obj-346"
+    }
    }
   ],
   "lines": [
@@ -13116,6 +14656,738 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-296",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-303",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-303",
+      0
+     ],
+     "destination": [
+      "obj-304",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-304",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-305",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-305",
+      0
+     ],
+     "destination": [
+      "obj-306",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-306",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-307",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-307",
+      0
+     ],
+     "destination": [
+      "obj-308",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-308",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-309",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-309",
+      0
+     ],
+     "destination": [
+      "obj-310",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-310",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-311",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-311",
+      0
+     ],
+     "destination": [
+      "obj-312",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-312",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-314",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-314",
+      0
+     ],
+     "destination": [
+      "obj-315",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-315",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-316",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-316",
+      0
+     ],
+     "destination": [
+      "obj-317",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-317",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-318",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-318",
+      0
+     ],
+     "destination": [
+      "obj-319",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-319",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-320",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-320",
+      0
+     ],
+     "destination": [
+      "obj-321",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-321",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-322",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-322",
+      0
+     ],
+     "destination": [
+      "obj-323",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-323",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-325",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-325",
+      0
+     ],
+     "destination": [
+      "obj-326",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-326",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-327",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-327",
+      0
+     ],
+     "destination": [
+      "obj-328",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-328",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-329",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-329",
+      0
+     ],
+     "destination": [
+      "obj-330",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-330",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-331",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-331",
+      0
+     ],
+     "destination": [
+      "obj-332",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-332",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-333",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-333",
+      0
+     ],
+     "destination": [
+      "obj-334",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-334",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-336",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-336",
+      0
+     ],
+     "destination": [
+      "obj-337",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-337",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-338",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-338",
+      0
+     ],
+     "destination": [
+      "obj-339",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-339",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-340",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-340",
+      0
+     ],
+     "destination": [
+      "obj-341",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-341",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-342",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-342",
+      0
+     ],
+     "destination": [
+      "obj-343",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-343",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-296",
+      0
+     ],
+     "destination": [
+      "obj-344",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-344",
+      0
+     ],
+     "destination": [
+      "obj-345",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-345",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -13652,6 +15924,106 @@
    "obj-290": [
     "Seguir",
     "Seguir",
+    0
+   ],
+   "obj-303": [
+    "M1 Forma",
+    "M1 Forma",
+    0
+   ],
+   "obj-305": [
+    "M1 Ciclo",
+    "M1 Ciclo",
+    0
+   ],
+   "obj-307": [
+    "M1 Prof",
+    "M1 Prof",
+    0
+   ],
+   "obj-309": [
+    "M1 Fase",
+    "M1 Fase",
+    0
+   ],
+   "obj-311": [
+    "M1 Dest",
+    "M1 Dest",
+    0
+   ],
+   "obj-314": [
+    "M2 Forma",
+    "M2 Forma",
+    0
+   ],
+   "obj-316": [
+    "M2 Ciclo",
+    "M2 Ciclo",
+    0
+   ],
+   "obj-318": [
+    "M2 Prof",
+    "M2 Prof",
+    0
+   ],
+   "obj-320": [
+    "M2 Fase",
+    "M2 Fase",
+    0
+   ],
+   "obj-322": [
+    "M2 Dest",
+    "M2 Dest",
+    0
+   ],
+   "obj-325": [
+    "M3 Forma",
+    "M3 Forma",
+    0
+   ],
+   "obj-327": [
+    "M3 Ciclo",
+    "M3 Ciclo",
+    0
+   ],
+   "obj-329": [
+    "M3 Prof",
+    "M3 Prof",
+    0
+   ],
+   "obj-331": [
+    "M3 Fase",
+    "M3 Fase",
+    0
+   ],
+   "obj-333": [
+    "M3 Dest",
+    "M3 Dest",
+    0
+   ],
+   "obj-336": [
+    "M4 Forma",
+    "M4 Forma",
+    0
+   ],
+   "obj-338": [
+    "M4 Ciclo",
+    "M4 Ciclo",
+    0
+   ],
+   "obj-340": [
+    "M4 Prof",
+    "M4 Prof",
+    0
+   ],
+   "obj-342": [
+    "M4 Fase",
+    "M4 Fase",
+    0
+   ],
+   "obj-344": [
+    "M4 Dest",
+    "M4 Dest",
     0
    ]
   },

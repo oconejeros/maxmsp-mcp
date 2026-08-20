@@ -503,6 +503,90 @@ function runScenario(e) {
 	c.setharmrate(0);
 	mark('escuchar y responder apagados');
 	run(16);
+
+	// --- modulacion -------------------------------------------------------------------------
+	// Depth 0 is what the whole file above already covers, so these blocks pin down the other
+	// direction: that every destination actually moves, that two modulators aimed at one
+	// destination add up, and -- the one that would fail silently -- that switching them all
+	// off leaves nothing of the last sweep behind.
+	c.setmode(1);
+	c.setlock(1);
+	c.setlockindex(120);
+	c.setsub(1);
+	for (let s = 0; s <= 5; s++) {
+		c.setmodshape(1, s);
+		c.setmodcycle(1, 8);
+		c.setmodphase(1, 0);
+		c.setmoddest(1, 1);            // Raiz, where a wrong number is audible as a wrong key
+		c.setmoddepth(1, 100);
+		mark('mod forma=' + s + ' sobre Raiz');
+		run(24);
+	}
+	// The rest of the destinations, through the shape that sweeps rather than jumps.
+	c.setmodshape(1, 0);
+	c.setgroupsilence(0, 50);
+	for (const d of [2, 3, 4, 5, 9]) {
+		c.setmoddest(1, d);
+		mark('mod destino=' + d);
+		run(24);
+	}
+	c.setgroupsilence(0, 0);
+	// The three that need a sub-clock before they have anywhere to put themselves.
+	c.setsub(4);
+	c.setswing(60);
+	c.setmoddest(1, 6);
+	mark('mod sobre Swing');
+	run(24);
+	c.setswing(50);
+	c.setmode(0);
+	c.setstrum(2);
+	c.setmoddest(1, 7);
+	mark('mod sobre Rasgueo');
+	run(20);
+	c.setstrum(0);
+	c.setmode(1);
+	c.setratchet(0, 3);
+	c.setratchet(1, 3);
+	c.setratchetprob(50);
+	c.setmoddest(1, 8);
+	mark('mod sobre Ratchet');
+	run(24);
+	c.setratchet(0, 1);
+	c.setratchet(1, 1);
+	c.setratchetprob(100);
+	c.setsub(1);
+	// A negative depth turns the shape over rather than doing nothing.
+	c.setmoddest(1, 1);
+	c.setmoddepth(1, -100);
+	mark('mod prof negativa');
+	run(24);
+	// Two on one destination, on cycles that do not divide each other, so the sum never repeats
+	// inside the block -- which is what a last-writer-wins bug would show up as.
+	c.setmoddepth(1, 60);
+	c.setmodshape(2, 1);
+	c.setmodcycle(2, 5);
+	c.setmodphase(2, 25);
+	c.setmoddest(2, 1);
+	c.setmoddepth(2, 40);
+	mark('dos moduladores sobre Raiz, ciclos 8 y 5');
+	run(40);
+	// All four, each somewhere else, including both random shapes.
+	c.setmodshape(3, 4);
+	c.setmodcycle(3, 3);
+	c.setmoddest(3, 3);
+	c.setmoddepth(3, 70);
+	c.setmodshape(4, 5);
+	c.setmodcycle(4, 16);
+	c.setmoddest(4, 9);
+	c.setmoddepth(4, 100);
+	mark('los cuatro a la vez');
+	run(48);
+	for (let k = 1; k <= 4; k++) {
+		c.setmoddepth(k, 0);
+		c.setmoddest(k, 0);
+	}
+	mark('modulacion apagada');
+	run(24);
 }
 
 // ---------------------------------------------------------------------------------------------

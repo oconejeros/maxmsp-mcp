@@ -689,7 +689,7 @@ function effRoot() {
 	// whole harmony around by design, and that does not stop being true because you played it.
 	var base = listenOn ? listenTr
 		: ((filterOn && maskFit && setIndex < setFit.length) ? setFit[setIndex] : root);
-	return base + rootSeqOffset;
+	return base + rootSeqOffset + modRootShift();
 }
 
 function rotl12(bits, r) {
@@ -1392,7 +1392,7 @@ function triggervoice(v) {
 	// trigger, so only the reading order is meaningful here. degreeAt() is the only copy of that
 	// reading order, shared with the clock-driven voices, so a voice sounds the same whether
 	// the clock or an external trigger moved it.
-	pc = pitchForDegree(pcs, degreeAt(n, pos) + voiceDegOffset[idx]);
+	pc = pitchForDegree(pcs, degreeAt(n, pos) + voiceDegOffset[idx] + modDeg());
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
@@ -1442,6 +1442,177 @@ function trig(b, v) {
 // into makenote -- played only p1, at a velocity equal to p2, silently discarding both the
 // rest of the chord and the articulation velocity that had just been loaded. Rounding the
 // duration keeps every atom an int, which sidesteps the float-truncation traps in [unpack].
+// --- modulacion ---------------------------------------------------------------------------------
+// Four modulators, each pointed at one destination. What matters most is what they do NOT do:
+// none of them ever writes a parameter. The dial keeps saying what you set it to, the modulator
+// adds an amount on top at the moment the value is read, and a depth of 0 hands back exactly the
+// old number. A modulator that wrote into `root` would fight the dial for it, lose your setting
+// on the way past, leave you unable to see where you actually were -- and then Live would save
+// the set with whatever the sweep happened to be passing through.
+//
+// They advance on STEPS, not on milliseconds. This is a sequencer: a cycle of eight steps is
+// eight steps at any tempo and lands on the grid, where an LFO in hertz drifts against it. The
+// phase is derived from a counter rather than accumulated, so nothing can creep over a long set.
+// Only Azar and Paseo carry state, and both draw once per cycle, which makes Ciclo their hold
+// time and keeps one meaning for that control across all six shapes.
+var MOD_N = 4;
+var MOD_SINE = 0, MOD_TRI = 1, MOD_SAW = 2, MOD_SQ = 3, MOD_SH = 4, MOD_WALK = 5;
+
+// Destination 0 is "-", a modulator with nothing to move. The spans are what depth 100 reaches,
+// and they are deliberately musical rather than the parameter's whole range: an octave control
+// swinging over its full six octaves is not modulation, it is noise.
+var MOD_DEST_NAMES = ["-", "Raiz", "Octava", "Vel", "Largo", "Silencio", "Swing", "Rasgueo",
+	"Ratchet", "Grado"];
+var MOD_SPAN = [0, 12, 3, 63, 100, 100, 25, 8, 100, 7];
+var D_ROOT = 1, D_OCT = 2, D_VEL = 3, D_DUR = 4, D_SIL = 5, D_SWING = 6, D_STRUM = 7,
+	D_RATCHET = 8, D_DEG = 9;
+
+var modShape = filled(MOD_N, 0);
+var modCycle = filled(MOD_N, 8);      // steps per cycle, and the hold time for the two random shapes
+var modDepth = filled(MOD_N, 0);      // -100..100; a negative depth simply turns the shape over
+var modPhase = filled(MOD_N, 0);      // percent of a cycle, which is what puts two of them in quadrature
+var modDest = filled(MOD_N, 0);
+var modHeld = filled(MOD_N, 0);       // what Azar drew, or where Paseo has wandered to
+var modCell = filled(MOD_N, -1);      // which cycle that held value belongs to
+var modPos = 0;                       // steps since the engine started: the modulators' own clock
+var modActive = 0;                    // 1 while at least one modulator has both a destination and depth
+var modSum = filled(MOD_SPAN.length, 0);   // this step's total contribution, per destination
+
+// Every shape is bipolar, so the dial is always the CENTRE of the sweep rather than one end of
+// it. That is the property that makes a destination predictable: raising depth opens the swing
+// symmetrically around the number you can see, and lowering it back to 0 closes it onto that
+// same number. Destinations that sit at the end of their range by default -- Silencio at 0,
+// Ratchet at 100 -- therefore spend half the sweep clamped, which is why their annotations say
+// to park the dial mid-range first.
+function modValue(k) {
+	var cyc = modCycle[k];
+	var pos = modPos + Math.round(cyc * modPhase[k] / 100);
+	var cell = Math.floor(pos / cyc);
+	var ph = (pos - cell * cyc) / cyc;
+	switch (modShape[k]) {
+	case MOD_SINE: return Math.sin(2 * Math.PI * ph);
+	case MOD_TRI: return ph < 0.25 ? 4 * ph : (ph < 0.75 ? 2 - 4 * ph : 4 * ph - 4);
+	case MOD_SAW: return 2 * ph - 1;
+	case MOD_SQ: return ph < 0.5 ? 1 : -1;
+	}
+	// Azar and Paseo. The phase offset shifts `cell` along with everything else, so two of them
+	// on one cycle draw at different moments instead of jumping together.
+	if (cell === modCell[k]) return modHeld[k];
+	modCell[k] = cell;
+	if (modShape[k] === MOD_SH) {
+		modHeld[k] = Math.random() * 2 - 1;
+	} else {
+		// A walk that clamps at the edges sticks to them, and a modulator stuck at its limit reads
+		// as a broken one. Reflecting turns it around instead.
+		var w = modHeld[k] + (Math.random() * 2 - 1) * 0.5;
+		if (w > 1) w = 2 - w;
+		if (w < -1) w = -2 - w;
+		modHeld[k] = w;
+	}
+	return modHeld[k];
+}
+
+// One pass per step, summed per destination, so every read afterwards is a single array lookup
+// instead of a loop over four modulators. Two modulators aimed at the same destination add up,
+// which is the reason this is a sum and not a last-writer-wins assignment.
+//
+// The early return is not only an optimisation. modValue() draws from Math.random for Azar and
+// Paseo, and the regression harness seeds that generator: if an idle modulator consumed a draw,
+// every velocity and every rest coin downstream would shift, and the golden file would report a
+// change in the notes that nobody made.
+function modStep() {
+	modPos++;
+	if (!modActive) return;
+	for (var d = 1; d < modSum.length; d++) modSum[d] = 0;
+	for (var k = 0; k < MOD_N; k++) {
+		var dest = modDest[k];
+		if (!dest || !modDepth[k]) continue;
+		modSum[dest] += modValue(k) * (modDepth[k] / 100) * MOD_SPAN[dest];
+	}
+}
+
+// Called by every modulation setter. The clearing pass matters: modStep() rebuilds modSum only
+// while something is active, so switching the last modulator off without this would leave its
+// final contribution frozen into the sum for good.
+function modRefresh() {
+	var a = 0;
+	for (var k = 0; k < MOD_N; k++) if (modDest[k] > 0 && modDepth[k] !== 0) a = 1;
+	if (!a) for (var d = 0; d < modSum.length; d++) modSum[d] = 0;
+	modActive = a;
+	readoutInvalidate();   // Raiz and Octava reach the readout, and the readout caches
+}
+
+function modIndex(k) {
+	k = Math.round(k) - 1;
+	return (k >= 0 && k < MOD_N) ? k : -1;
+}
+
+function setmodshape(k, s) {
+	var i = modIndex(k);
+	if (i < 0) return;
+	s = Math.round(s);
+	if (!isFinite(s) || s < 0 || s > MOD_WALK) s = 0;
+	if (s === modShape[i]) return;
+	modShape[i] = s;
+	modCell[i] = -1;   // a change of shape draws afresh instead of keeping the other shape's value
+	modRefresh();
+}
+
+function setmodcycle(k, n) {
+	var i = modIndex(k);
+	if (i < 0) return;
+	n = Math.round(n);
+	if (!isFinite(n) || n < 1) n = 1;
+	if (n > 64) n = 64;
+	modCycle[i] = n;
+	modRefresh();
+}
+
+function setmoddepth(k, p) {
+	var i = modIndex(k);
+	if (i < 0) return;
+	p = Math.round(p);
+	if (!isFinite(p)) p = 0;
+	if (p < -100) p = -100;
+	if (p > 100) p = 100;
+	modDepth[i] = p;
+	modRefresh();
+}
+
+function setmodphase(k, p) {
+	var i = modIndex(k);
+	if (i < 0) return;
+	p = Math.round(p);
+	if (!isFinite(p) || p < 0) p = 0;
+	if (p > 100) p = 100;
+	modPhase[i] = p;
+	modRefresh();
+}
+
+function setmoddest(k, d) {
+	var i = modIndex(k);
+	if (i < 0) return;
+	d = Math.round(d);
+	if (!isFinite(d) || d < 0 || d >= MOD_SPAN.length) d = 0;
+	modDest[i] = d;
+	modRefresh();
+}
+
+// The readers. Each is a guarded lookup, so an unmodulated device pays one comparison per read
+// and nothing else.
+function modRootShift() {
+	if (!modActive) return 0;
+	return Math.round(modSum[D_ROOT]) + 12 * Math.round(modSum[D_OCT]);
+}
+
+function modDeg() {
+	return modActive ? Math.round(modSum[D_DEG]) : 0;
+}
+
+function modAt(d) {
+	return modActive ? modSum[d] : 0;
+}
+
 // --- what the sub-clock buys ------------------------------------------------------------------
 // Four features, one mechanism: each decides an offset in sub-ticks and hands it to schedule().
 // Every default here is the value that produces offset 0, so a device that never touches these
@@ -1470,10 +1641,12 @@ function setswing(p) {
 // move in whole sub-ticks, so Sub decides how fine the swing can be -- at Sub 1 there is nowhere
 // to put it and swing does nothing, which is honest rather than surprising.
 function swingOffset() {
-	if (swingPct <= 50 || subDiv < 2) return 0;
+	var sw = swingPct + modAt(D_SWING);
+	if (sw <= 50 || subDiv < 2) return 0;
+	if (sw > 75) sw = 75;
 	var step = Math.floor(subPos / subDiv);
 	if ((step % 2) === 0) return 0;
-	return Math.round(subDiv * (swingPct - 50) / 50);
+	return Math.round(subDiv * (sw - 50) / 50);
 }
 
 function sethumanize(p) {
@@ -1508,11 +1681,13 @@ function setstrumdir(d) {
 // Spreads the notes of one chord across consecutive sub-ticks instead of striking them together.
 // emitVoices() hands chords in ascending pitch, so index order IS low to high.
 function strumOffset(i, n) {
-	if (strumSub <= 0 || n < 2) return 0;
-	if (strumDir === 1) return (n - 1 - i) * strumSub;
-	if (strumDir === 2) return Math.floor(Math.random() * n) * strumSub;
-	if (strumDir === 3) return (strumFlip ? (n - 1 - i) : i) * strumSub;
-	return i * strumSub;
+	var ss = strumSub + Math.round(modAt(D_STRUM));
+	if (ss <= 0 || n < 2) return 0;
+	if (ss > SUB_MAX) ss = SUB_MAX;
+	if (strumDir === 1) return (n - 1 - i) * ss;
+	if (strumDir === 2) return Math.floor(Math.random() * n) * ss;
+	if (strumDir === 3) return (strumFlip ? (n - 1 - i) : i) * ss;
+	return i * ss;
 }
 
 function setratchet(g, n) {
@@ -1556,7 +1731,8 @@ function setvoicetimeoffset(v, t) {
 // lands on the cells you drew rather than everywhere.
 function scheduleBurst(voiceIdx, art, dur, pitch, off) {
 	var n = ratchetN[art.group];
-	if (n <= 1 || subDiv < 2 || (ratchetPct < 100 && (Math.random() * 100) >= ratchetPct)) {
+	var pct = ratchetPct + modAt(D_RATCHET);
+	if (n <= 1 || subDiv < 2 || (pct < 100 && (Math.random() * 100) >= pct)) {
 		schedule(off, [busId, voiceIdx + 1, art.vel, dur, pitch]);
 		return;
 	}
@@ -1911,6 +2087,11 @@ function storepreset(slot) {
 		ratchetPct: ratchetPct,
 		ratchetDecay: ratchetDecay,
 		voiceTimeOffset: voiceTimeOffset.slice(),
+		modShape: modShape.slice(),
+		modCycle: modCycle.slice(),
+		modDepth: modDepth.slice(),
+		modPhase: modPhase.slice(),
+		modDest: modDest.slice(),
 		vecMin: vecMin.slice(),
 		vecMax: vecMax.slice(),
 		favOnly: favOnly,
@@ -2029,6 +2210,17 @@ function recallpreset(slot) {
 	ratchetPct = (p.ratchetPct === undefined) ? 100 : p.ratchetPct;
 	ratchetDecay = p.ratchetDecay || 0;
 	voiceTimeOffset = padVoices(p.voiceTimeOffset, 0);
+
+	// A slot stored before the modulators existed has none of these fields, and the fallbacks
+	// are the inert defaults -- so an old slot recalls as an unmodulated device rather than
+	// inheriting whatever the four modulators happen to be doing right now.
+	modShape = padVoices(p.modShape, 0).slice(0, MOD_N);
+	modCycle = padVoices(p.modCycle, 8).slice(0, MOD_N);
+	modDepth = padVoices(p.modDepth, 0).slice(0, MOD_N);
+	modPhase = padVoices(p.modPhase, 0).slice(0, MOD_N);
+	modDest = padVoices(p.modDest, 0).slice(0, MOD_N);
+	modCell = filled(MOD_N, -1);
+	modRefresh();
 	subPos = 0;
 	flushAllPending();   // queued notes belong to the grid being left behind
 	lastChord = null;   // the chord that sounded before the recall is not the one to lead from
@@ -2117,6 +2309,13 @@ function recallpreset(slot) {
 		outlet(4, ["v" + (v + 1) + "rpuls", voiceRhyK[v]]);
 		outlet(4, ["v" + (v + 1) + "rgir", voiceRhyRot[v]]);
 	}
+	for (var mk = 0; mk < MOD_N; mk++) {
+		outlet(4, ["m" + (mk + 1) + "forma", modShape[mk]]);
+		outlet(4, ["m" + (mk + 1) + "ciclo", modCycle[mk]]);
+		outlet(4, ["m" + (mk + 1) + "prof", modDepth[mk]]);
+		outlet(4, ["m" + (mk + 1) + "fase", modPhase[mk]]);
+		outlet(4, ["m" + (mk + 1) + "dest", modDest[mk]]);
+	}
 	post("preset: recalled slot " + slot + "\n");
 }
 
@@ -2151,7 +2350,7 @@ function articulationFor(v, pos, n) {
 
 	var lo = groupVelMin[g], hi = groupVelMax[g];
 	if (lo > hi) { var swap = lo; lo = hi; hi = swap; }   // tolerate the two dials crossing
-	var vel = lo + Math.floor(Math.random() * (hi - lo + 1));
+	var vel = lo + Math.floor(Math.random() * (hi - lo + 1)) + Math.round(modAt(D_VEL));
 	if (vel < 1) vel = 1;       // velocity 0 is a note-off, never a note
 	if (vel > 127) vel = 127;
 
@@ -2160,12 +2359,15 @@ function articulationFor(v, pos, n) {
 	// one beat, so ms = (60000/bpm) * 4/div.
 	var bpm = currentBpm > 0 ? currentBpm : 120;
 	var div = groupDurDiv[g] > 0 ? groupDurDiv[g] : 16;
+	var sil = groupSilence[g] + modAt(D_SIL);
 
 	return {
 		group: g,
 		vel: vel,
-		dur: (60000 / bpm) * (4 / div),
-		rest: groupSilence[g] > 0 && (Math.random() * 100) < groupSilence[g]
+		// Largo SCALES the length instead of replacing it, so a modulated note keeps the
+		// proportion between the two articulation groups rather than flattening them together.
+		dur: Math.max(1, (60000 / bpm) * (4 / div) * (1 + modAt(D_DUR) / 100)),
+		rest: sil > 0 && (Math.random() * 100) < sil
 	};
 }
 
@@ -2552,7 +2754,7 @@ function emitVoicesIndependent(pcs, n) {
 		// only when the set does -- four voices at offsets 0,1,2,3 read as a four-part chorale.
 		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
 		var readIdx = (mode === 1) ? pos : 0;
-		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v]);
+		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v] + modDeg());
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
 		var note = drumOn ? padFor(pc)
@@ -2680,8 +2882,8 @@ function step() {
 		// and leaves rotation alone, which would only fight it.
 		var deg = degreeAt(n, noteIndex);
 		emitVoices(readMode === READ_MODOS
-			? MELODY_BASE + pitchForDegree(pcs, deg)
-			: MELODY_BASE + pcs[(deg + rotation) % n]);
+			? MELODY_BASE + pitchForDegree(pcs, deg + modDeg())
+			: MELODY_BASE + pcs[((deg + rotation + modDeg()) % n + n) % n]);
 		noteIndex++;
 		if (noteIndex >= readCycleLength(n)) {
 			noteIndex = 0;
@@ -2992,6 +3194,7 @@ function setsilencepreset(t) {
 // step and due now leave in the same pass, in the order they were queued.
 function bang() {
 	if (subDiv <= 1 || (subPos % subDiv) === 0) {
+		modStep();          // before swingOffset(), which is one of the things it moves
 		stepSwing = swingOffset();
 		step();
 		if (strumDir === 3) strumFlip = strumFlip ? 0 : 1;
