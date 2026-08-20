@@ -413,6 +413,51 @@ function runScenario(e) {
 	for (let v = 1; v <= 4; v++) { c.setvoiceeuclen(v, 0); c.setvoiceeuck(v, 1); c.setvoiceeucrot(v, 0); }
 	mark('ritmo por voz apagado');
 	run(16);
+
+	// --- camino armonico ----------------------------------------------------------------
+	// The harmony on its own clock, so a set change happens every four steps and a block of 64
+	// is sixteen of them -- enough for a curve to come round twice.
+	c.setharmrate(4);
+	c.setlink(3);
+	mark('enlace: 3 tonos comunes');
+	run(64);
+	// Six common tones is unsatisfiable for most of the catalogue. What is being tested is the
+	// fallback: the sequence must keep moving rather than freeze on one set.
+	c.setlink(6);
+	mark('enlace: 6, que casi nadie cumple');
+	run(48);
+	c.setlink(0);
+	for (const shape of [0, 1, 2]) {
+		c.settension(8);
+		c.settenshape(shape);
+		mark('tension: ciclo 8, forma ' + shape);
+		run(48);
+	}
+	// The two rules together: the curve asks for a consonance, the link vetoes the sets that do
+	// not hold enough in common, and the closest survivor wins.
+	c.setlink(2);
+	mark('tension + enlace');
+	run(48);
+	c.setlink(0);
+	c.settension(0);
+	// A curated progression. The sets are marked in a deliberate order and the sequence has to
+	// play them in it, not in catalogue order -- which is the whole difference between a
+	// progression and a filter.
+	c.clearfavs();
+	for (const s of [200, 40, 137, 88, 3]) { c.setlockindex(s); c.setfav(1); }
+	c.setfavseq(1);
+	mark('favoritos como progresion');
+	run(48);
+	// Unmarking one has to drop it out of the progression without disturbing the rest.
+	c.setlockindex(137);
+	c.setfav(0);
+	mark('progresion con uno menos');
+	run(32);
+	c.setfavseq(0);
+	c.clearfavs();
+	c.setharmrate(0);
+	mark('camino armonico apagado');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------

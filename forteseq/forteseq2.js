@@ -546,6 +546,11 @@ var vecCond = 0;         // 1 while any entry is off its default, so the usual c
 // same thing under every reading order and across reloads. It is a filter like the others rather
 // than a mode of its own, so "solo favoritos" still obeys cardinality, vector and mask.
 var favs = [];
+// The same information as favs[], in the order you marked them. favs[] answers "is this one
+// a favourite" in O(1), which is what the filter needs on all 351 every rebuild; favSeq is
+// what a progression needs, because the order IS the progression -- eight sets you chose,
+// played in the sequence you chose them in, is songwriting rather than filtering.
+var favSeq = [];
 var favOnly = 0;
 var favEcho = -1;        // which set the Fav toggle was last told about
 
@@ -571,7 +576,7 @@ function favCount() {
 // favoritos" has to be a state the device can be told about.
 function sendFavList() {
 	var l = ["favlist", -1];
-	for (var i = 0; i < favs.length; i++) if (favs[i]) l.push(i);
+	for (var i = 0; i < favSeq.length; i++) l.push(favSeq[i]);
 	outlet(4, l);
 	savefavs();
 }
@@ -599,7 +604,8 @@ function favPath() {
 function savefavs() {
 	if (typeof File === "undefined") return;   // fuera de Max no hay disco, y los tests corren igual
 	var line = "";
-	for (var i = 0; i < favs.length; i++) if (favs[i]) line += (line ? " " : "") + i;
+	// favSeq and not an ascending sweep: the order is part of what is being saved.
+	for (var i = 0; i < favSeq.length; i++) line += (line ? " " : "") + favSeq[i];
 	var f = new File(favPath(), "write", "TEXT");
 	if (!f.isopen) {
 		if (!favSaveWarned) {
@@ -626,12 +632,7 @@ function loadfavs() {
 	var line = "";
 	try { line = f.readline(8192); } catch (e) { line = ""; }
 	f.close();
-	for (var i = 0; i < favs.length; i++) favs[i] = 0;
-	var parts = ("" + line).split(" ");
-	for (var a = 0; a < parts.length; a++) {
-		var idx = parseInt(parts[a], 10);
-		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
-	}
+	favSetAll(("" + line).split(" "), 0);
 	favEcho = -1;            // que el toggle se repinte en la primera nota
 	if (favOnly) requestFilter();
 	post("forteseq2: " + favCount() + " favoritos leidos de " + favPath() + "\n");
@@ -732,6 +733,18 @@ function buildFilter() {
 		post("forteseq2: el filtro no deja pasar ningun set, se ignora\n");
 		for (var k = 0; k < allowed.length; k++) allowed[k] = 1;
 	}
+	// The consonance the filter still allows, which is the range the tension curve sweeps. It
+	// belongs here because it moves exactly when the filter does and nowhere else: asking for
+	// "as harsh as possible" has to mean as harsh as the sets you left in the catalogue.
+	consLow = 1e9;
+	consHigh = -1e9;
+	for (var c = 0; c < allowed.length; c++) {
+		if (!allowed[c]) continue;
+		var cv = consonanceOf(c);
+		if (cv < consLow) consLow = cv;
+		if (cv > consHigh) consHigh = cv;
+	}
+	if (consLow > consHigh) { consLow = 0; consHigh = 0; }
 }
 
 // buildFilter() walks all 351 sets against up to twelve transpositions each -- some four thousand
@@ -757,21 +770,117 @@ function requestFilter() {
 // Moves to the next playable set and reports whether the catalogue wrapped, which is what the
 // rotation-per-pass option keys off. Order and filter both live here, so every caller in step()
 // gets them without knowing about either.
-function advanceSet() {
+// --- the harmonic path -------------------------------------------------------------------
+// Until now the next set was simply the next allowed one in the traversal order. Three ways of
+// choosing it instead, in the order they override each other: a curated progression beats a
+// tension curve, and a tension curve beats the plain walk. Common tones constrain the last two
+// but never the first -- if you chose the sequence yourself, being told your own progression is
+// too far apart would be impertinent.
+var linkMin = 0;      // fewest pitch classes the next set must share with this one; 0 = no rule
+var tensLen = 0;      // set changes in one tension cycle; 0 = no curve
+var tensShape = 0;    // 0 = rising, 1 = falling, 2 = arch
+var tensPos = 0;
+var favSeqOn = 0;     // play the favourites in the order they were marked
+var consLow = 0, consHigh = 0;   // the consonance the filter currently allows, from buildFilter()
+
+// A set's pitch classes at the transposition it will be played at. With the mask fit off every
+// set is rotated by the same root, so common tones between two of them are the same as between
+// their stored forms and this costs nothing; with the fit on each set has its own transposition
+// and the rotation is the only way to count them honestly.
+//
+// The root SEQUENCE is deliberately left out. It carries the whole harmony around by design --
+// the comment on effRoot() already says a root walk is the more deliberate request -- so it
+// shifts both sets equally as far as this is concerned, and asking common tones to also chase a
+// moving root would make the constraint unsatisfiable for no musical gain.
+function fittedBits(i) {
+	var base = (filterOn && maskFit && i < setFit.length) ? setFit[i] : root;
+	return rotl12(setBits[i], base);
+}
+
+// Where in the cycle the tension sits, 0 = as consonant as the filter allows, 1 = as harsh.
+function tensionAt(pos, len, shape) {
+	if (len < 2) return 0;
+	if (shape === 2) {                       // arch: out and back inside one cycle
+		var g = (pos / len) * 2;
+		return g <= 1 ? g : 2 - g;
+	}
+	var f = pos / (len - 1);
+	return shape === 1 ? 1 - f : f;
+}
+
+// The plain walk: the next allowed set in the traversal order, skipping any that does not share
+// enough with the one sounding. If a whole lap finds nothing that does, it takes the next allowed
+// one anyway -- a constraint that can freeze the sequence is worse than a constraint that bends.
+function advanceInOrder() {
 	var total = order.length;
-	if (!total) return 0;
 	var pos = orderPosOf[setIndex];
 	if (pos === undefined) pos = 0;
+	var cb = linkMin > 0 ? fittedBits(setIndex) : 0;
+	var fallback = -1, fallbackRaw = 0;
 	for (var i = 1; i <= total; i++) {
 		var raw = pos + i;
-		var p = raw % total;
-		if (allowed[order[p]]) {
-			setIndex = order[p];
-			rootSeqAdvance();   // the only place the harmony moves, so the only place the root walks
-			return raw >= total ? 1 : 0;
+		var cand = order[raw % total];
+		if (!allowed[cand]) continue;
+		if (linkMin > 0) {
+			if (fallback < 0) { fallback = cand; fallbackRaw = raw; }
+			if (popcount(cb & fittedBits(cand)) < linkMin) continue;
 		}
+		setIndex = cand;
+		rootSeqAdvance();   // the only place the harmony moves, so the only place the root walks
+		return raw >= total ? 1 : 0;
+	}
+	if (fallback >= 0) {
+		setIndex = fallback;
+		rootSeqAdvance();
+		return fallbackRaw >= total ? 1 : 0;
 	}
 	return 0;
+}
+
+// The curve: the harmony is asked to be about this consonant right now, and the closest allowed
+// set that also satisfies the common-tone rule gets it. Scanning all 351 is fine here -- this
+// runs once per set change, not once per note.
+function advanceByTension() {
+	tensPos = (tensPos + 1) % tensLen;
+	var target = consHigh - tensionAt(tensPos, tensLen, tensShape) * (consHigh - consLow);
+	var cb = linkMin > 0 ? fittedBits(setIndex) : 0;
+	var best = -1, bestD = 1e9, loose = -1, looseD = 1e9;
+	for (var i = 0; i < order.length; i++) {
+		var c = order[i];
+		if (c === setIndex || !allowed[c]) continue;
+		var d = consonanceOf(c) - target;
+		if (d < 0) d = -d;
+		if (d < looseD) { looseD = d; loose = c; }
+		if (linkMin > 0 && popcount(cb & fittedBits(c)) < linkMin) continue;
+		if (d < bestD) { bestD = d; best = c; }
+	}
+	if (best < 0) best = loose;
+	if (best < 0) return 0;
+	setIndex = best;
+	rootSeqAdvance();
+	// "Wrapped" drives the shape rotation and the end-of-pass answer. A lap of the catalogue
+	// means nothing here, so what is reported is the cycle coming round, which is the thing that
+	// actually repeats.
+	return tensPos === 0 ? 1 : 0;
+}
+
+// The progression: your favourites, in the order you marked them. The filter is not consulted --
+// you picked these by hand, and a set you chose being filtered out from under you would be the
+// device arguing with you. An empty list falls back to the plain walk rather than to silence.
+function advanceFavSeq() {
+	var n = favSeq.length;
+	if (!n) return advanceInOrder();
+	var k = favSeq.indexOf(setIndex);   // -1 lands on favSeq[0], which is where to come in
+	setIndex = favSeq[(k + 1) % n];
+	rootSeqAdvance();
+	return (k + 1) >= n ? 1 : 0;
+}
+
+function advanceSet() {
+	if (!order.length) return 0;
+	if (favSeqOn) return advanceFavSeq();
+	if (tensLen > 0) return advanceByTension();
+	return advanceInOrder();
 }
 
 // The harmony follows the reading -- a set change when the pass ends, how the device has always
@@ -953,13 +1062,66 @@ function setvecmax(k, n) {
 // Marks the set that is playing right now, which is what makes the button usable while browsing:
 // oir algo, marcarlo, seguir. The value it already holds is ignored, because the echo that
 // repaints the toggle comes straight back in as if a hand had moved it.
+// Marks or unmarks one set, maintaining favSeq: marking appends, unmarking removes and closes
+// the gap. Re-marking one that is already in the list cannot reach here -- setfav() returns
+// early when nothing changed, which is what stops the toggle's own echo from bouncing -- so
+// to move a set to the end of the progression you unmark it and mark it again.
+function favMark(i, v) {
+	var k = favSeq.indexOf(i);
+	if (v) { if (k < 0) favSeq.push(i); }
+	else if (k >= 0) favSeq.splice(k, 1);
+	favs[i] = v ? 1 : 0;
+}
+
+// Replaces the whole list from an ORDERED one, which is the shape the file and the pattr both
+// hand over. Duplicates are dropped rather than marked twice, so a set appears once in the
+// progression however many times it is named.
+function favSetAll(list, from) {
+	for (var i = 0; i < favs.length; i++) favs[i] = 0;
+	favSeq = [];
+	for (var a = from; a < list.length; a++) {
+		var idx = Math.round(list[a]);
+		if (idx >= 0 && idx < favs.length && !favs[idx]) { favs[idx] = 1; favSeq.push(idx); }
+	}
+}
+
 function setfav(f) {
 	var v = f ? 1 : 0;
 	if (favs[setIndex] === v) return;
-	favs[setIndex] = v;
+	favMark(setIndex, v);
 	if (favOnly) requestFilter();
 	post("forteseq2: " + favCount() + " favoritos\n");
 	sendFavList();
+}
+
+// --- the harmonic path, from outside ------------------------------------------------------
+
+function setlink(n) {
+	n = Math.round(n);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 6) n = 6;
+	linkMin = n;
+}
+
+// Length of the tension cycle in set changes. Turning it on restarts the shape, so the curve
+// begins where you asked rather than wherever the counter happened to be.
+function settension(n) {
+	n = Math.round(n);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 16) n = 16;
+	if (n === tensLen) return;
+	tensLen = n;
+	tensPos = 0;
+}
+
+function settenshape(s) {
+	s = Math.round(s);
+	if (!isFinite(s) || s < 0 || s > 2) s = 0;
+	tensShape = s;
+}
+
+function setfavseq(f) {
+	favSeqOn = f ? 1 : 0;
 }
 
 function setfavonly(f) {
@@ -969,6 +1131,7 @@ function setfavonly(f) {
 
 function clearfavs() {
 	for (var i = 0; i < favs.length; i++) favs[i] = 0;
+	favSeq = [];
 	favEcho = -1;
 	if (favOnly) requestFilter();
 	post("forteseq2: lista de favoritos vacia\n");
@@ -984,11 +1147,7 @@ function setfavlist() {
 	// happens to hold, and a bare 0 arriving here would silently make set 1 a favourite.
 	if (arguments.length < 1 || Math.round(arguments[0]) !== -1) return;
 	var was = favCount();
-	for (var i = 0; i < favs.length; i++) favs[i] = 0;
-	for (var a = 0; a < arguments.length; a++) {
-		var idx = Math.round(arguments[a]);
-		if (idx >= 0 && idx < favs.length) favs[idx] = 1;
-	}
+	favSetAll(arguments, 1);   // skip the -1 that marked the message as a real list
 	favEcho = -1;
 	if (favOnly) requestFilter();
 	savefavs();
@@ -1597,6 +1756,11 @@ function storepreset(slot) {
 		voiceRhyLen: voiceRhyLen.slice(),
 		voiceRhyK: voiceRhyK.slice(),
 		voiceRhyRot: voiceRhyRot.slice(),
+		linkMin: linkMin,
+		tensLen: tensLen,
+		tensShape: tensShape,
+		favSeqOn: favSeqOn,
+		favSeq: favSeq.slice(),
 		groupVelMin: groupVelMin.slice(),
 		groupVelMax: groupVelMax.slice(),
 		groupDurDiv: groupDurDiv.slice(),
@@ -1696,6 +1860,12 @@ function recallpreset(slot) {
 	voiceRhyK = padVoices(p.voiceRhyK, 1);
 	voiceRhyRot = padVoices(p.voiceRhyRot, 0);
 	rebuildAllVoiceRhythms();
+	linkMin = p.linkMin || 0;
+	tensLen = p.tensLen || 0;
+	tensShape = p.tensShape || 0;
+	tensPos = 0;
+	favSeqOn = p.favSeqOn || 0;
+	if (p.favSeq) favSetAll(p.favSeq, 0);
 	groupVelMin = p.groupVelMin ? p.groupVelMin.slice() : [55, 95];
 	groupVelMax = p.groupVelMax ? p.groupVelMax.slice() : [80, 115];
 	groupDurDiv = p.groupDurDiv ? p.groupDurDiv.slice() : [16, 4];
@@ -1766,6 +1936,10 @@ function recallpreset(slot) {
 	outlet(4, ["bpm", currentBpm]);
 	outlet(4, ["accentcycle", accentCycle]);
 	outlet(4, ["accenttie", accentTieToN]);
+	outlet(4, ["link", linkMin]);
+	outlet(4, ["tension", tensLen]);
+	outlet(4, ["tenshape", tensShape]);
+	outlet(4, ["favseq", favSeqOn]);
 	outlet(4, ["euclid", euclidOn]);
 	outlet(4, ["euclidk", euclidK]);
 	outlet(4, ["euclidrot", euclidRot]);
