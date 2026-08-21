@@ -1420,7 +1420,8 @@ function triggervoice(v) {
 	}
 	if (art.rest) return;
 
-	emitNote(idx, art, shifted);
+	// Straight out, not into the ring: see emitNote(). This is the one caller with no step.
+	emitNote(idx, art, shifted, 1);
 }
 
 // The far end of the Hub's Enviar mode: [receive FORTESEQ_TRIG] -> [prepend trig] delivers
@@ -1815,9 +1816,28 @@ function flushAllPending() {
 // into makenote -- played only p1, at a velocity equal to p2, silently discarding both the
 // rest of the chord and the articulation velocity that had just been loaded. Rounding the
 // duration keeps every atom an int, which sidesteps the float-truncation traps in [unpack].
-function emitNote(voiceIdx, art, pitches) {
+function emitNote(voiceIdx, art, pitches, now) {
 	var list = (pitches instanceof Array) ? pitches : [pitches];
 	var dur = Math.round(art.dur);
+
+	// A note that did not come from a step has nothing to be placed relative to. The whole
+	// sub-clock exists to put a note BETWEEN two steps, and every offset it produces is a
+	// fraction of one step: swing is half the gap to the next, humanize is a jitter measured
+	// against it, Desf shoves a voice by sub-ticks of it, and a ratchet divides it. An
+	// externally triggered note has no step, so none of the five mean anything for it -- and
+	// the ring would only make it wait for a metro tick it has nothing to do with.
+	//
+	// That wait is what made v2 feel slower than v1 from a MIDI clip. flushPending() runs
+	// from bang() and nowhere else, so a trigger between two ticks came out on the NEXT one,
+	// quantised to the metro grid, and with the transport stopped it never came out at all:
+	// the notes piled up in one ring slot and fired together the moment Run went on.
+	if (now) {
+		for (var k = 0; k < list.length; k++) {
+			outlet(0, [busId, voiceIdx + 1, art.vel, dur, list[k]]);
+		}
+		return;
+	}
+
 	var base = stepSwing + voiceTimeOffset[voiceIdx];
 	for (var i = 0; i < list.length; i++) {
 		var off = base + strumOffset(i, list.length) + humanizeOffset();
