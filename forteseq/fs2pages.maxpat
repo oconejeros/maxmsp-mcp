@@ -10564,6 +10564,89 @@
      "varname": "pr_nota",
      "id": "obj-364"
     }
+   },
+   {
+    "box": {
+     "id": "obj-365",
+     "maxclass": "inlet",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "comment": "salida 5 del js (monitor por voz)",
+     "patching_rect": [
+      300.0,
+      20.0,
+      30.0,
+      30.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-366",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_disp_mon_prep",
+     "patching_rect": [
+      300.0,
+      70.0,
+      90.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-367",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "MIDI",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      121.0,
+      34.0,
+      18.0
+     ],
+     "patching_rect": [
+      300.0,
+      110.0,
+      34.0,
+      18.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-368",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "--",
+     "varname": "fs2_disp_mon",
+     "annotation": "Que nota tiene sonando cada voz en este momento. Un guion es una voz muteada, externa o en silencio. El toggle Mon, en la franja de abajo, lo apaga: repintar este texto es trabajo de interfaz de Live y a velocidad de nota no se alcanza a leer igual.",
+     "presentation": 1,
+     "presentation_rect": [
+      38.0,
+      121.0,
+      478.0,
+      18.0
+     ],
+     "patching_rect": [
+      300.0,
+      140.0,
+      478.0,
+      18.0
+     ]
+    }
    }
   ],
   "lines": [
@@ -15987,6 +16070,30 @@
      ],
      "destination": [
       "obj-361",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-365",
+      0
+     ],
+     "destination": [
+      "obj-366",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-366",
+      0
+     ],
+     "destination": [
+      "obj-368",
       0
      ]
     }
