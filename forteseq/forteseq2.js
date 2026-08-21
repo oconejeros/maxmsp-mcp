@@ -74,7 +74,7 @@ var DEBUG_STEP = 0;                // 1 = trace every step()/triggervoice() to t
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 var sets = [];        // arrays of pitch classes (0-11), sorted by cardinality then value
-var mode = 0;          // 0 = chords, 1 = arpeggio
+var mode = 1;          // 0 = chords, 1 = arpeggio
 var rotShape = 0;      // 0 = rotate once per full 351-set pass, 1 = rotate every set change
 // Which degree of the set comes next. This used to be permMode, with three values; those three
 // keep their numbers -- old presets, and automation lanes in saved Live sets, carry them -- and
@@ -2337,7 +2337,7 @@ function articulationFor(v, pos, n) {
 // It is skippable outright (setmonitor), because at speed nobody can read it anyway; and when it
 // is on it only emits when the notes it names actually differ from the ones on screen, which in
 // Acordes with a slow harmonic rhythm is a handful of times per pass instead of every step.
-var monitorOn = 1;
+var monitorOn = 0;
 var MON_SILENT = -1;                       // muted, external or resting: shows as "--"
 var monShown = filled(MAX_VOICES, -2);     // what the comment currently reads
 var monScratch = filled(MAX_VOICES, -2);   // what this step would put there; reused, never realloc'd
