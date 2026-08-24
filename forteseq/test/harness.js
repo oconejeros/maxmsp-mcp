@@ -605,6 +605,50 @@ function runScenario(e) {
 	c.presetrescan();
 	mark('presets sin Live: inertes');
 	run(16);
+
+	// --- McKay: el quinto Orden y el Modelo de la curva de tension ---------------------------
+	// checkMcKay() (mas abajo) ya fija los tres valores exactos del libro contra un motor limpio;
+	// esto en cambio deja el modo funcionando dentro de una corrida real, para que un cambio que
+	// rompa harmonyValueOf() o dissonanceOf() sin lanzar excepcion igual se note en el golden.
+	c.setorder(4);
+	mark('orden McKay: del mas consonante al cromatico completo');
+	run(24);
+	c.setfilter(1);
+	c.setcardmin(3);
+	c.setcardmax(7);
+	c.settensmodel(1);
+	c.settension(8);
+	c.settenshape(2);
+	mark('curva de tension con el modelo McKay, forma arco');
+	run(32);
+	c.settension(0);
+	c.settensmodel(0);
+	c.setfilter(0);
+	c.setorder(0);
+	mark('McKay apagado, vuelta al orden por defecto');
+	run(16);
+
+	// --- Natural Harmonic Procession: el sexto Orden ------------------------------------------
+	// checkNHP() fija los tres valores exactos del libro y los pares Z contra un motor limpio;
+	// esto deja Orden=Natural andando dentro de una corrida real por la misma razon que el bloque
+	// de McKay de arriba.
+	c.setorder(5);
+	mark('orden Natural (procesion quintal): del mas compacto al cromatico completo');
+	run(24);
+	c.setorder(0);
+	mark('Natural apagado, vuelta al orden por defecto');
+	run(16);
+
+	// --- Modalidades: el septimo Orden ---------------------------------------------------------
+	// checkModality() (mas abajo) fija las cinco clasificaciones exactas del libro y los dos pares
+	// espejo contra un motor limpio; esto deja Orden=Modal andando dentro de una corrida real por
+	// la misma razon que los bloques de McKay y Natural de arriba.
+	c.setorder(6);
+	mark('orden Modal (agrupado por modalidad, cap. 26): de Suspended Triad a 12-Tone');
+	run(24);
+	c.setorder(0);
+	mark('Modal apagado, vuelta al orden por defecto');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -659,9 +703,201 @@ function report(golden, current) {
 	return { noteDiff, readDiff };
 }
 
+// Dosia McKay's "Harmonic Processions" (forteseq/Harmonic-Processions-Dosia-McKay.pdf, chapters
+// 29-34) gives three worked examples for its dissonance-gradient model: the major triad, the
+// diatonic set, and the twelve-tone chromatic set. These are algebraic facts, independent of any
+// audible scenario, so they are checked once here rather than folded into the note-log golden --
+// a wrong weight would not necessarily change which notes play, only how the sets are ordered.
+function checkMcKay() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+	const want = [['3-11B', 0.75, 3.21], ['7-35', 6, 25.64], ['12-1', 23.4, 100]];
+	for (const [forte, raw, pct] of want) {
+		const i = c.setForte.indexOf(forte);
+		if (i < 0) { console.error('McKay: no encontre ' + forte + ' en el catalogo'); ok = false; continue; }
+		const gotRaw = c.dissonanceOf(i), gotPct = c.dissonancePercent(i);
+		if (Math.abs(gotRaw - raw) > 1e-6 || Math.abs(gotPct - pct) > 0.01) {
+			console.error('McKay: ' + forte + ' dio raw=' + gotRaw + ' pct=' + gotPct.toFixed(2) +
+				', el libro dice raw=' + raw + ' pct=' + pct);
+			ok = false;
+		}
+	}
+	// Orden = McKay: el primer set del recorrido tiene que ser el mas consonante posible -- un
+	// vector interValico vacio, que solo puede ser una nota sola o el silencio del catalogo.
+	c.setorder(4);
+	const first = c.order[0];
+	if (c.setVec[first].some((x) => x !== 0)) {
+		console.error('McKay: Orden=McKay no arranca en el set mas consonante, vector=' + c.setVec[first]);
+		ok = false;
+	}
+	// Modelo = McKay en la curva de tension: no debe tirar excepcion.
+	try {
+		c.settensmodel(1);
+		c.settension(8);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.settensmodel(0);
+	} catch (err) {
+		console.error('McKay: Modelo=McKay + curva de tension tiro ' + err);
+		ok = false;
+	}
+	if (ok) console.log('OK   McKay: los tres valores del libro y el modo Orden/Modelo McKay andan.');
+	return ok;
+}
+
+// McKay's Natural Harmonic Procession (chapters 18-23, 22-23 specifically) gives three worked
+// entry numbers: F-C-A (major triad, sharp-projecting) = 10011, the Ionian pentachord C-G-D-A-B
+// (sharp) = 101111, the Phrygian pentachord E-F-G-A-B (flat-projecting) = 1010111. Checked here by
+// Forte label rather than literal pcs, because sets[] stores one canonical rotation per shape and
+// setNP() is rotation-invariant by construction (it searches all twelve rotations itself, the same
+// way zeroedNormalOrder() already does for Forte prime forms) -- any transposition of the same
+// shape must give the same entry number, which is exactly what makes this check meaningful.
+//
+// Z-relation (chapter 36, locked to the printed edition in this PDF -- not McKay-specific, it is
+// Allen Forte's own 1973 term) is checked against the one Z-pair the project already names
+// elsewhere, 4-Z15/4-Z29, plus a plain tetrachord that must have no mate.
+function checkNHP() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+	const want = [['3-11B', 10011], ['5-23B', 101111], ['5-24A', 1010111]];
+	for (const [forte, np] of want) {
+		const i = c.setForte.indexOf(forte);
+		if (i < 0) { console.error('NHP: no encontre ' + forte); ok = false; continue; }
+		if (c.setNP[i] !== np) {
+			console.error('NHP: ' + forte + ' dio ' + c.setNP[i] + ', el libro dice ' + np);
+			ok = false;
+		}
+	}
+	const z15 = c.setForte.indexOf('4-Z15A') >= 0 ? c.setForte.indexOf('4-Z15A') : c.setForte.indexOf('4-Z15');
+	if (z15 >= 0 && c.zMateOf(z15) !== '4-Z29') {
+		console.error('NHP: 4-Z15 deberia emparejar con 4-Z29, dio ' + JSON.stringify(c.zMateOf(z15)));
+		ok = false;
+	}
+	const i20 = c.setForte.indexOf('4-20A') >= 0 ? c.setForte.indexOf('4-20A') : c.setForte.indexOf('4-20');
+	if (i20 >= 0 && c.zMateOf(i20) !== '') {
+		console.error('NHP: 4-20 no deberia tener Z-mate, dio ' + JSON.stringify(c.zMateOf(i20)));
+		ok = false;
+	}
+	// Orden = Natural: el primer set tiene que ser el mas compacto posible (span 0, una nota sola).
+	c.setorder(5);
+	if (c.setNP[c.order[0]] !== 1) {
+		console.error('NHP: Orden=Natural no arranca en el set mas compacto, NP=' + c.setNP[c.order[0]]);
+		ok = false;
+	}
+	if (ok) console.log('OK   NHP: los tres valores del libro, los pares Z y Orden=Natural andan.');
+	return ok;
+}
+
+// McKay's modalities (chapter 26) group sets by span on the circle of fifths rather than by
+// cardinality. Checked against five of the book's own classifications: the major triad and the
+// tritone dyad both come from Figure 21's mirror-set examples, the Ionian pentachord and the full
+// diatonic set from Figure 26-1/26-2's fractal tables, and the whole-tone hexachord from chapter
+// 28's own worked span-11 example. Mirror sets are checked against the same chapter's two named
+// pairs: major triad / minor triad, and the Lydian / Phrygian pentachord.
+function checkModality() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+	const want = [
+		['3-11B', 'Pentatonic'], ['7-35', 'Diatonic'], ['5-23B', 'Ionian Hexachord'],
+		['2-6', 'Diatonic'], ['6-35', 'Whole-Tone'],
+	];
+	for (const [forte, name] of want) {
+		const i = c.setForte.indexOf(forte);
+		if (i < 0) { console.error('Modalidad: no encontre ' + forte); ok = false; continue; }
+		const got = c.modalityNameOf(i);
+		if (got !== name) {
+			console.error('Modalidad: ' + forte + ' dio "' + got + '", el libro dice "' + name + '"');
+			ok = false;
+		}
+	}
+	const mirrors = [['3-11B', '3-11A'], ['5-24B', '5-24A']];
+	for (const [forte, mate] of mirrors) {
+		const i = c.setForte.indexOf(forte);
+		if (i < 0) { console.error('Modalidad: no encontre ' + forte); ok = false; continue; }
+		const got = c.mirrorForteOf(i);
+		if (got !== mate) {
+			console.error('Modalidad: espejo de ' + forte + ' dio "' + got + '", el libro dice "' + mate + '"');
+			ok = false;
+		}
+	}
+	// Orden = Modal: el primer set tiene que ser el de la modalidad mas chica (Suspended Triad).
+	c.setorder(6);
+	const first = c.order[0];
+	const fm = c.modalityOf(first);
+	if (!fm || fm.rank !== 0) {
+		console.error('Modalidad: Orden=Modal no arranca en la primera modalidad, rank=' +
+			(fm ? fm.rank : 'ninguna'));
+		ok = false;
+	}
+	if (ok) console.log('OK   Modalidad: las cinco clasificaciones del libro y los dos pares espejo andan.');
+	return ok;
+}
+
+// Azar Mask/Acentos: randomSubset()/maskRandomPattern()/accentRandomPattern() are checked as pure
+// functions -- the COUNT of active cells a given percentage produces is deterministic regardless
+// of which cells the seeded PRNG happens to pick, so these assertions hold on every run without
+// depending on the harness's fixed seed. randomizemask()/randomizeaccents() themselves need the
+// Live API (undefined outside Live, like the rest of the preset system) and are only checked here
+// for not throwing -- the same smoke-test shape checkMcKay() already uses for Modelo=McKay.
+function checkRandomize() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	const countOnes = (arr) => arr.reduce((n, b) => n + b, 0);
+
+	const maskCases = [[0, 1], [50, 6], [100, 12]];
+	for (const [pct, want] of maskCases) {
+		const pat = c.maskRandomPattern(pct);
+		if (pat.length !== 12 || countOnes(pat) !== want) {
+			console.error('Azar: maskRandomPattern(' + pct + ') dio ' + JSON.stringify(pat) +
+				', esperaba ' + want + ' de 12');
+			ok = false;
+		}
+	}
+
+	const accentPat = c.accentRandomPattern(50, 8);
+	if (accentPat.length !== 16 || countOnes(accentPat) !== 4 ||
+			countOnes(accentPat.slice(8)) !== 0) {
+		console.error('Azar: accentRandomPattern(50, 8) dio ' + JSON.stringify(accentPat) +
+			', esperaba 4 encendidas entre las primeras 8 y el resto apagado');
+		ok = false;
+	}
+
+	// randomSubset() nunca repite una celda: el conteo de unos tiene que ser exacto, no aproximado.
+	for (let trial = 0; trial < 20; trial++) {
+		const sub = c.randomSubset(12, 5);
+		if (sub.length !== 12 || countOnes(sub) !== 5) {
+			console.error('Azar: randomSubset(12, 5) dio ' + JSON.stringify(sub));
+			ok = false;
+			break;
+		}
+	}
+
+	try {
+		c.setrandmaskpct(70);
+		c.randomizemask();
+		c.setrandaccentpct(30);
+		c.randomizeaccents();
+	} catch (err) {
+		console.error('Azar: randomizemask/randomizeaccents sin Live API tiro ' + err);
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Azar: los conteos de Mask/Acentos y el boton de accion sin Live API andan.');
+	return ok;
+}
+
 function main() {
 	const args = process.argv.slice(2);
 	const seed = 20260819;
+
+	if (!checkMcKay()) process.exit(1);
+	if (!checkNHP()) process.exit(1);
+	if (!checkModality()) process.exit(1);
+	if (!checkRandomize()) process.exit(1);
 
 	if (args.indexOf('--write') >= 0) {
 		const log = generate(seed);

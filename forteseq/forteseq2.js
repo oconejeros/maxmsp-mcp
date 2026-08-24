@@ -404,12 +404,54 @@ function buildForte() {
 	if (total !== 224) post("forteseq2: WARNING catalogo de Forte con " + total + " clases, no 224\n");
 }
 
+// Z-relation: two Forte classes that share an interval vector without being the same shape --
+// Allen Forte's own term, standard set theory rather than anything specific to McKay's book
+// (chapters 36-38 of forteseq/Harmonic-Processions-Dosia-McKay.pdf, which cover this along with
+// modal heptachords/hexachords/pentachords and tritone substitution, are locked to the printed
+// edition and unavailable to read from this PDF). forteClass already carries a genuine vector per
+// entry at every cardinality -- including 7..12, whose .num is borrowed from their complement but
+// whose .vec is its own -- so grouping by vector finds every Z-pair directly, with no need to
+// reason about how complementation affects Z-relation. Every group found this way turns out to be
+// size 2, matching the 19 pairs LATE_Z already lists for cardinalities 4..6 plus their mirror
+// image at 7..8 (1 tetrachord/octachord pair, 3 pentachord/heptachord pairs, 15 hexachord pairs
+// that complement onto themselves).
+var zGroupOf = {};   // Forte base number ("4-Z15", no A/B) -> the OTHER number sharing its vector
+
+function buildZGroups() {
+	var byVec = {};
+	for (var key in forteClass) {
+		var e = forteClass[key];
+		var vk = e.vec.join(",");
+		if (!byVec[vk]) byVec[vk] = [];
+		byVec[vk].push(e.num);
+	}
+	for (var vk2 in byVec) {
+		var group = byVec[vk2];
+		if (group.length !== 2) continue;
+		zGroupOf[group[0]] = group[1];
+		zGroupOf[group[1]] = group[0];
+	}
+}
+
+// setForte[i] carries an A/B suffix for asymmetric classes (see buildSetLabels()); Z-relation is
+// keyed on the bare number, since a set and its own mirror image are never each other's Z-mate.
+function zMateOf(i) {
+	var base = setForte[i].replace(/[AB]$/, "");
+	return zGroupOf[base] || "";
+}
+
 // Per-set labels, parallel to sets[].
 var setBits = [];        // bitmask of the set, for fast filtering
 var setCard = [];        // cardinality
 var setVec = [];         // interval vector
 var setForte = [];       // "4-Z15A"
 var setForteOrd = [];    // position within its cardinality, for the Forte traversal order
+var setNP = [];          // McKay's Natural Harmonic Procession entry number (see npOffsets())
+var setSpan = [];        // book's own 1-indexed span number (offsets[last] + 1) of the winning side
+var setMask = [];        // which "extra" offsets (7, 8, 9) beyond the diatonic envelope are present
+var setProj = [];        // "sharp" | "flat" | "sym" -- which projection won npEntryOf, see npOffsets()
+var sharpEntryIdx = {};  // sharp entry number -> set index, for sets whose sharp reading won
+var flatEntryIdx = {};   // flat entry number -> set index, for sets whose flat reading won
 
 function buildSetLabels() {
 	for (var i = 0; i < sets.length; i++) {
@@ -420,6 +462,21 @@ function buildSetLabels() {
 		setCard.push(pcs.length);
 		setVec.push(intervalVectorOf(pcs));
 		favs.push(0);
+
+		var np = npOffsets(pcs);
+		var npS = npEntryOf(np.sharp), npF = npEntryOf(np.flat);
+		setNP.push(Math.min(npS, npF));
+		var proj, winOffsets;
+		if (npS < npF) { proj = "sharp"; winOffsets = np.sharp; }
+		else if (npF < npS) { proj = "flat"; winOffsets = np.flat; }
+		else { proj = "sym"; winOffsets = np.sharp; }
+		setProj.push(proj);
+		var sm = spanMaskOf(winOffsets);
+		setSpan.push(sm.span);
+		setMask.push(sm.mask);
+		if (proj === "sharp") sharpEntryIdx[npS] = i;
+		else if (proj === "flat") flatEntryIdx[npF] = i;
+		else { sharpEntryIdx[npS] = i; flatEntryIdx[npF] = i; }
 
 		var tn = zeroedNormalOrder(pcs);
 		var tnInv = zeroedNormalOrder(invertPcs(pcs));
@@ -444,7 +501,8 @@ function vecString(i) {
 // sets[] is never reordered: presets store setIndex raw, and the Set numbox names a set by its
 // place in the catalogue. An alternative order is a permutation of indices laid over the top.
 
-var ORDER_CARD = 0, ORDER_FORTE = 1, ORDER_CONS = 2, ORDER_NEIGH = 3;
+var ORDER_CARD = 0, ORDER_FORTE = 1, ORDER_CONS = 2, ORDER_NEIGH = 3, ORDER_DISS = 4, ORDER_NAT = 5,
+	ORDER_MODAL = 6;
 var orderMode = ORDER_CARD;
 var order = [];
 var orderPosOf = [];
@@ -461,6 +519,131 @@ function consonanceOf(i) {
 	var v = setVec[i], t = 0;
 	for (var k = 0; k < 6; k++) t += IC_CONSONANCE[k] * v[k];
 	return t / pairs;
+}
+
+// Dosia McKay, "Harmonic Processions": the weight of each interval class is the inverse of how
+// often it occurs in the diatonic scale (P4 x6, M2 x5, m3 x4, M3 x3, m2 x2, TT x1), so the weight
+// itself is 1/6, 1/5, 1/4, 1/3, 1/2, 1 -- a hyperbolic curve (y = 1/x over interval prevalence),
+// not a linear one. Unlike consonanceOf() this is NOT normalised by pair count: the book defines
+// a set's dissonance level as the raw weighted sum, then expresses it as a percentage of the
+// twelve-tone chromatic set's own level (23.4, the highest any set can reach). Verified against
+// the book's own worked examples: major triad 3-11B = 0.75 = 3.21%, diatonic 7-35 = 6 = 25.64%.
+var IC_DISSONANCE_MCKAY = [1 / 2, 1 / 5, 1 / 4, 1 / 3, 1 / 6, 1];
+var MCKAY_CHROMATIC = 23.4;   // 12*(1/2+1/5+1/4+1/3+1/6) + 6*1, the twelve-tone set's own level
+
+function dissonanceOf(i) {
+	var v = setVec[i], t = 0;
+	for (var k = 0; k < 6; k++) t += IC_DISSONANCE_MCKAY[k] * v[k];
+	return t;
+}
+
+function dissonancePercent(i) {
+	return dissonanceOf(i) / MCKAY_CHROMATIC * 100;
+}
+
+// McKay's Natural Harmonic Procession (chapters 18-23): a set's own quintal prime form, found by
+// packing it as tight as possible along the CIRCLE OF FIFTHS instead of the chromatic circle --
+// the same "smallest span, then packed left" search zeroedNormalOrder() already runs for Forte's
+// chromatic prime form, just fed positions measured in fifths (or fourths) instead of semitones.
+// pos = 7*pc mod 12 lists a pitch class by how many fifths above C it sits (F=11, C=0, G=1, ...);
+// pos = 5*pc mod 12 is the same walk the other way (by fourths, i.e. toward the flats). Whichever
+// direction packs tighter -- smaller entry number -- is the set's projection: sharp if the fifths
+// reading wins, flat if the fourths reading does. Verified against three of the book's own worked
+// examples: F-C-A (major triad) packs to offsets [0,1,4] = entry 10011 in the sharp reading; the
+// Ionian pentachord C-G-D-A-B packs to [0,1,2,3,5] = "#1,2,3,4,6"; the Phrygian pentachord
+// E-F-G-A-B packs tighter in the fourths reading, [0,1,2,4,6] = "b1,2,3,5,7", exactly the flat
+// entry the book gives -- so "smaller of the two" is the same choice the book makes by hand.
+function npOffsets(pcs) {
+	var fp = [], fq = [];
+	for (var i = 0; i < pcs.length; i++) {
+		fp.push((7 * pcs[i]) % 12);
+		fq.push((5 * pcs[i]) % 12);
+	}
+	return { sharp: zeroedNormalOrder(fp), flat: zeroedNormalOrder(fq) };
+}
+
+function npEntryOf(offsets) {
+	var n = 0;
+	for (var k = 0; k < offsets.length; k++) n += Math.pow(10, offsets[k]);
+	return n;
+}
+
+// McKay's modalities (chapter 26): every quintal prime form falls into one of 36 named families,
+// determined by its own book-style "span" (offsets[last] + 1 -- the book counts the anchor note
+// itself as span 1, so F-B is span 7, not 6) and, for spans 9-11, by which offsets strictly between
+// the diatonic envelope (0-6) and the span's own endpoint are also occupied. The endpoint itself
+// never counts as a distinguishing "extra" -- it is always present by definition of span. Table
+// transcribed from Figure 26-4 (p.79): mask bit0 = offset 7 present, bit1 = offset 8, bit2 = offset
+// 9. Verified against five of the book's own classifications: the tritone dyad F-B (offsets [0,6],
+// span 7, no extras) lands on Diatonic, exactly as Figure 21-1's HP23#S entry has it; the major
+// triad F-C-A (offsets [0,1,4], span 5) and the Ionian pentachord C-G-D-A-B (offsets [0,1,2,3,5],
+// span 6) both land where Figure 26-1/26-2 place them; the whole-tone hexachord (offsets max out at
+// 10, span 11, with offset 8 present) lands on Whole-Tone, matching chapter 28's own worked example.
+var MODALITY_TABLE = [
+	{ span: 3, mask: 0, sharp: "Suspended Triad", flat: "Suspended Triad" },
+	{ span: 4, mask: 0, sharp: "Quartal", flat: "Quartal" },
+	{ span: 5, mask: 0, sharp: "Pentatonic", flat: "Pentatonic" },
+	{ span: 6, mask: 0, sharp: "Ionian Hexachord", flat: "Ionian Hexachord" },
+	{ span: 7, mask: 0, sharp: "Diatonic", flat: "Diatonic" },
+	{ span: 8, mask: 0, sharp: "Lydian", flat: "Mixolydian" },
+	{ span: 9, mask: 0, sharp: "Enigmatic", flat: "Mystic" },
+	{ span: 9, mask: 1, sharp: "Blues", flat: "Blues" },
+	{ span: 10, mask: 0, sharp: "Diminished", flat: "Diminished" },
+	{ span: 10, mask: 1, sharp: "Hungarian", flat: "Romanian" },
+	{ span: 10, mask: 2, sharp: "Augmented", flat: "Augmented" },
+	{ span: 10, mask: 3, sharp: "Chromatic F#C#G#", flat: "Chromatic BbEbAb" },
+	{ span: 11, mask: 2, sharp: "Whole-Tone", flat: "Whole-Tone" },
+	{ span: 11, mask: 3, sharp: "Chromatic F#C#D#", flat: "Chromatic BbEbDb" },
+	{ span: 11, mask: 5, sharp: "Octatonic", flat: "Octatonic" },
+	{ span: 11, mask: 6, sharp: "Chromatic C#G#D#", flat: "Chromatic EbAbDb" },
+	{ span: 11, mask: 7, sharp: "Chromatic F#C#G#D#", flat: "Chromatic BbEbAbDb" },
+	{ span: 12, mask: 7, sharp: "12-Tone", flat: "12-Tone" }
+];
+var modalityByKey = {};
+for (var mtI = 0; mtI < MODALITY_TABLE.length; mtI++) {
+	var mtE = MODALITY_TABLE[mtI];
+	mtE.rank = mtI;   // ascending span, then ascending mask -- matches the book's own table order
+	modalityByKey[mtE.span + "," + mtE.mask] = mtE;
+}
+
+function spanMaskOf(offsets) {
+	var maxOff = offsets[offsets.length - 1];
+	var mask = 0;
+	for (var k = 0; k < offsets.length; k++) {
+		var o = offsets[k];
+		if (o === maxOff) continue;   // the span-defining note itself, not a distinguishing extra
+		if (o === 7) mask |= 1;
+		else if (o === 8) mask |= 2;
+		else if (o === 9) mask |= 4;
+	}
+	return { span: maxOff + 1, mask: mask };
+}
+
+function modalityOf(i) {
+	return modalityByKey[setSpan[i] + "," + setMask[i]];
+}
+
+function modalityNameOf(i) {
+	var e = modalityOf(i);
+	if (!e) return "?";
+	if (setProj[i] === "sym") return e.sharp === e.flat ? e.sharp : (e.sharp + "/" + e.flat);
+	return setProj[i] === "sharp" ? e.sharp : e.flat;
+}
+
+// Mirror sets (chapter 21): every sharp-projecting set has a flat-projecting counterpart with the
+// same entry number read from the opposite anchor -- same interval vector, same dissonance level,
+// different modality. sharpEntryIdx/flatEntryIdx (built in buildSetLabels()) already hold, for each
+// entry number, whichever set won that projection; the mirror is simply a lookup on the OTHER side
+// using this set's own entry number. Symmetric sets (proj === "sym") are their own mirror.
+function mirrorOf(i) {
+	if (setProj[i] === "sym") return i;
+	var m = setProj[i] === "sharp" ? flatEntryIdx[setNP[i]] : sharpEntryIdx[setNP[i]];
+	return m === undefined ? -1 : m;
+}
+
+function mirrorForteOf(i) {
+	var m = mirrorOf(i);
+	return (m < 0 || m === i) ? "" : setForte[m];
 }
 
 // Walks the catalogue by common tones instead of by number: from each set the chain goes to
@@ -517,6 +700,30 @@ function buildOrder() {
 		});
 	} else if (orderMode === ORDER_NEIGH) {
 		idx = neighbourChain();
+	} else if (orderMode === ORDER_DISS) {
+		idx.sort(function (a, b) {
+			var d = dissonanceOf(a) - dissonanceOf(b);
+			if (d < 0) return -1;
+			if (d > 0) return 1;
+			return a - b;
+		});
+	} else if (orderMode === ORDER_NAT) {
+		idx.sort(function (a, b) {
+			var d = setNP[a] - setNP[b];
+			if (d < 0) return -1;
+			if (d > 0) return 1;
+			return a - b;
+		});
+	} else if (orderMode === ORDER_MODAL) {
+		idx.sort(function (a, b) {
+			var ea = modalityOf(a), eb = modalityOf(b);
+			var ra = ea ? ea.rank : 999, rb = eb ? eb.rank : 999;
+			if (ra !== rb) return ra - rb;
+			var d = setNP[a] - setNP[b];
+			if (d < 0) return -1;
+			if (d > 0) return 1;
+			return a - b;
+		});
 	}
 	order = idx;
 	orderPosOf = [];
@@ -746,7 +953,7 @@ function buildFilter() {
 	consHigh = -1e9;
 	for (var c = 0; c < allowed.length; c++) {
 		if (!allowed[c]) continue;
-		var cv = consonanceOf(c);
+		var cv = harmonyValueOf(c);
 		if (cv < consLow) consLow = cv;
 		if (cv > consHigh) consHigh = cv;
 	}
@@ -854,7 +1061,7 @@ function advanceByTension() {
 	for (var i = 0; i < order.length; i++) {
 		var c = order[i];
 		if (c === setIndex || !allowed[c]) continue;
-		var d = consonanceOf(c) - target;
+		var d = harmonyValueOf(c) - target;
 		if (d < 0) d = -d;
 		if (d < looseD) { looseD = d; loose = c; }
 		if (linkMin > 0 && popcount(cb & fittedBits(c)) < linkMin) continue;
@@ -1066,7 +1273,10 @@ function emitSetReadouts(displayPcs) {
 
 	outlet(1, setIndex + 1);
 	outlet(2, displayNotes(displayPcs));
-	outlet(7, [setForte[setIndex], vecString(setIndex)]);
+	var zm = zMateOf(setIndex);
+	var mm = mirrorForteOf(setIndex);
+	outlet(7, [setForte[setIndex], vecString(setIndex), dissonancePercent(setIndex).toFixed(2),
+		zm ? "Z:" + zm : "-", modalityNameOf(setIndex), mm ? "Esp:" + mm : "-"]);
 	// The Fav toggle is about whatever is sounding, so it has to be repainted when the harmony
 	// moves -- but only then, or every note would push a parameter change into Live.
 	if (setIndex !== favEcho) {
@@ -1099,9 +1309,23 @@ function emitCircle(pcs) {
 function setorder(m) {
 	m = Math.round(m);
 	if (m < 0) m = 0;
-	if (m > 3) m = 3;
+	if (m > 6) m = 6;
 	orderMode = m;
 	buildOrder();
+}
+
+// 0 = Huron's empirical dyadic consonance (consonanceOf, high = consonant); 1 = McKay's diatonic
+// dissonance gradient (dissonanceOf, high = dissonant -- negated below so both models keep the
+// same "high = consonant" polarity that buildFilter()/advanceByTension() already assume).
+var tensModel = 0;
+
+function settensmodel(m) {
+	tensModel = m ? 1 : 0;
+	requestFilter();
+}
+
+function harmonyValueOf(i) {
+	return tensModel === 1 ? -dissonanceOf(i) : consonanceOf(i);
 }
 
 function setfilter(f) {
@@ -1286,6 +1510,7 @@ function setfavlist() {
 
 buildSets();
 buildForte();
+buildZGroups();
 buildSetLabels();   // fills setBits, which the class index reads
 buildClassIndex();
 buildOrder();
@@ -2278,6 +2503,117 @@ function loadpresets() {
 	post("forteseq2: " + count + " slots leidos de " + devPath(PRESET_FILE) + "\n");
 }
 
+// --- randomizacion de Mask y Acentos ----------------------------------------------------------
+// Mask (12 casillas) y Acentos (16, mas el largo de ciclo) son grillas -- armar un patron a mano
+// cuesta bastante mas esfuerzo que mover un solo numbox. randomSubset()/maskRandomPattern()/
+// accentRandomPattern() son la parte pura (sorteo de que casillas encender, testeable sin la Live
+// API); randomizemask()/randomizeaccents() son el boton de accion, que escribe el patron reusando
+// exactamente el mecanismo que ya prueba el sistema de Presets (presetScan()/presetApi): fijar el
+// valor de un parametro por la API cambia lo que el control MUESTRA pero no dispara su salida, asi
+// que el motor no se enteraria sin el "initui" de siempre.
+var maskRandomPct = 50;
+var accentRandomPct = 50;
+
+function setrandmaskpct(p) {
+	p = Math.round(p);
+	if (p < 0) p = 0;
+	if (p > 100) p = 100;
+	maskRandomPct = p;
+}
+
+function setrandaccentpct(p) {
+	p = Math.round(p);
+	if (p < 0) p = 0;
+	if (p > 100) p = 100;
+	accentRandomPct = p;
+}
+
+// `count` de `total` casillas encendidas, sin reemplazo -- un shuffle parcial de Fisher-Yates sobre
+// los indices, no un sorteo casilla por casilla (que sesgaria el conteo real lejos del pedido
+// cuando el porcentaje es chico, porque cada tirada independiente puede repetir la misma celda).
+function randomSubset(total, count) {
+	var idx = [];
+	for (var i = 0; i < total; i++) idx.push(i);
+	for (var k = 0; k < count; k++) {
+		var j = k + Math.floor(Math.random() * (total - k));
+		var tmp = idx[k]; idx[k] = idx[j]; idx[j] = tmp;
+	}
+	var out = [];
+	for (var i2 = 0; i2 < total; i2++) out.push(0);
+	for (var k2 = 0; k2 < count; k2++) out[idx[k2]] = 1;
+	return out;
+}
+
+// Cuenta minima de 1: un porcentaje bajo no debe poder vaciar la mascara entera, porque eso
+// desactiva el filtro de mascara por completo en vez de restringirlo.
+function maskRandomPattern(pct) {
+	var n = Math.round(12 * pct / 100);
+	if (n < 1) n = 1;
+	if (n > 12) n = 12;
+	return randomSubset(12, n);
+}
+
+// Solo sortea dentro de las primeras `span` casillas (el Ciclo Acentos actual); el resto de la
+// grilla, hasta ACCENT_MAX, se apaga -- son las celdas que el ciclo de todos modos no lee hoy.
+function accentRandomPattern(pct, span) {
+	if (span < 0) span = 0;
+	if (span > ACCENT_MAX) span = ACCENT_MAX;
+	var n = Math.round(span * pct / 100);
+	if (n > span) n = span;
+	if (n < 0) n = 0;
+	var bits = randomSubset(span, n);
+	var out = [];
+	for (var i = 0; i < ACCENT_MAX; i++) out.push(i < span ? bits[i] : 0);
+	return out;
+}
+
+function randomizemask() {
+	var map = presetScan();
+	if (!map) {
+		post("forteseq2: Azar Mascara necesita la Live API, que solo existe dentro de Live\n");
+		return;
+	}
+	var pattern = maskRandomPattern(maskRandomPct);
+	var written = 0;
+	try {
+		for (var i = 0; i < 12; i++) {
+			var nm = "Mask " + (i + 1);
+			if (!map.hasOwnProperty(nm)) continue;
+			presetApi.id = map[nm];
+			presetApi.set("value", pattern[i]);
+			written++;
+		}
+	} catch (e) {
+		post("forteseq2: Azar Mascara fallo: " + e + "\n");
+		return;
+	}
+	outlet(4, ["initui"]);
+	post("forteseq2: Azar Mascara, " + written + " celdas escritas\n");
+}
+
+function randomizeaccents() {
+	var map = presetScan();
+	if (!map) {
+		post("forteseq2: Azar Acentos necesita la Live API, que solo existe dentro de Live\n");
+		return;
+	}
+	var pattern = accentRandomPattern(accentRandomPct, accentCycle);
+	var written = 0;
+	try {
+		for (var i = 0; i < ACCENT_MAX; i++) {
+			var nm = "Acento " + (i + 1);
+			if (!map.hasOwnProperty(nm)) continue;
+			presetApi.id = map[nm];
+			presetApi.set("value", pattern[i]);
+			written++;
+		}
+	} catch (e) {
+		post("forteseq2: Azar Acentos fallo: " + e + "\n");
+		return;
+	}
+	outlet(4, ["initui"]);
+	post("forteseq2: Azar Acentos, " + written + " celdas escritas\n");
+}
 
 // A pitch class as a Drum Rack pad. Nothing that moves a note vertically applies: the octave
 // pattern, the master octave and the register clamp all exist to put a note in a register, and

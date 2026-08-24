@@ -252,7 +252,7 @@
         0
        ],
        "parameter_initial_enable": 1,
-       "parameter_longname": "Indep",
+       "parameter_longname": "Voces Indep",
        "parameter_mmax": 1,
        "parameter_modmode": 0,
        "parameter_shortname": "Indep",
@@ -330,7 +330,7 @@
    },
    {
     "box": {
-     "annotation": "En que orden recorre el catalogo. Card: como se genera (cardinalidad y binario). Forte: el orden del catalogo de Forte. Cons: del set mas consonante al mas tenso, segun el vector interValico. Vec: encadenado por notas comunes, cada set comparte lo mas posible con el anterior.",
+     "annotation": "En que orden recorre el catalogo. Card: como se genera (cardinalidad y binario). Forte: el orden del catalogo de Forte. Cons: del set mas consonante al mas tenso, segun el vector interValico. Vec: encadenado por notas comunes, cada set comparte lo mas posible con el anterior. McKay: del set mas consonante al mas disonante segun el gradiente del libro Harmonic Processions (Dosia McKay) -- el peso de cada intervalo es el inverso de cuantas veces aparece en la escala diatonica, asi que P4 pesa 1/6 y el tritono pesa 1 entero. Natural: la Procesion Armonica Natural del libro (capitulos 18-23) -- del set mas compacto sobre el circulo de quintas (su propia forma prima quintal) al cromatico completo. No tiene nada que ver con la disonancia: ordena por CERCANIA en quintas, asi que agrupa familias modales en vez de tension. Modal: agrupa por las 36 modalidades del libro (capitulo 26) -- Suspended Triad, Quartal, Pentatonic, Ionian Hexachord, Diatonic, Mixolydian/Lydian, Mystic/Enigmatic, Blues, Diminished, Hungarian/Romanian, Augmented, varias Chromatic, Whole-Tone, Octatonic y 12-Tone -- y recien dentro de cada una ordena por Natural.",
      "id": "obj-13",
      "maxclass": "live.tab",
      "numinlets": 1,
@@ -360,9 +360,12 @@
         "Card",
         "Forte",
         "Cons",
-        "Vec"
+        "Vec",
+        "McKay",
+        "Natural",
+        "Modal"
        ],
-       "parameter_mmax": 3,
+       "parameter_mmax": 6,
        "parameter_modmode": 0,
        "parameter_type": 2,
        "parameter_unitstyle": 9,
@@ -569,10 +572,10 @@
         1
        ],
        "parameter_initial_enable": 1,
-       "parameter_longname": "Modo",
+       "parameter_longname": "Modo Toque",
        "parameter_mmax": 1,
        "parameter_modmode": 0,
-       "parameter_shortname": "Modo",
+       "parameter_shortname": "Modo Tq",
        "parameter_type": 2,
        "parameter_unitstyle": 9
       }
@@ -639,7 +642,7 @@
         0
        ],
        "parameter_initial_enable": 1,
-       "parameter_longname": "Rotacion",
+       "parameter_longname": "Rotar x Cambio",
        "parameter_mmax": 1,
        "parameter_modmode": 0,
        "parameter_shortname": "Rot",
@@ -759,10 +762,10 @@
         0
        ],
        "parameter_initial_enable": 1,
-       "parameter_longname": "Perm",
+       "parameter_longname": "Patron Lectura",
        "parameter_mmax": 6,
        "parameter_modmode": 0,
-       "parameter_shortname": "Perm",
+       "parameter_shortname": "PatrLect",
        "parameter_type": 2,
        "parameter_unitstyle": 9
       }
@@ -869,14 +872,14 @@
      "patching_rect": [
       248.0,
       451.0,
-      112.0,
+      280.0,
       18.0
      ],
      "presentation": 1,
      "presentation_rect": [
       228.0,
       101.0,
-      112.0,
+      280.0,
       18.0
      ],
      "text": "--",
@@ -1009,8 +1012,8 @@
         2
        ],
        "parameter_initial_enable": 1,
-       "parameter_longname": "Salto",
-       "parameter_shortname": "Salto"
+       "parameter_longname": "Salto Coprimo",
+       "parameter_shortname": "SaltoCop"
       }
      },
      "varname": "fs2_salto"
@@ -7938,8 +7941,8 @@
      ],
      "saved_attribute_attributes": {
       "valueof": {
-       "parameter_longname": "Enlace",
-       "parameter_shortname": "Enlace",
+       "parameter_longname": "Enlace Tonos",
+       "parameter_shortname": "Enl Ton",
        "parameter_initial_enable": 1,
        "parameter_mmin": 0.0,
        "parameter_mmax": 6.0,
@@ -8105,8 +8108,8 @@
      ],
      "saved_attribute_attributes": {
       "valueof": {
-       "parameter_longname": "Curva",
-       "parameter_shortname": "Curva",
+       "parameter_longname": "Curva Tension",
+       "parameter_shortname": "Curva Tn",
        "parameter_initial_enable": 1,
        "parameter_enum": [
         "Sube",
@@ -8191,8 +8194,8 @@
      ],
      "saved_attribute_attributes": {
       "valueof": {
-       "parameter_longname": "Prog",
-       "parameter_shortname": "Prog",
+       "parameter_longname": "Prog Favoritos",
+       "parameter_shortname": "Prog Fav",
        "parameter_initial_enable": 1,
        "parameter_enum": [
         "off",
@@ -10644,6 +10647,265 @@
       300.0,
       140.0,
       478.0,
+      18.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-369",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Modelo",
+     "patching_rect": [
+      330.0,
+      4400.0,
+      54.0,
+      18.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      330.0,
+      900.0,
+      54.0,
+      18.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-370",
+     "maxclass": "live.tab",
+     "numinlets": 1,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_tensmodel",
+     "annotation": "Que pesos usa la curva de Tension para decidir que tan consonante es cada set. Huron: consonancia diadica empirica (Huron 1994), el modelo de siempre. McKay: el gradiente de disonancia del libro Harmonic Processions, un peso por intervalo segun su prevalencia en la escala diatonica. El modo Cons del Orden no cambia con esto, sigue siendo Huron puro.",
+     "patching_rect": [
+      330.0,
+      4420.0,
+      90.0,
+      18.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      330.0,
+      919.0,
+      90.0,
+      18.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_enum": [
+        "Huron",
+        "McKay"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Modelo Tension",
+       "parameter_shortname": "TensMod"
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-371",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      330.0,
+      4460.0,
+      150.0,
+      22.0
+     ],
+     "text": "prepend settensmodel"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-372",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_randmaskpct",
+     "annotation": "Que porcentaje de las 12 celdas de Mascara enciende Azar Mascara -- minimo 1 celda, para no vaciar el filtro de mascara sin querer.",
+     "patching_rect": [
+      380.0,
+      4500.0,
+      40.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      390.0,
+      150.0,
+      40.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        50
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Azar % Mask",
+       "parameter_shortname": "Azar % Mask"
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-373",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      380.0,
+      4540.0,
+      150.0,
+      22.0
+     ],
+     "text": "prepend setrandmaskpct"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-374",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "randomizemask",
+     "patching_rect": [
+      380.0,
+      4580.0,
+      70.0,
+      18.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      440.0,
+      150.0,
+      70.0,
+      18.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-375",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_randaccentpct",
+     "annotation": "Que porcentaje de las celdas dentro del Ciclo Acentos actual enciende Azar Acentos -- las celdas fuera del ciclo se apagan.",
+     "patching_rect": [
+      380.0,
+      4660.0,
+      40.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      269.0,
+      341.0,
+      40.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        50
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Azar % Acentos",
+       "parameter_shortname": "Azar % Acentos"
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-376",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      380.0,
+      4700.0,
+      150.0,
+      22.0
+     ],
+     "text": "prepend setrandaccentpct"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-377",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "randomizeaccents",
+     "patching_rect": [
+      380.0,
+      4740.0,
+      70.0,
+      18.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      344.0,
+      341.0,
+      70.0,
       18.0
      ]
     }
@@ -16097,6 +16359,102 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-370",
+      0
+     ],
+     "destination": [
+      "obj-371",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-371",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-372",
+      0
+     ],
+     "destination": [
+      "obj-373",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-373",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-374",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-375",
+      0
+     ],
+     "destination": [
+      "obj-376",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-376",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-377",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -16738,6 +17096,21 @@
    "obj-349": [
     "Slot",
     "Slot",
+    0
+   ],
+   "obj-370": [
+    "Modelo",
+    "Modelo",
+    0
+   ],
+   "obj-372": [
+    "Azar % Mask",
+    "Azar % Mask",
+    0
+   ],
+   "obj-375": [
+    "Azar % Acentos",
+    "Azar % Acentos",
     0
    ]
   },
