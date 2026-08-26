@@ -96,6 +96,12 @@ var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
 var noteIndex = 0;     // position within current set's arpeggio (arpeggio mode)
 var rotation = 0;      // round-robin rotation offset for arpeggio starting note (normal mode)
+// Manual rotation, dialed in by the user rather than auto-advanced -- kept separate from
+// `rotation` on purpose. `rotation` drifts under "Rotar x Cambio" independently of which mode is
+// playing, so if chordFor() read IT, a chord played after some arpeggio rotation had accumulated
+// would silently start on a different inversion with nobody having touched a chord control. This
+// stays 0 unless setrotation() is called, so it is additive and behaviour-preserving by default.
+var manualRot = 0;
 
 var PERM_CAP = 6;          // max cardinality for full superpermutation cycling (6! = 720)
 var permList = [];         // cached index permutations for one cardinality (superpermutation modes)
@@ -163,6 +169,24 @@ var groupVelMin = [55, 95];    // low edge of each group's velocity band
 var groupVelMax = [80, 115];   // high edge; velocity is uniform-random between the two
 var groupDurDiv = [16, 4];     // note length as a denominator: 4 = quarter, 8 = eighth, 16 = sixteenth
 var groupSilence = [0, 0];     // percent chance this group's note is dropped and becomes a rest
+
+// Per-voice articulation override. Off by default (voiceArtOwn = 0) so a fresh device sounds
+// exactly like the group system above -- these four arrays default to Normal's band so turning
+// Propia on for the first time, before ever touching a dial, is also a no-op. Only when a voice's
+// own flag is on does articulationFor() read from here instead of groupVelMin/Max/DurDiv/Silence.
+var voiceArtOwn = filled(MAX_VOICES, 0);
+var voiceVelMin = filled(MAX_VOICES, groupVelMin[GROUP_NORMAL]);
+var voiceVelMax = filled(MAX_VOICES, groupVelMax[GROUP_NORMAL]);
+var voiceDurDiv = filled(MAX_VOICES, groupDurDiv[GROUP_NORMAL]);
+var voiceSilence = filled(MAX_VOICES, groupSilence[GROUP_NORMAL]);
+
+// Per-voice reading order override. Same off-by-default shape as articulation above: Propia off
+// means degreeAt() gets called with no mode/dir override and behaves exactly as it always did.
+// Only meaningful under Voces Indep and external trigger -- the shared-clock Arpegio path reads
+// one degree for the whole ensemble by design, so it never looks at these.
+var voiceReadOwn = filled(MAX_VOICES, 0);
+var voiceReadMode = filled(MAX_VOICES, READ_RECTO);
+var voiceReadDir = filled(MAX_VOICES, 0);
 
 // The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
 // k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
@@ -1248,6 +1272,15 @@ function harmonyStep() {
 var readoutIndex = -1, readoutRoot = null, readoutOct = null;
 var readoutPcs = [];
 
+// manualRot only ever changes from setrotation() itself, so this is just an idempotency guard
+// against sending the same echo twice (e.g. a preset recall re-applying the stored value).
+var readoutRotation = -1;
+function emitRotationReadout() {
+	if (manualRot === readoutRotation) return;
+	readoutRotation = manualRot;
+	outlet(4, ["rotation", manualRot]);
+}
+
 function readoutUnchanged(pcs) {
 	if (setIndex !== readoutIndex || effRoot() !== readoutRoot || masterOctave !== readoutOct) return 0;
 	var n = pcs.length;
@@ -1618,8 +1651,9 @@ function triggervoice(v) {
 	// chord. Not gated on `mode` (Acordes/Arp): triggervoice always emits one note per
 	// trigger, so only the reading order is meaningful here. degreeAt() is the only copy of that
 	// reading order, shared with the clock-driven voices, so a voice sounds the same whether
-	// the clock or an external trigger moved it.
-	pc = pitchForDegree(pcs, degreeAt(n, pos) + voiceDegOffset[idx] + modDeg());
+	// the clock or an external trigger moved it -- unless this voice's own Patron/Dir is on.
+	pc = pitchForDegree(pcs, degreeAt(n, pos, voiceReadModeOf(idx), voiceReadDirOf(idx)) +
+		voiceDegOffset[idx] + modDeg());
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
@@ -2167,6 +2201,60 @@ function setvoicerange(v, min, span) {
 	voiceRangeMax[idx] = min + span;
 }
 
+// Propia On/Off is a separate message from the four values on purpose, same reason External is
+// separate from Range: a toggle and a pak of numbers restore in whatever order Live fires them
+// in, so neither one may depend on the other having already arrived.
+function setvoiceartown(v, flag) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	voiceArtOwn[idx] = flag ? 1 : 0;
+}
+
+function setvoicearticulation(v, min, max, div, sil) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	min = Math.round(min);
+	max = Math.round(max);
+	if (min < 1) min = 1;
+	if (max < 1) max = 1;
+	if (min > 127) min = 127;
+	if (max > 127) max = 127;
+	div = Math.round(div);
+	if (!(div > 0)) div = 16;
+	sil = Math.round(sil);
+	if (sil < 0) sil = 0;
+	if (sil > 100) sil = 100;
+	voiceVelMin[idx] = min;
+	voiceVelMax[idx] = max;
+	voiceDurDiv[idx] = div;
+	voiceSilence[idx] = sil;
+}
+
+// Off by default, same reasoning as Propia above: a device with every voice on Global sounds
+// exactly as it always did, because degreeAt() falls back to the shared readMode/readDir.
+function setvoicereadown(v, flag) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	voiceReadOwn[idx] = flag ? 1 : 0;
+}
+
+function setvoicereadmode(v, m) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	m = Math.round(m);
+	if (!isFinite(m) || m < 0) m = 0;
+	if (m > READ_MAX) m = READ_MAX;
+	voiceReadMode[idx] = m;
+}
+
+function setvoicereaddir(v, d) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	d = Math.round(d);
+	if (d < 0 || d > 2) d = 0;
+	voiceReadDir[idx] = d;
+}
+
 // Folds a note into [min,max] by transposing whole octaves (never remaps pitch class), same
 // principle as Tritonet's MinLimit/MaxLimit fold, but done as a plain loop instead of the
 // division-based Max patch cords since we're already in JS.
@@ -2286,7 +2374,7 @@ function setbpmtrack(b) {
 // live.* object emit what it holds, and the device already fans that message out to every control
 // -- it is how the engine gets loaded when the set opens. Recall simply runs that path again.
 var PRESET_FILE = "forteseq2_presets.txt";
-var PRESET_SLOTS = 8;
+var PRESET_SLOTS = 20;
 var presetSlot = 1;
 var presetBank = [];      // slot -> {name: value}; index 0 goes unused so slots read as they look
 var presetIdOf = null;    // parameter longname -> Live API id, built once
@@ -2345,6 +2433,27 @@ function setpresetslot(n) {
 	if (!isFinite(n) || n < 1) n = 1;
 	if (n > PRESET_SLOTS) n = PRESET_SLOTS;
 	presetSlot = n;
+	sendPresetName(n);
+}
+
+// The name is display only -- never a key storepreset/recallpreset iterate as a real parameter --
+// so it travels as its own outlet message instead of living inside the numeric vals object where
+// a stray "__name" could get counted as a device parameter that no longer exists.
+function sendPresetName(s) {
+	var vals = presetBank[s];
+	var nm = (vals && vals.__name) ? vals.__name : "-";
+	outlet(4, ["presetname", nm]);
+}
+
+// Names a slot without touching its values. Lets seedfactorypresets() label a slot it just wrote,
+// and leaves room for a future UI control to rename a slot the user already saved by hand.
+function setpresetname(slot, name) {
+	var s = presetSlotOf(slot);
+	if (s < 0) return;
+	if (!presetBank[s]) presetBank[s] = {};
+	presetBank[s].__name = "" + name;
+	savepresets();
+	sendPresetName(s);
 }
 
 // Both messages take the slot either as an argument or from the Slot control, so the buttons can
@@ -2381,9 +2490,15 @@ function storepreset(slot) {
 		post("forteseq2: fallo leyendo " + nm + ": " + e + "\n");
 		return;
 	}
+	// Re-saving over a named slot keeps the name -- Guardar has no way to type a new one this
+	// pass, and silently blanking a factory preset's label the first time someone tweaks a dial
+	// and re-stores would be a worse trap than just carrying it forward.
+	var oldName = (presetBank[s] && presetBank[s].__name) || "";
+	if (oldName) vals.__name = oldName;
 	presetBank[s] = vals;
 	savepresets();
 	sendPresetList();
+	sendPresetName(s);
 	post("forteseq2: slot " + s + " guardado, " + n + " parametros\n");
 }
 
@@ -2404,6 +2519,8 @@ function recallpreset(slot) {
 	// Same reason as in storepreset(): a throw here would take the sequencer down with it.
 	try {
 		for (nm in vals) {
+			// The name is metadata, not a device parameter -- never counted as missing.
+			if (nm === "__name") continue;
 			// A name the device no longer has means a slot written by an older version. Skipping
 			// it silently is the right call: the rest of the slot is still exactly what was saved,
 			// and refusing the whole recall over one retired control would throw away the good part.
@@ -2430,6 +2547,7 @@ function clearpreset(slot) {
 	presetBank[s] = null;
 	savepresets();
 	sendPresetList();
+	sendPresetName(s);
 	post("forteseq2: slot " + s + " borrado\n");
 }
 
@@ -2456,12 +2574,18 @@ function savepresets() {
 	try {
 		f.eof = 0;        // un banco mas chico no puede dejar la cola del anterior atras
 		f.position = 0;
-		f.writeline("forteseq2 presets 1");
+		f.writeline("forteseq2 presets 2");
 		for (var s = 1; s <= PRESET_SLOTS; s++) {
 			var vals = presetBank[s];
 			if (!vals) continue;
 			var line = "" + s;
-			for (var nm in vals) line += "\t" + nm + "=" + vals[nm];
+			// __name first and on its own, so a reader can spot the label without parsing the
+			// rest of the line -- and so loadpresets() only has to special-case one fixed field.
+			if (vals.__name) line += "\t__name=" + vals.__name;
+			for (var nm in vals) {
+				if (nm === "__name") continue;
+				line += "\t" + nm + "=" + vals[nm];
+			}
 			f.writeline(line);
 		}
 	} catch (e) {
@@ -2489,8 +2613,12 @@ function loadpresets() {
 				// the right costs nothing and cannot be broken by one that does later.
 				var eq = parts[i].lastIndexOf("=");
 				if (eq <= 0) continue;
+				var key = parts[i].slice(0, eq);
+				// A format-1 file (no names) never has this field, so it just falls through to
+				// the numeric branch below like every other entry always has.
+				if (key === "__name") { vals.__name = parts[i].slice(eq + 1); continue; }
 				var v = parseFloat(parts[i].slice(eq + 1));
-				if (isFinite(v)) vals[parts[i].slice(0, eq)] = v;
+				if (isFinite(v)) vals[key] = v;
 			}
 			presetBank[s] = vals;
 			count++;
@@ -2500,7 +2628,44 @@ function loadpresets() {
 	}
 	f.close();
 	sendPresetList();
+	sendPresetName(presetSlot);
 	post("forteseq2: " + count + " slots leidos de " + devPath(PRESET_FILE) + "\n");
+}
+
+// A handful of starting points, not a finished library -- each one moves 2-3 parameters with a
+// clear axis (voice count, chord vs arpeggio, reading order, rest%) and leaves everything else
+// alone, same as a slot the user saved by hand. Values are written straight into presetBank, not
+// read from the Live API, so this runs identically in the Node harness and inside Live. Bypassing
+// presetScan()/presetApi on purpose: seeding doesn't need to know which parameters currently
+// exist by id, only to write names recallpreset() already knows how to skip if a future device
+// ever drops one of them.
+function seedfactorypresets() {
+	var FACTORY = [
+		[1, "Denso 4v", { "Voces": 4, "Modo Toque": 1, "Patron Lectura": 0,
+			"Ciclo Acentos": 16, "Silencio Normal": 0, "Silencio Acento": 0 }],
+		[2, "Disperso Lento", { "Voces": 2, "Modo Toque": 0, "Patron Lectura": 0,
+			"Ciclo Acentos": 4, "Silencio Normal": 60, "Silencio Acento": 40 }],
+		[3, "Trio Periodico", { "Voces": 3, "Modo Toque": 1, "Patron Lectura": 4,
+			"Ciclo Acentos": 7, "Silencio Normal": 10, "Silencio Acento": 0 }],
+		[4, "Duo Errante", { "Voces": 2, "Modo Toque": 1, "Patron Lectura": 6,
+			"Ciclo Acentos": 5, "Silencio Normal": 20, "Silencio Acento": 10 }],
+		[5, "Cuarteto Denso", { "Voces": 4, "Modo Toque": 1, "Patron Lectura": 1,
+			"Ciclo Acentos": 12, "Silencio Normal": 5, "Silencio Acento": 0 }],
+		[6, "Solo Disperso", { "Voces": 1, "Modo Toque": 0, "Patron Lectura": 0,
+			"Ciclo Acentos": 3, "Silencio Normal": 70, "Silencio Acento": 50 }]
+	];
+	for (var i = 0; i < FACTORY.length; i++) {
+		var slot = FACTORY[i][0], name = FACTORY[i][1], vals = FACTORY[i][2];
+		var stored = {};
+		for (var nm in vals) stored[nm] = vals[nm];
+		stored.__name = name;
+		presetBank[slot] = stored;
+	}
+	savepresets();
+	sendPresetList();
+	sendPresetName(presetSlot);
+	post("forteseq2: " + FACTORY.length + " presets de fabrica escritos en los slots 1-" +
+		FACTORY.length + "\n");
 }
 
 // --- randomizacion de Mask y Acentos ----------------------------------------------------------
@@ -2644,7 +2809,11 @@ function articulationFor(v, pos, n) {
 	if (idx < 0) idx += len;
 	var g = accentGrid[idx] ? GROUP_ACCENT : GROUP_NORMAL;
 
-	var lo = groupVelMin[g], hi = groupVelMax[g];
+	// Propia bypasses the group lookup entirely -- the voice's own band, not just a different
+	// index into the shared one, so V1's Vel Min never leaks into V2 by way of a shared array.
+	var own = voiceArtOwn[v];
+	var lo = own ? voiceVelMin[v] : groupVelMin[g];
+	var hi = own ? voiceVelMax[v] : groupVelMax[g];
 	if (lo > hi) { var swap = lo; lo = hi; hi = swap; }   // tolerate the two dials crossing
 	var vel = lo + Math.floor(Math.random() * (hi - lo + 1)) + Math.round(modAt(D_VEL));
 	if (vel < 1) vel = 1;       // velocity 0 is a note-off, never a note
@@ -2654,8 +2823,9 @@ function articulationFor(v, pos, n) {
 	// step interval -- that is precisely what unhooks articulation from the BPM dial. div 4 is
 	// one beat, so ms = (60000/bpm) * 4/div.
 	var bpm = currentBpm > 0 ? currentBpm : 120;
-	var div = groupDurDiv[g] > 0 ? groupDurDiv[g] : 16;
-	var sil = groupSilence[g] + modAt(D_SIL);
+	var div = own ? voiceDurDiv[v] : groupDurDiv[g];
+	if (!(div > 0)) div = 16;
+	var sil = (own ? voiceSilence[v] : groupSilence[g]) + modAt(D_SIL);
 
 	return {
 		group: g,
@@ -2853,7 +3023,7 @@ function voicedRotations(pcs) {
 function chordFor(pcs) {
 	var er = effRoot();
 	var cands = voicedRotations(pcs);
-	var plain = cands[0];
+	var plain = cands[((manualRot % cands.length) + cands.length) % cands.length];
 	if (!voiceLead || !lastChord) {
 		// A cached array leaves here. That is safe because emitVoices() only ever reads what it is
 		// handed -- it builds its own shifted copy -- and it is the point: no allocation at all on
@@ -2968,14 +3138,17 @@ function urnAt(n, i, pass) {
 	return urnBag[i % n];
 }
 
-// How long one pass of the SHAPE is, before direction is taken into account.
-function shapeCycleLength(n) {
-	if (readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n].length;
-	if ((readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
+// How long one pass of the SHAPE is, before direction is taken into account. `mode` defaults to
+// the global readMode so the shared-clock call site (which passes nothing) is untouched; a voice
+// with its own Patron override passes its own mode explicitly instead.
+function shapeCycleLength(n, mode) {
+	if (mode === undefined) mode = readMode;
+	if (mode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n].length;
+	if ((mode === READ_SUPER || mode === READ_SUPERMIN) && n <= PERM_CAP) {
 		ensurePermCache(n);
 		return permList.length * n;
 	}
-	if (readMode === READ_MODOS) return n * n;   // n modes, n degrees each
+	if (mode === READ_MODOS) return n * n;   // n modes, n degrees each
 	return n;
 }
 
@@ -2983,16 +3156,21 @@ function shapeCycleLength(n) {
 // only the urn needs. Modos is the one shape that returns
 // degrees past n-1 on purpose: pitchForDegree() reads those as the next octave up, which is what
 // re-voices each successive mode above the last instead of folding it back on itself.
-function shapeDegreeAt(n, i, pass) {
-	if (readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n][i];
-	if ((readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
+// Note the urn's bag (urnBag/urnBagN/urnBagPass) is shared by every caller, global or per-voice --
+// same as it already was shared between the clock and triggervoice() before per-voice Patron
+// existed. Two callers drawing from Urna for the same n at the same pass at once would step on
+// each other's shuffle; not fixed here, since it is no worse than the pre-existing shared state.
+function shapeDegreeAt(n, i, pass, mode) {
+	if (mode === undefined) mode = readMode;
+	if (mode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n][i];
+	if ((mode === READ_SUPER || mode === READ_SUPERMIN) && n <= PERM_CAP) {
 		ensurePermCache(n);
 		return permList[Math.floor(i / n) % permList.length][i % n];
 	}
-	if (readMode === READ_MODOS) return Math.floor(i / n) + (i % n);
-	if (readMode === READ_COPRIMO) return (i * coprimeStepFor(n)) % n;
-	if (readMode === READ_ZIGZAG) return (i % 2 === 0) ? (i >> 1) : (n - 1 - (i >> 1));
-	if (readMode === READ_URNA) return urnAt(n, i, pass);
+	if (mode === READ_MODOS) return Math.floor(i / n) + (i % n);
+	if (mode === READ_COPRIMO) return (i * coprimeStepFor(n)) % n;
+	if (mode === READ_ZIGZAG) return (i % 2 === 0) ? (i >> 1) : (n - 1 - (i >> 1));
+	if (mode === READ_URNA) return urnAt(n, i, pass);
 	return i % n;
 }
 
@@ -3000,17 +3178,21 @@ function shapeDegreeAt(n, i, pass) {
 // order lives: the shared clock, the independent voices and triggervoice() all come through here,
 // so a voice sounds the same whichever of them moved it. Shape and direction are separate on
 // purpose -- any shape can be read backwards or as a pendulum, and the pendulum does not repeat
-// the note at either end, so the turn is heard as a turn and not as a stutter.
-function degreeAt(n, pos) {
+// the note at either end, so the turn is heard as a turn and not as a stutter. `mode`/`dir` default
+// to the shared readMode/readDir -- the shared-clock call site never passes them, so it is
+// unaffected; a voice with Patron/Dir set to Propia passes its own values instead.
+function degreeAt(n, pos, mode, dir) {
+	if (mode === undefined) mode = readMode;
+	if (dir === undefined) dir = readDir;
 	pos = Math.round(pos);
 	if (!isFinite(pos) || pos < 0) pos = 0;
-	var L = shapeCycleLength(n);
+	var L = shapeCycleLength(n, mode);
 	if (L < 1) L = 1;
 	var i, pass;
-	if (readDir === 1) {
+	if (dir === 1) {
 		pass = Math.floor(pos / L);
 		i = L - 1 - (pos % L);
-	} else if (readDir === 2 && L > 1) {
+	} else if (dir === 2 && L > 1) {
 		var period = 2 * L - 2;
 		pass = Math.floor(pos / period);
 		var q = pos % period;
@@ -3019,7 +3201,16 @@ function degreeAt(n, pos) {
 		pass = Math.floor(pos / L);
 		i = pos % L;
 	}
-	return shapeDegreeAt(n, i, pass);
+	return shapeDegreeAt(n, i, pass, mode);
+}
+
+// Effective mode/dir for a voice: its own when Propia is on, otherwise undefined so degreeAt()
+// falls back to the shared globals -- the same no-op-by-default shape as voiceArtOwn above.
+function voiceReadModeOf(idx) {
+	return voiceReadOwn[idx] ? voiceReadMode[idx] : undefined;
+}
+function voiceReadDirOf(idx) {
+	return voiceReadOwn[idx] ? voiceReadDir[idx] : undefined;
 }
 
 // How many steps one complete pass takes, direction included. It decides when the set is allowed
@@ -3068,7 +3259,8 @@ function emitVoicesIndependent(pcs, n) {
 		// only when the set does -- four voices at offsets 0,1,2,3 read as a four-part chorale.
 		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
 		var readIdx = (mode === 1) ? pos : 0;
-		var pc = pitchForDegree(pcs, degreeAt(n, readIdx) + voiceDegOffset[v] + modDeg());
+		var pc = pitchForDegree(pcs,
+			degreeAt(n, readIdx, voiceReadModeOf(v), voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
 		var note = drumOn ? padFor(pc)
@@ -3202,13 +3394,15 @@ function step() {
 		}
 	} else {
 		// The reading order picks the degree; `rotation` still turns the whole pass by one degree
-		// per pass, as it always did. Modos is the exception: its degrees deliberately climb past
-		// the top of the set to re-voice each mode upward, so it reads through pitchForDegree()
-		// and leaves rotation alone, which would only fight it.
+		// per pass, as it always did, and `manualRot` (setrotation(), the "Rotación" dial) adds a
+		// user-chosen offset on top -- same treatment as `rotation` itself, additive so 0 is a
+		// no-op. Modos is the exception: its degrees deliberately climb past the top of the set to
+		// re-voice each mode upward, so it reads through pitchForDegree() and leaves both alone,
+		// which would only fight it.
 		var deg = degreeAt(n, noteIndex);
 		emitVoices(readMode === READ_MODOS
 			? MELODY_BASE + pitchForDegree(pcs, deg + modDeg())
-			: MELODY_BASE + pcs[((deg + rotation + modDeg()) % n + n) % n]);
+			: MELODY_BASE + pcs[((deg + rotation + manualRot + modDeg()) % n + n) % n]);
 		noteIndex++;
 		if (noteIndex >= readCycleLength(n)) {
 			noteIndex = 0;
@@ -3231,6 +3425,15 @@ function step() {
 
 function setshape(s) {
 	rotShape = s ? 1 : 0;
+}
+
+// Manual rotation: which degree of the current set starts the arpeggio, and which of its
+// closedStack() rotations chordFor() picks in chord mode -- wraps by the ACTIVE set's
+// cardinality, not a fixed 12, since it is an index into pcs/cands, not a pitch.
+function setrotation(n) {
+	var card = sets[setIndex] ? sets[setIndex].length : 12;
+	manualRot = ((Math.round(n) % card) + card) % card;
+	emitRotationReadout();
 }
 
 // A change of reading order restarts the pass rather than landing mid-phrase in a walk that was

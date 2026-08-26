@@ -51,7 +51,7 @@ function mulberry32(seed) {
 // ---------------------------------------------------------------------------------------------
 // The Max side, reduced to what the engine actually touches.
 // ---------------------------------------------------------------------------------------------
-function makeEngine(seed) {
+function makeEngine(seed, extraGlobals) {
 	const log = [];
 
 	// Math with a seeded random. The prototype chain keeps floor/abs/imul/... intact, so only
@@ -73,16 +73,52 @@ function makeEngine(seed) {
 		// The engine posts warnings and progress. Not part of the golden: it is chatter, and
 		// tying the file to it would make every message reword into a false regression.
 		post: function () {},
-		// `File` is deliberately absent. savefavs()/loadfavs() both begin with
-		// `if (typeof File === "undefined") return;` precisely so the engine runs off Max, and
-		// leaving it undefined keeps the harness from writing to the real favourites file.
+		// `File` is deliberately absent by default. savefavs()/loadfavs()/savepresets()/
+		// loadpresets() all begin with `if (typeof File === "undefined") return;` precisely so
+		// the engine runs off Max, and leaving it undefined keeps the main scenario from writing
+		// to any real file. checkPresetNames() passes its own in-memory stub via extraGlobals to
+		// exercise the actual save/load round trip without touching disk.
 	};
+	if (extraGlobals) for (const k in extraGlobals) sandbox[k] = extraGlobals[k];
 	sandbox.global = sandbox;
 
 	const ctx = vm.createContext(sandbox);
 	vm.runInContext(fs.readFileSync(ENGINE, 'utf8'), ctx, { filename: 'forteseq2.js' });
 
 	return { ctx, log };
+}
+
+// In-memory stand-in for Max's `File` object, just enough of it for savepresets()/loadpresets():
+// write mode buffers writeline() calls and flushes to `store` on close(); read mode replays
+// whatever is in `store` line by line. `position`/`eof` are line counts, not bytes -- the engine
+// only ever compares them (`position < eof`), never reads them as an offset, so the unit doesn't
+// have to match Max's as long as the ordering is right.
+function makeFakeFile(store) {
+	function FakeFile(pathArg, mode) {
+		this._path = pathArg;
+		this._mode = mode;
+		if (mode === 'read') {
+			const lines = store[pathArg];
+			this.isopen = lines ? 1 : 0;
+			this._lines = lines || [];
+			this._idx = 0;
+			this.position = 0;
+			this.eof = this._lines.length;
+		} else {
+			this.isopen = 1;
+			this._buf = [];
+			this.position = 0;
+			this.eof = 0;
+		}
+	}
+	FakeFile.prototype.writeline = function (s) { this._buf.push(s); };
+	FakeFile.prototype.readline = function () {
+		if (this._idx >= this._lines.length) { this.position = this.eof; return ''; }
+		this.position++;
+		return this._lines[this._idx++];
+	};
+	FakeFile.prototype.close = function () { if (this._mode !== 'read') store[this._path] = this._buf; };
+	return FakeFile;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -649,6 +685,35 @@ function runScenario(e) {
 	c.setorder(0);
 	mark('Modal apagado, vuelta al orden por defecto');
 	run(16);
+
+	// --- Rotacion manual: setrotation(), en Acordes y en Arpegio ------------------------------
+	// checkRotation() (mas abajo) ya fija los tres valores exactos del ejemplo del usuario (C-E-G /
+	// E-G-C / G-C-E) contra un motor limpio; esto deja el control funcionando dentro de una corrida
+	// real, con Conduccion de por medio, por la misma razon que los bloques anteriores.
+	c.setmode(0);
+	c.setlock(1);
+	c.setlockindex(c.setForte.indexOf('3-11B') + 1);
+	c.setvoicing(1);
+	for (const r of [0, 1, 2]) {
+		c.setrotation(r);
+		mark('rotacion manual=' + r + ' (acordes)');
+		run(20);
+	}
+	c.setvoicelead(1);
+	mark('rotacion manual + conduccion: la conduccion tiene que ganar');
+	run(30);
+	c.setvoicelead(0);
+	c.setmode(1);
+	c.setrotation(0);
+	mark('rotacion manual sobre arpegio, apagada primero (referencia)');
+	run(24);
+	c.setrotation(2);
+	mark('rotacion manual=2 sobre arpegio, sumada a la rotacion automatica');
+	run(24);
+	c.setrotation(0);
+	c.setvoicing(0);
+	mark('rotacion manual apagada, vuelta al reposo');
+	run(16);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -890,6 +955,217 @@ function checkRandomize() {
 	return ok;
 }
 
+// Presets: 8 -> 20 slots, y un nombre por slot. seedfactorypresets() escribe presetBank
+// directamente (no necesita la Live API, a diferencia de storepreset/recallpreset), asi que
+// SI es testeable a fondo aca -- incluida la ida y vuelta real por disco, con un File en memoria
+// que no toca nada fuera del test. El resto (storepreset/recallpreset/clearpreset/setpresetname)
+// se prueba como humo sin Live API, mismo criterio que randomizemask/randomizeaccents en Azar.
+function checkPresetNames() {
+	const store = {};
+	const e = makeEngine(1, { File: makeFakeFile(store) });
+	const c = e.ctx;
+	let ok = true;
+
+	if (c.PRESET_SLOTS !== 20) {
+		console.error('Presets: PRESET_SLOTS deberia ser 20, es ' + c.PRESET_SLOTS);
+		ok = false;
+	}
+
+	const notesBefore = e.log.filter(isNote).length;
+	c.seedfactorypresets();
+	if (e.log.filter(isNote).length !== notesBefore) {
+		console.error('Presets: seedfactorypresets() disparo una nota, y no deberia sonar nada');
+		ok = false;
+	}
+	if (!c.presetBank[1] || c.presetBank[1].__name !== 'Denso 4v' || c.presetBank[1]['Voces'] !== 4) {
+		console.error('Presets: el slot 1 de fabrica no salio como se esperaba: ' +
+			JSON.stringify(c.presetBank[1]));
+		ok = false;
+	}
+	if (!store['forteseq2_presets.txt']) {
+		console.error('Presets: seedfactorypresets() no escribio el archivo (simulado)');
+		ok = false;
+	}
+
+	// Ida y vuelta real: vaciar la memoria y releer desde el File simulado.
+	c.presetBank = [];
+	c.loadpresets();
+	if (!c.presetBank[1] || c.presetBank[1].__name !== 'Denso 4v' || c.presetBank[3]['Voces'] !== 3) {
+		console.error('Presets: loadpresets() no recupero lo que seedfactorypresets() escribio');
+		ok = false;
+	}
+
+	// Compatibilidad con un archivo formato-1, escrito a mano, sin __name en ningun lado.
+	store['forteseq2_presets.txt'] = ['forteseq2 presets 1', '7\tVoces=2\tCiclo Acentos=5'];
+	c.presetBank = [];
+	c.loadpresets();
+	const slot7 = c.presetBank[7];
+	if (!slot7 || slot7['Voces'] !== 2 || slot7['Ciclo Acentos'] !== 5 || slot7.__name) {
+		console.error('Presets: un archivo formato-1 (sin nombres) no cargo bien: ' +
+			JSON.stringify(slot7));
+		ok = false;
+	}
+
+	// El readout de nombre sigue al numbox de slot.
+	c.presetBank = []; c.seedfactorypresets();
+	c.setpresetslot(1);
+	if (e.log[e.log.length - 1] !== '4 | presetname Denso 4v') {
+		console.error('Presets: setpresetslot(1) no mando el nombre por la salida 4, mando "' +
+			e.log[e.log.length - 1] + '"');
+		ok = false;
+	}
+	c.setpresetslot(99);   // se recorta a PRESET_SLOTS = 20, no explota
+	if (c.presetSlot !== 20) {
+		console.error('Presets: setpresetslot(99) deberia recortar a 20, dio ' + c.presetSlot);
+		ok = false;
+	}
+
+	try {
+		c.storepreset(5);
+		c.recallpreset(5);
+		c.clearpreset(5);
+		c.setpresetname(1, 'Otro nombre');
+		c.presetrescan();
+	} catch (err) {
+		console.error('Presets: store/recall/clear/setpresetname sin Live API tiro ' + err);
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Presets: 20 slots, el nombre por slot y la compatibilidad con formato-1 andan.');
+	return ok;
+}
+
+// Selector de articulacion por voz: apagado (voiceArtOwn = 0) tiene que ser exactamente el
+// camino de grupo de siempre -- lo que ya prueba el resto del golden, byte a byte, contra un
+// motor que nunca toco este bloque. Lo que hace falta probar aca es la otra mitad: prendido en
+// UNA voz, esa voz y solo esa voz deja de mirar groupVelMin/Max.
+function checkVoiceArt() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);   // solo la voz 1 no esta muda por defecto
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1);
+	c.setvoicediv(2, 1);
+	c.setlockindex(c.setForte.indexOf('5-35') + 1);   // setlockindex takes the 1-based Set number
+	c.setlock(1);
+
+	// Banda imposible de confundir con la del grupo (55-80/95-115): min=max=100 saca SIEMPRE 100.
+	c.setvoiceartown(1, 1);
+	c.setvoicearticulation(1, 100, 100, 16, 0);
+	for (let i = 0; i < 12; i++) c.bang();
+
+	// Log line shape is "0 | <bus> <voice> <vel> <dur> <pitch>", so split(' ') puts the '|' at
+	// index 1 and the five atoms at 2-6.
+	const velOf = (line) => Number(line.split(' ')[4]);
+	const v1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(velOf);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(velOf);
+
+	if (v1.length === 0 || v1.some((v) => v !== 100)) {
+		console.error('Articulacion: voz 1 con Propia debia sonar siempre a vel 100, dio ' +
+			JSON.stringify(v1));
+		ok = false;
+	}
+	// Voz 2 no tiene Propia, asi que sigue el grupo -- Normal o Acento segun su propia grilla de
+	// acentos, cualquiera de las dos bandas menos la de la voz 1 (100 fijo no es parte de ninguna).
+	if (v2.length === 0 || v2.every((v) => v === 100)) {
+		console.error('Articulacion: voz 2 sin Propia no deberia sonar fija a 100 como la voz 1, dio ' +
+			JSON.stringify(v2));
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Articulacion por voz: Propia aisla una voz sin tocar la otra.');
+	return ok;
+}
+
+// Patron/Direccion de lectura por voz: mismo criterio que arriba. Zigzag es determinista (no
+// tira de Math.random como Urna), asi que la comparacion no depende de la semilla -- alcanza con
+// que la secuencia sea DISTINTA de una lectura Recta para probar que el selector realmente pega.
+function checkVoiceReadOrder() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);   // solo la voz 1 no esta muda por defecto
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1);
+	c.setvoicediv(2, 1);
+	c.setlockindex(c.setForte.indexOf('5-35') + 1);   // setlockindex takes the 1-based Set number
+	c.setlock(1);
+	c.setmode(1);        // Arpegio: el cursor de cada voz avanza (en Acordes queda fijo en grado 0)
+	c.setreadmode(0);   // global en Recto, para que la voz 2 (sin Propia) sea la referencia
+
+	c.setvoicereadown(1, 1);
+	c.setvoicereadmode(1, 5);   // READ_ZIGZAG
+	for (let i = 0; i < 10; i++) c.bang();
+
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+	const v1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+
+	if (v1.length < 4 || JSON.stringify(v1) === JSON.stringify(v2)) {
+		console.error('Lectura por voz: voz 1 en Zigzag propio debia diferir de la voz 2 en Recto, ' +
+			'ambas dieron ' + JSON.stringify(v1));
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Lectura por voz: Patron/Dir propios aislan una voz bajo Voces Indep.');
+	return ok;
+}
+
+// Manual rotation (setrotation(), the "Rotacion" dial): the user's own example, C-E-G rotated to
+// E-G-C to G-C-E, i.e. chordFor() on the major triad (3-11B, pcs [0,4,7]) picking each of
+// closedStack()'s three rotations in turn. Voicing pinned to Cerrado (VOICING_CLOSED=1, whose
+// applyVoicing() branch is a no-op) so the expected pitches are closedStack()'s own output with
+// nothing else in the way -- an algebraic fact, independent of any scenario/seed, same reason
+// checkMcKay()/checkNHP() live here instead of in the note-log golden.
+function checkRotation() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+	const triad = c.setForte.indexOf('3-11B');
+	if (triad < 0) { console.error('Rotacion: no encontre 3-11B en el catalogo'); return false; }
+	c.setlockindex(triad + 1);   // setlockindex takes the 1-based Set number
+	c.setlock(1);
+	c.setmode(0);        // Acordes
+	c.setvoicelead(0);   // Conduccion apagada: el candidato manual no se pisa
+	c.setvoicing(1);     // Cerrado
+	const pcs = c.sets[triad];
+	const want = [[0, [48, 52, 55]], [1, [52, 55, 60]], [2, [55, 60, 64]]];
+	for (const [r, expect] of want) {
+		c.setrotation(r);
+		const got = c.chordFor(pcs);
+		if (JSON.stringify(got) !== JSON.stringify(expect)) {
+			console.error('Rotacion: setrotation(' + r + ') dio ' + JSON.stringify(got) +
+				', esperaba ' + JSON.stringify(expect));
+			ok = false;
+		}
+	}
+	// Wraps by the ACTIVE set's cardinality (3 here), not a fixed 12: setrotation(3) on a triad
+	// must land back on rotation 0, not stay at a dangling index 3 that cands[] does not have.
+	c.setrotation(3);
+	const wrapped = c.chordFor(pcs);
+	if (JSON.stringify(wrapped) !== JSON.stringify(want[0][1])) {
+		console.error('Rotacion: setrotation(3) en una triada deberia envolver a 0, dio ' +
+			JSON.stringify(wrapped));
+		ok = false;
+	}
+	// setrotation(0) is the default, so it must not disturb chord mode at all: a manual rotation
+	// left at its resting value has to be indistinguishable from the feature never existing.
+	c.setrotation(0);
+	const rest = c.chordFor(pcs);
+	if (JSON.stringify(rest) !== JSON.stringify(want[0][1])) {
+		console.error('Rotacion: setrotation(0) deberia ser identico a no tocar el control, dio ' +
+			JSON.stringify(rest));
+		ok = false;
+	}
+	if (ok) console.log('OK   Rotacion: setrotation() elige la inversion correcta y envuelve por cardinalidad.');
+	return ok;
+}
+
 function main() {
 	const args = process.argv.slice(2);
 	const seed = 20260819;
@@ -898,6 +1174,10 @@ function main() {
 	if (!checkNHP()) process.exit(1);
 	if (!checkModality()) process.exit(1);
 	if (!checkRandomize()) process.exit(1);
+	if (!checkPresetNames()) process.exit(1);
+	if (!checkVoiceArt()) process.exit(1);
+	if (!checkVoiceReadOrder()) process.exit(1);
+	if (!checkRotation()) process.exit(1);
 
 	if (args.indexOf('--write') >= 0) {
 		const log = generate(seed);

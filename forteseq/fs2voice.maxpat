@@ -942,6 +942,478 @@
      ],
      "text": "prepend setvoicetimeoffset #1"
     }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "v_artown",
+     "annotation": "Si esta prendido, esta voz deja de mirar las bandas Normal/Acento y usa su propia velocidad, figura y silencio -- las cuatro de al lado. Apagado (por defecto) es exactamente el comportamiento de siempre.",
+     "patching_rect": [
+      500.0,
+      64.0,
+      14.0,
+      14.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      496.0,
+      4.0,
+      14.0,
+      14.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 ArtProp",
+       "parameter_shortname": "ArtProp",
+       "parameter_type": 2,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-39"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_velmin",
+     "annotation": "Velocidad minima de esta voz, cuando Propia esta prendido.",
+     "patching_rect": [
+      540.0,
+      64.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      526.0,
+      4.0,
+      34.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 VelMin",
+       "parameter_shortname": "VelMin",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 127.0,
+       "parameter_initial": [
+        55
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-40"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_velmax",
+     "annotation": "Velocidad maxima de esta voz, cuando Propia esta prendido.",
+     "patching_rect": [
+      580.0,
+      64.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      564.0,
+      4.0,
+      34.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 VelMax",
+       "parameter_shortname": "VelMax",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 127.0,
+       "parameter_initial": [
+        80
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-41"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_figura",
+     "annotation": "Duracion de esta voz como denominador de figura (4=negra, 8=corchea, 16=semicorchea), cuando Propia esta prendido.",
+     "patching_rect": [
+      620.0,
+      64.0,
+      30.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      602.0,
+      4.0,
+      30.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Figura",
+       "parameter_shortname": "Figura",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 32.0,
+       "parameter_initial": [
+        16
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-42"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_silencio",
+     "annotation": "Probabilidad de silencio de esta voz, en %, cuando Propia esta prendido.",
+     "patching_rect": [
+      660.0,
+      64.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      636.0,
+      4.0,
+      34.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Silencio",
+       "parameter_shortname": "Silenc",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 100.0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-43"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "v_readown",
+     "annotation": "Si esta prendido, esta voz deja de mirar Patron/Dir Lectura globales y usa los suyos propios -- solo tiene efecto bajo Voces Indep o disparo externo, que es donde cada voz ya tiene su propio cursor. Apagado (por defecto) es exactamente el comportamiento de siempre.",
+     "patching_rect": [
+      700.0,
+      64.0,
+      14.0,
+      14.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      674.0,
+      4.0,
+      14.0,
+      14.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 LecProp",
+       "parameter_shortname": "LecProp",
+       "parameter_type": 2,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-44"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_patron",
+     "annotation": "Orden de lectura propio de esta voz, cuando Propia esta prendido.",
+     "patching_rect": [
+      740.0,
+      64.0,
+      44.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      704.0,
+      4.0,
+      44.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Patron",
+       "parameter_shortname": "Patron",
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_enum": [
+        "Normal",
+        "Super",
+        "Minima",
+        "Modos",
+        "Coprimo",
+        "Zigzag",
+        "Urna"
+       ],
+       "parameter_mmax": 6,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-45"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_dir",
+     "annotation": "Direccion de lectura propia de esta voz, cuando Propia esta prendido.",
+     "patching_rect": [
+      780.0,
+      64.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      752.0,
+      4.0,
+      34.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Dir",
+       "parameter_shortname": "Dir",
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_enum": [
+        "Adel",
+        "Atras",
+        "Alt"
+       ],
+       "parameter_mmax": 2,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-46"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_artown_prep",
+     "patching_rect": [
+      500.0,
+      380.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoiceartown #1",
+     "id": "obj-47"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_readown_prep",
+     "patching_rect": [
+      500.0,
+      410.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicereadown #1",
+     "id": "obj-48"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_patron_prep",
+     "patching_rect": [
+      500.0,
+      440.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicereadmode #1",
+     "id": "obj-49"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_dir_prep",
+     "patching_rect": [
+      500.0,
+      470.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicereaddir #1",
+     "id": "obj-50"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 4,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_art_pak",
+     "patching_rect": [
+      500.0,
+      500.0,
+      150.0,
+      22.0
+     ],
+     "text": "pak 55 80 16 0",
+     "id": "obj-51"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_art_prep",
+     "patching_rect": [
+      500.0,
+      530.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicearticulation #1",
+     "id": "obj-52"
+    }
    }
   ],
   "lines": [
@@ -1460,6 +1932,270 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-39",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-40",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-41",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-42",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-43",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-44",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-45",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-13",
+      0
+     ],
+     "destination": [
+      "obj-46",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-39",
+      0
+     ],
+     "destination": [
+      "obj-47",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-47",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-44",
+      0
+     ],
+     "destination": [
+      "obj-48",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-48",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-45",
+      0
+     ],
+     "destination": [
+      "obj-49",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-49",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-46",
+      0
+     ],
+     "destination": [
+      "obj-50",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-50",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-40",
+      0
+     ],
+     "destination": [
+      "obj-51",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-41",
+      0
+     ],
+     "destination": [
+      "obj-51",
+      1
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-42",
+      0
+     ],
+     "destination": [
+      "obj-51",
+      2
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-43",
+      0
+     ],
+     "destination": [
+      "obj-51",
+      3
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-51",
+      0
+     ],
+     "destination": [
+      "obj-52",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-52",
+      0
+     ],
+     "destination": [
+      "obj-14",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -1522,6 +2258,46 @@
    "obj-37": [
     "V#1 Desf",
     "V#1 Desf",
+    0
+   ],
+   "obj-39": [
+    "V#1 ArtProp",
+    "V#1 ArtProp",
+    0
+   ],
+   "obj-40": [
+    "V#1 VelMin",
+    "V#1 VelMin",
+    0
+   ],
+   "obj-41": [
+    "V#1 VelMax",
+    "V#1 VelMax",
+    0
+   ],
+   "obj-42": [
+    "V#1 Figura",
+    "V#1 Figura",
+    0
+   ],
+   "obj-43": [
+    "V#1 Silencio",
+    "V#1 Silencio",
+    0
+   ],
+   "obj-44": [
+    "V#1 LecProp",
+    "V#1 LecProp",
+    0
+   ],
+   "obj-45": [
+    "V#1 Patron",
+    "V#1 Patron",
+    0
+   ],
+   "obj-46": [
+    "V#1 Dir",
+    "V#1 Dir",
     0
    ]
   },

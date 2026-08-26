@@ -10210,7 +10210,7 @@
      ],
      "parameter_enable": 1,
      "varname": "pr_slot",
-     "annotation": "En cual de los ocho slots trabajan Guardar, Cargar y Borrar. El slot mismo no entra en ningun preset: si entrara, cargar uno te moveria el slot y el click siguiente iria a parar a otro lado.",
+     "annotation": "En cual de los veinte slots trabajan Guardar, Cargar y Borrar. El slot mismo no entra en ningun preset: si entrara, cargar uno te moveria el slot y el click siguiente iria a parar a otro lado.",
      "presentation": 1,
      "presentation_rect": [
       0.0,
@@ -10232,7 +10232,7 @@
        "parameter_unitstyle": 0,
        "parameter_modmode": 4,
        "parameter_mmin": 1.0,
-       "parameter_mmax": 8.0,
+       "parameter_mmax": 20.0,
        "parameter_initial": [
         1
        ],
@@ -10504,7 +10504,8 @@
      ],
      "varname": "pr_list",
      "annotation": "Que slots tienen algo. Un guion es un slot vacio.",
-     "id": "obj-361"
+     "id": "obj-361",
+     "fontsize": 7.0
     }
    },
    {
@@ -10550,7 +10551,7 @@
      "maxclass": "comment",
      "numinlets": 1,
      "numoutlets": 0,
-     "text": "Los ocho slots viven en forteseq2_presets.txt, al lado del .amxd, y no adentro del set de Live. Eso los hace tuyos y no de la cancion: los mismos ocho te siguen a cualquier set, igual que los favoritos, y varias instancias del device comparten el archivo. Se escribe en cada Guardar y en cada Borrar, y se lee al cargar el device.",
+     "text": "Los veinte slots viven en forteseq2_presets.txt, al lado del .amxd, y no adentro del set de Live. Eso los hace tuyos y no de la cancion: los mismos veinte te siguen a cualquier set, igual que los favoritos, y varias instancias del device comparten el archivo. Se escribe en cada Guardar y en cada Borrar, y se lee al cargar el device.",
      "presentation": 1,
      "presentation_rect": [
       264.0,
@@ -10908,6 +10909,175 @@
       70.0,
       18.0
      ]
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Nombre",
+     "varname": "pr_name_lbl",
+     "presentation": 1,
+     "presentation_rect": [
+      0.0,
+      1420.0,
+      54.0,
+      18.0
+     ],
+     "patching_rect": [
+      20.0,
+      6900.0,
+      54.0,
+      18.0
+     ],
+     "id": "obj-378"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "-",
+     "varname": "pr_name",
+     "annotation": "El nombre del slot que Slot esta apuntando ahora mismo, si tiene uno. Los presets de fabrica (Azar Presets, mas abajo) ya vienen con nombre; guardar uno propio no pone nombre salvo que el slot ya tuviera uno de antes, que se conserva.",
+     "presentation": 1,
+     "presentation_rect": [
+      56.0,
+      1420.0,
+      200.0,
+      18.0
+     ],
+     "patching_rect": [
+      120.0,
+      6930.0,
+      200.0,
+      18.0
+     ],
+     "id": "obj-379"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "pr_name_echo",
+     "text": "route presetname",
+     "patching_rect": [
+      120.0,
+      6960.0,
+      120.0,
+      22.0
+     ],
+     "id": "obj-380"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "text": "prepend set",
+     "patching_rect": [
+      120.0,
+      6990.0,
+      90.0,
+      22.0
+     ],
+     "id": "obj-381"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-382",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "text": "Rotacion",
+     "patching_rect": [
+      330.0,
+      2870.0,
+      60.0,
+      18.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      330.0,
+      450.0,
+      60.0,
+      18.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-383",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_rotman",
+     "annotation": "Gira el set actual: que nota lo empieza. En Acordes elige la inversion (C-E-G, E-G-C, G-C-E, ...); en Arpegio se suma a la rotacion automatica de \"Rotar x Cambio\" en vez de pelearla. Envuelve por la cardinalidad del set que suena -- en una triada, 3 vale lo mismo que 0. En Acordes, Conduccion sigue ganando cuando esta prendida, igual que ya gana sobre \"Rotar x Cambio\".",
+     "patching_rect": [
+      330.0,
+      2890.0,
+      38.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      330.0,
+      469.0,
+      38.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Rotacion",
+       "parameter_shortname": "Rotacion",
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 11.0,
+       "parameter_modmode": 4,
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-384",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rotman_prep",
+     "patching_rect": [
+      330.0,
+      2920.0,
+      110.0,
+      22.0
+     ],
+     "text": "prepend setrotation"
     }
    }
   ],
@@ -16455,6 +16625,66 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-2",
+      0
+     ],
+     "destination": [
+      "obj-380",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-380",
+      0
+     ],
+     "destination": [
+      "obj-381",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-381",
+      0
+     ],
+     "destination": [
+      "obj-379",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-383",
+      0
+     ],
+     "destination": [
+      "obj-384",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-384",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -16494,8 +16724,8 @@
     0
    ],
    "obj-21": [
-    "Rotacion",
-    "Rotacion",
+    "Rotar x Cambio",
+    "Rot",
     0
    ],
    "obj-25": [
@@ -17111,6 +17341,11 @@
    "obj-375": [
     "Azar % Acentos",
     "Azar % Acentos",
+    0
+   ],
+   "obj-383": [
+    "Rotacion",
+    "Rotacion",
     0
    ]
   },
