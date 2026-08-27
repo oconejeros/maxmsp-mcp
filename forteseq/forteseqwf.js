@@ -7,15 +7,15 @@
 //
 // Sources: Milne, Herff, Bulger, Sethares & Dean, "XronoMorph: Algorithmic Generation of Perfectly
 // Balanced and Well-Formed Rhythms" (NIME 2016); Milne, "XronoMorph: Investigating Paths Through
-// Rhythmic Space" (in The Oxford Handbook of Algorithmic Music, 2019). Both papers state the
-// level-to-level construction in words but explicitly defer the closed-form equations to Milne &
-// Dean, Computer Music Journal 40(1):35-53 (2016), which is not in hand. The onset-COUNT
-// recursion below is verified against the one worked numeric example the 2019 chapter gives
-// (Fig. 7). The r-value recursion is mechanically derived from the same stated construction rule,
-// not read off a source -- see checkFig7Example() and checkRefinement() for why that derivation
-// is trusted anyway: the theory requires every level's onsets to be an exact subset of the next
-// level's (a hierarchy only ever adds events), so an independent per-level construction that
-// still nests correctly is strong evidence the formula is right, not just self-consistent.
+// Rhythmic Space" (in The Oxford Handbook of Algorithmic Music, 2019); Milne & Dean,
+// "Computational Creation and Morphing of Multilevel Rhythms by Control of Evenness", Computer
+// Music Journal 40(1):35-53 (2016) -- the closed-form equations the first two papers both defer
+// to. The onset-COUNT recursion is verified against the one worked numeric example the 2019
+// chapter gives (Fig. 7), and the r-value recursion (below, in wfNextLevel) matches the CMJ
+// paper's Equations 2 and 4 exactly -- it was originally derived here independently, before the
+// CMJ paper was in hand, from the same stated construction rule and checked only by the
+// subset-nesting property; see checkFig7Example() and checkRefinement() for that verification,
+// which still stands as the deeper reason to trust it.
 
 // --- base word: maximally-even placement of m long (L) markers among m+n slots -----------------
 
@@ -73,6 +73,8 @@ function wfIsIsochronous(level, eps) {
 // L into a new L+S (S unchanged); r<2 splits every L into a new L+S AND relabels every old S as a
 // new L. `reverse` is the L/R control: it only flips which half of a split comes first (L->"SL"
 // instead of "LS"), so it changes onset order/timing but never the resulting (m,n) counts or r'.
+// The (m,n) and r updates below are exactly Milne & Dean's Equations 2 and 4 (CMJ 40(1):35-53,
+// 2016, using their j/k/r_i notation for our m/n/r) -- confirmed after the fact, see file header.
 function wfNextLevel(level, reverse) {
 	if (wfIsIsochronous(level)) {
 		throw new Error('wfNextLevel: level is isochronous (r=1) -- the hierarchy terminates here, see wfHierarchy');
@@ -171,6 +173,82 @@ function metallicRatio(k) {
 	return (k + Math.sqrt(k * k + 4)) / 2;
 }
 
+// --- phi_s snap values: Stern-Brocot "deeply nonisochronous" r0 values (Milne & Dean 2016, CMJ
+// 40(1):35-53, crediting Wilson 1997) -------------------------------------------------------------
+// A DIFFERENT family from metallicRatio() above: metallicRatio(k) cycles through k distinct
+// r-values forever. A phi_s value instead settles onto a SINGLE value -- phi itself -- but only
+// starting at hierarchy level s; levels 0..s-1 are ordinary, non-repeating r-values first. The
+// paper states r0 = (a*phi+c)/(b*phi+d) for "adjacent members a/b, c/d from level s and s+1 of the
+// Stern-Brocot tree" but does not give the enumeration algorithm (which pair, how many per s).
+// That was worked out and verified here by simulation against wfNextLevel itself (not just
+// algebra): since r stays >=1 throughout this file's convention, the relevant part of the tree is
+// the branch rooted at the boundary pair (1/1, 1/0), and the pairing that actually locks onto phi
+// (confirmed for tree-depths 1-5) is a Stern-Brocot node together with its DIRECT PARENT -- not
+// "whichever of the two fractions bounding it is numerically smaller", which was also tried and
+// does not produce consistent lock-in. A node at tree-depth D locks in at hierarchy level s = D+1
+// (a real, verified offset, not D itself). Roughly half of the resulting pairs have a/b > c/d,
+// contradicting the paper's literal "a/b < c/d" -- forcing that ordering was tried too and breaks
+// the lock-in, confirmed by simulation, so this file trusts the parent/child construction (checked
+// directly against the recursion) over the literal inequality in the paper's prose.
+//
+// s=0 is the degenerate case r0=phi itself (the root boundary, not a real tree node) and s=1 has
+// no valid member at all -- the family only becomes non-empty at s=2, with 2^(s-2) members per s.
+
+// sbTreeNode(D): the D-th-depth-first Stern-Brocot node value on the >=1 branch, walked by always
+// descending toward the "left" child (mediant of the running boundary's low end and the previous
+// node), together with its direct parent -- one concrete node per depth, sufficient to build every
+// (parent, node) pair actually needed by sbPhiPairs via bit-path traversal below.
+function sbNodeAtPath(bits) {
+	// bits: array of 0/1, one per tree level below the root, 0 = descend toward lo, 1 = toward hi.
+	// Returns {parent: {a,b}, node: {c,d}} for the node reached by following that path from the
+	// boundary pair (1/1, 1/0).
+	var lo = { a: 1, b: 1 }, hi = { a: 1, b: 0 };
+	var parent = null, node = { a: 1, b: 1 };
+	for (var i = 0; i < bits.length; i++) {
+		var mediant = { a: lo.a + hi.a, b: lo.b + hi.b };
+		parent = node;
+		node = mediant;
+		if (bits[i] === 0) { hi = node; } else { lo = node; }
+	}
+	return { parent: parent, node: node };
+}
+
+// sbPhiPairs(s): every {a,b,c,d} pair (parent a/b, node c/d) whose weighted mediant locks the
+// r-recursion onto phi starting exactly at hierarchy level s (0-indexed, matching wfHierarchy's
+// own array index). Enumerates all 2^(s-2) tree-depth-(s-1) nodes via their binary path.
+function sbPhiPairs(s) {
+	if (s < 2) return [];
+	var depth = s - 1;                    // tree depth D that locks in at hierarchy level s = D+1
+	var count = Math.pow(2, depth - 1);   // 2^(D-1) distinct nodes at depth D
+	var out = [];
+	for (var i = 0; i < count; i++) {
+		// D-1 bits actually distinguish the 2^(D-1) sibling nodes at depth D; a final, arbitrary
+		// trailing bit is required only to make sbNodeAtPath walk the full D steps to reach that
+		// depth -- it does not affect which node is reached, since a node's own value is fixed
+		// once the boundary state going INTO its mediant step is fixed by the earlier D-1 bits.
+		var bits = [];
+		for (var b = depth - 2; b >= 0; b--) bits.push((i >> b) & 1);
+		bits.push(0);
+		var pn = sbNodeAtPath(bits);
+		out.push({ a: pn.parent.a, b: pn.parent.b, c: pn.node.a, d: pn.node.b });
+	}
+	return out;
+}
+
+// phiSnapValue(a,b,c,d): the actual r0 for one Stern-Brocot pair. Reuses metallicRatio(1) for phi
+// rather than a separate constant, since that value is already independently verified to 1e-12 by
+// checkMetallicRatios().
+function phiSnapValue(a, b, c, d) {
+	var phi = metallicRatio(1);
+	return (a * phi + c) / (b * phi + d);
+}
+
+// phiSnapValues(s): the numeric r0 candidates for level s, sorted ascending -- the same role
+// Milne's MeanTimes/XronoMorph give these values as markers above the r-slider.
+function phiSnapValues(s) {
+	return sbPhiPairs(s).map(function (p) { return phiSnapValue(p.a, p.b, p.c, p.d); }).sort(function (x, y) { return x - y; });
+}
+
 // ================================================================================================
 // Max-facing engine: state, message handlers, and Task-based real-time scheduling. Everything
 // above this point is pure and Node-testable; everything below only runs inside a Max `js` object
@@ -239,13 +317,18 @@ function stopAllTasks() {
 
 // makenote (downstream in the Max patch) takes a 3-item (pitch, velocity, duration) list and
 // generates the matching note-off itself -- so this is the only outlet call an onset ever needs;
-// there is no separate note-off Task to manage.
-function fireNote(pitch, vel, dur) {
-	outlet(0, pitch, vel, dur);
+// there is no separate note-off Task to manage. The channel/level number goes out FIRST, because
+// the patch routes on it with a Max `route 1 2 3 4 5 6` object (route strips the matched leading
+// value and sends the rest out the corresponding numbered outlet) into one of six fixed-channel
+// makenote+noteout pairs -- level N always reaches MIDI channel N. This list is `route`'s only
+// consumer, so its argument list (1-6) and MAX_LEVELS (6) both encode the same fact and must be
+// kept in sync if either ever changes.
+function fireNote(lv, pitch, vel, dur) {
+	outlet(0, lv + 1, pitch, vel, dur);
 }
 
-function scheduleOnset(delayMs, pitch, vel, dur) {
-	var t = new Task(function () { fireNote(pitch, vel, dur); }, this);
+function scheduleOnset(lv, delayMs, pitch, vel, dur) {
+	var t = new Task(function () { fireNote(lv, pitch, vel, dur); }, this);
 	t.schedule(delayMs);
 	scheduledTasks.push(t);
 }
@@ -270,7 +353,7 @@ function startCycle() {
 					post('forteseqwf: circuit breaker -- refusing to schedule past ' + MAX_ONSETS_PER_CYCLE + ' onsets this cycle (m=' + baseM + ' n=' + baseN + ' levels=' + numLevels + ')\n');
 					return;
 				}
-				scheduleOnset(toPlay[i], levelPitch[lv], levelVel[lv], levelDur[lv]);
+				scheduleOnset(lv, toPlay[i], levelPitch[lv], levelVel[lv], levelDur[lv]);
 				totalScheduled++;
 			}
 		}
@@ -428,6 +511,54 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			if (failures === 0) console.log('OK   checkMetallicRatios: golden/silver/bronze values correct, and M_k cycles with period exactly k for k=1..4.');
 		}
 
+		// phi_s snap values: hand-computed cases at the two smallest s, the degenerate/empty s=0/1
+		// cases, and a general lock-in check across s=2..6 -- for every generated r0, wfNextLevel
+		// must reach r=phi at exactly level s (not earlier: that's the point of these particular
+		// Stern-Brocot pairs over any other irrational r) and stay at phi for several levels after.
+		function checkPhiSnapValues() {
+			eq(sbPhiPairs(0).length, 0, 'checkPhiSnapValues: s=0 has no real family members (degenerate root case)');
+			eq(sbPhiPairs(1).length, 0, 'checkPhiSnapValues: s=1 has no valid member');
+
+			var p2 = sbPhiPairs(2);
+			eq(p2.length, 1, 'checkPhiSnapValues: s=2 has exactly 1 pair');
+			if (p2.length === 1) {
+				eq(p2[0].a, 1, 's=2 pair a'); eq(p2[0].b, 1, 's=2 pair b');
+				eq(p2[0].c, 2, 's=2 pair c'); eq(p2[0].d, 1, 's=2 pair d');
+				approxEq(phiSnapValue(p2[0].a, p2[0].b, p2[0].c, p2[0].d), 1.381966011250105, 's=2 phi-snap value', 1e-9);
+			}
+
+			var p3 = sbPhiPairs(3);
+			eq(p3.length, 2, 'checkPhiSnapValues: s=3 has exactly 2 pairs');
+			if (p3.length === 2) {
+				var v3 = phiSnapValues(3);
+				approxEq(v3[0], 1.7236067977499790, 's=3 phi-snap value (lower)', 1e-9);
+				approxEq(v3[1], 2.3819660112501050, 's=3 phi-snap value (upper)', 1e-9);
+			}
+
+			var phi = metallicRatio(1);
+			for (var s = 2; s <= 6; s++) {
+				var pairs = sbPhiPairs(s);
+				eq(pairs.length, Math.pow(2, s - 2), 'checkPhiSnapValues: s=' + s + ' pair count is 2^(s-2)');
+				for (var p = 0; p < pairs.length; p++) {
+					var r0 = phiSnapValue(pairs[p].a, pairs[p].b, pairs[p].c, pairs[p].d);
+					var level = { word: ['L'], m: 1, n: 0, r: r0 }; // word/m/n irrelevant to the r-only walk
+					for (var i = 0; i < s + 5; i++) {
+						var isPhi = Math.abs(level.r - phi) < 1e-7;
+						if (i < s && isPhi) {
+							console.error('FAIL checkPhiSnapValues: s=' + s + ' pair ' + p + ' reached phi early, at level ' + i + ' instead of ' + s);
+							failures++;
+						}
+						if (i >= s && !isPhi) {
+							console.error('FAIL checkPhiSnapValues: s=' + s + ' pair ' + p + ' is not locked at phi at level ' + i + ' (r=' + level.r + ')');
+							failures++;
+						}
+						level = wfNextLevel(level, false);
+					}
+				}
+			}
+			if (failures === 0) console.log('OK   checkPhiSnapValues: hand-computed s=2/3 values correct, s=0/1 empty, and every generated r0 for s=2..6 locks onto phi at exactly its own level, never earlier.');
+		}
+
 		// Rational r reaches isochrony at some finite level and the hierarchy must stop there
 		// (dividing by r-1=0 otherwise) -- this is what checkRefinement's case 0 caught before
 		// wfHierarchy grew the isochrony guard: it asked for 6 levels of (m=2,n=1,r=2.5), which
@@ -449,6 +580,7 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			checkComplementary();
 			checkLeftRight();
 			checkMetallicRatios();
+			checkPhiSnapValues();
 			if (failures === 0) {
 				console.log('ALL OK');
 				process.exitCode = 0;
