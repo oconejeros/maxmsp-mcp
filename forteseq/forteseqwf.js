@@ -322,7 +322,9 @@ function stopAllTasks() {
 // value and sends the rest out the corresponding numbered outlet) into one of six fixed-channel
 // makenote+noteout pairs -- level N always reaches MIDI channel N. This list is `route`'s only
 // consumer, so its argument list (1-6) and MAX_LEVELS (6) both encode the same fact and must be
-// kept in sync if either ever changes.
+// kept in sync if either ever changes. Tag 0 is reserved on this same outlet for the diagnostic
+// message below (see startCycle) -- no real note ever uses it, since lv is always 0-based and
+// lv+1 is always >=1, so `wf_route`'s unconnected reject outlet swallows tag-0 messages for free.
 function fireNote(lv, pitch, vel, dur) {
 	outlet(0, lv + 1, pitch, vel, dur);
 }
@@ -342,6 +344,16 @@ function startCycle() {
 	if (!running) return;
 	var reverseFlags = levelReverse.slice(0, Math.max(0, numLevels - 1));
 	var h = wfHierarchy(baseM, baseN, baseR, numLevels, reverseFlags);
+
+	// Diagnostic for wf_levelviz (jsui level-ladder): h.length is the REAL level count, which can
+	// be less than numLevels if an earlier level came out isochronous and wfHierarchy stopped on
+	// its own (see wfHierarchy's own comment) -- that distinction is exactly what "which level is
+	// my rhythm actually at" means, and nothing else in this file exposes it. Tag 0 (see fireNote)
+	// keeps this off the note-routing path entirely.
+	var diag = [0, h.length];
+	for (var dl = 0; dl < h.length; dl++) diag.push(h[dl].r);
+	outlet.apply(this, [0].concat(diag));
+
 	var prevOnsets = null;
 	var totalScheduled = 0;
 	for (var lv = 0; lv < h.length; lv++) {
