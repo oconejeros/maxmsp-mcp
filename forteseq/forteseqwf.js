@@ -273,6 +273,13 @@ var levelVel = [100, 100, 100, 100, 100, 100];
 var levelDur = [100, 100, 100, 100, 100, 100];
 var periodMs = 2000;
 
+// Tempo-sync state (see settempo/setsynctempo/setbeatsperperiod below). periodMs stays the single
+// field startCycle()/wfOnsets() ever read -- sync mode is just a second way of writing to it, same
+// as the manual setperiod() message, never a parallel code path through the rest of the engine.
+var syncTempo = 0;
+var beatsPerPeriod = 4;
+var liveTempo = 120;
+
 var scheduledTasks = [];
 
 function levelIndex(lv) {
@@ -299,6 +306,32 @@ function clampInt(v, lo, hi) {
 
 function setrun(v) { running = v ? 1 : 0; if (!running) stopAllTasks(); }
 function setperiod(ms) { ms = Number(ms); if (isFinite(ms)) periodMs = clampInt(ms, MIN_PERIOD_MS, MAX_PERIOD_MS); }
+
+// Tempo sync: when on, periodMs is DERIVED (beatsPerPeriod * ms-per-beat) instead of set directly by
+// setperiod(). settempo() is fed by a live.observer on the Live Set's tempo property in the patch (see
+// forteseqwf.amxd) -- it is NOT read from Max's transport, so it keeps working even if the transport
+// is stopped (unlike a metro driven by a note-value/@quantize interval, see max_metro_transport_stall).
+var MIN_BEATS_PER_PERIOD = 0.25, MAX_BEATS_PER_PERIOD = 64;
+function clampFloat(v, lo, hi) {
+	if (!isFinite(v)) return lo;
+	if (v < lo) return lo;
+	if (v > hi) return hi;
+	return v;
+}
+function recomputeSyncedPeriod() {
+	if (!syncTempo) return;
+	var ms = beatsPerPeriod * (60000 / liveTempo);
+	periodMs = clampInt(ms, MIN_PERIOD_MS, MAX_PERIOD_MS);
+	// Diagnostic tag -1 (0 is already reserved for wf_levelviz, see fireNote/startCycle): tells the
+	// patch's wf_metro what ms to actually run at now that the JS side owns the computation, so Max
+	// never has to duplicate the beats->ms math itself. Real notes use tag lv+1 (always >=1); the
+	// level-ladder diagnostic uses tag 0 -- neither collides with -1.
+	outlet(0, -1, periodMs);
+}
+function setsynctempo(v) { syncTempo = v ? 1 : 0; recomputeSyncedPeriod(); }
+function setbeatsperperiod(v) { beatsPerPeriod = clampFloat(Number(v), MIN_BEATS_PER_PERIOD, MAX_BEATS_PER_PERIOD); recomputeSyncedPeriod(); }
+function settempo(bpm) { bpm = Number(bpm); if (isFinite(bpm) && bpm > 0) { liveTempo = bpm; recomputeSyncedPeriod(); } }
+
 function setm(v) { baseM = clampInt(v, 1, MAX_MN); }
 function setn(v) { baseN = clampInt(v, 0, MAX_MN); }
 function setr(v) { v = Number(v); if (isFinite(v) && v >= 1) baseR = v; }
@@ -323,8 +356,9 @@ function stopAllTasks() {
 // makenote+noteout pairs -- level N always reaches MIDI channel N. This list is `route`'s only
 // consumer, so its argument list (1-6) and MAX_LEVELS (6) both encode the same fact and must be
 // kept in sync if either ever changes. Tag 0 is reserved on this same outlet for the diagnostic
-// message below (see startCycle) -- no real note ever uses it, since lv is always 0-based and
-// lv+1 is always >=1, so `wf_route`'s unconnected reject outlet swallows tag-0 messages for free.
+// message below (see startCycle), and tag -1 is reserved for the tempo-sync diagnostic (see
+// recomputeSyncedPeriod) -- no real note ever uses either, since lv is always 0-based and lv+1 is
+// always >=1, so `wf_route`'s unconnected reject outlet swallows tag-0/-1 messages for free.
 function fireNote(lv, pitch, vel, dur) {
 	outlet(0, lv + 1, pitch, vel, dur);
 }
