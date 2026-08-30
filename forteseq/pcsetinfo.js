@@ -18,13 +18,13 @@
 //     disssort <0|1>       1 = idx1 walks the cardinality ordered by dissonance instead of
 //                          Forte order (1 = most consonant .. N = most dissonant)
 //
-//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; now
-//                                               ends with `diso <r> (<label>)`)
+//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
+//                                               with `diso <pct>% (<label>)` -- McKay level)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //                            `list <pc ...>`    (study mode only; the set to display)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
-//     name <sym> | diso <ratio 0..1> | tn <index> <351>
+//     name <sym> | diso <pct 0..100, McKay> | tn <index> <351>
 //
 // Forte data (cardinalities 3-9) embedded from Wikipedia "List of set classes". Prime form
 // and normal order use the Rahn algorithm; A/B suffix from which representative the sounding
@@ -320,23 +320,30 @@ function buildByCard() {
 	}
 }
 
-// McKay-style dissonance from the interval vector: the fraction of a set's dyads that are
-// dissonant intervals -- m2/M7 (ic1) and the tritone (ic6) full weight, M2/m7 (ic2) half,
-// m3/M3/P4/P5 (ic3-5) consonant. 0 = all consonant, 1 = all dissonant. Invariant under
-// transposition / inversion / rotation, so it labels the set class.
-var DISO_W = [1.0, 0.5, 0.0, 0.0, 0.0, 1.0];   // ic1..ic6
-function disoRatio(iv) {
-	var dy = 0, di = 0;
-	for (var i = 0; i < 6; i++) { dy += iv[i]; di += iv[i] * DISO_W[i]; }
-	return dy > 0 ? di / dy : 0;
+// Dosia McKay's dissonance level, from the interval vector -- the same calculation FORTESEQ2
+// uses (forteseq2.js: IC_DISSONANCE_MCKAY / dissonanceOf / dissonancePercent). Each interval
+// class is weighted by the inverse of how often it occurs in the diatonic scale (P4 x6,
+// M2 x5, m3 x4, M3 x3, m2 x2, TT x1 -> weights 1/6, 1/5, 1/4, 1/3, 1/2, 1). The level is the
+// RAW weighted sum (not normalised by pair count -- so a bigger set scores higher), then
+// shown as a percentage of the twelve-tone set's own level (23.4, the max any set reaches).
+// Verified against the book: major triad 3-11B -> 0.75 -> 3.21%, diatonic 7-35 -> 6 -> 25.64%.
+var IC_DISSONANCE_MCKAY = [1 / 2, 1 / 5, 1 / 4, 1 / 3, 1 / 6, 1];   // ic1..ic6
+var MCKAY_CHROMATIC = 23.4;
+function dissonanceOf(iv) {
+	var t = 0;
+	for (var k = 0; k < 6; k++) t += IC_DISSONANCE_MCKAY[k] * iv[k];
+	return t;
 }
-function disoLabel(d) {
-	return d < 0.10 ? "muy consonante" : d < 0.30 ? "consonante"
-	     : d < 0.50 ? "medio" : d < 0.70 ? "disonante" : "muy disonante";
+function dissonancePercent(iv) { return dissonanceOf(iv) / MCKAY_CHROMATIC * 100; }
+function disoLabel(pct) {
+	return pct < 4 ? "muy consonante" : pct < 10 ? "consonante"
+	     : pct < 20 ? "medio" : pct < 40 ? "disonante" : "muy disonante";
 }
 
-// DissSort: order the study index by dissonance (1 = most consonant, N = most dissonant)
+// DissSort: order the study index by dissonance (1 = least dissonant, N = most dissonant)
 // so StudyIdx steps toward more / less dissonance. DISO_ORDER[card] caches the permutation.
+// Within one cardinality the pair count is constant, so raw sum and per-pair give the same
+// order -- this matches FORTESEQ2's ORDER_DISS (sort by dissonanceOf ascending).
 var DISO_SORT = 0;
 var DISO_ORDER = {};
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
@@ -345,7 +352,7 @@ function disoOrder(card) {
 	var lst = BY_CARD[card] || [], ord = [];
 	for (var i = 0; i < lst.length; i++) ord.push(i);
 	ord.sort(function (a, b) {
-		var da = disoRatio(intervalVector(lst[a].pcs)), db = disoRatio(intervalVector(lst[b].pcs));
+		var da = dissonanceOf(intervalVector(lst[a].pcs)), db = dissonanceOf(intervalVector(lst[b].pcs));
 		return da !== db ? da - db : a - b;
 	});
 	DISO_ORDER[card] = ord;
@@ -419,7 +426,7 @@ function emit() {
 	var nm = forte && NAMES[forte] ? NAMES[forte] : "";
 	var tn = tnIndex(pcs);
 
-	var dz = card >= 2 ? disoRatio(iv) : 0;
+	var dpct = card >= 2 ? dissonancePercent(iv) : 0;
 
 	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
 		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
@@ -427,7 +434,7 @@ function emit() {
 	line += "  |  IV " + ivString(iv);
 	line += "  |  [" + prime.join(" ") + "]";
 	if (nm) line += "  |  " + nm;
-	if (card >= 2) line += "  |  diso " + dz.toFixed(2) + " (" + disoLabel(dz) + ")";
+	if (card >= 2) line += "  |  diso " + dpct.toFixed(1) + "% (" + disoLabel(dpct) + ")";
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
@@ -439,7 +446,7 @@ function emit() {
 	outlet(1, ["iv"].concat(iv));
 	outlet(1, ["prime"].concat(prime));
 	outlet(1, ["name", nm || "-"]);
-	outlet(1, ["diso", Math.round(dz * 1000) / 1000]);
+	outlet(1, ["diso", Math.round(dpct * 100) / 100]);   // McKay dissonance, % of chromatic
 	outlet(1, ["tn", tn, 351]);
 }
 

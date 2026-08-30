@@ -48,7 +48,7 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
                                     \-> gate ctrl, \-> bang the study pak
       StudyCard/Idx/Rot/Tonic/Inv --> pak --> prepend studyset --> [gate] --> js pcsetinfo.js
                                     (pcsetinfo builds the set, sends it back as `list` --> jsui;
-                                     the footer ends with a McKay dissonance readout)
+                                     footer ends with McKay dissonance %, same calc as FORTESEQ2)
       live.toggle DissSort --> t b i --> prepend disssort --> pcsetinfo (order StudyIdx by dissonance)
                                      \-> bang the study pak
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
@@ -130,7 +130,7 @@ ANN = {
     'StudyRot': 'Rota el collar de intervalos: 0 = forma prima; cada paso arranca en la nota siguiente (los modos de la forma).',
     'StudyTonic': 'Nota a la que se ancla el conjunto (transposicion).',
     'StudyInv': 'Usa la inversion de la forma en vez de la forma prima.',
-    'DissSort': 'Ordena StudyIdx por disonancia (segun el vector interv., estilo McKay: m2/M7 y tritono pesan 1, M2/m7 0.5, el resto consonante). 1 = mas consonante ... N = mas disonante, para avanzar hacia mas/menos disonancia. El pie muestra "diso <r> (<etiqueta>)".',
+    'DissSort': 'Ordena StudyIdx por el nivel de disonancia de McKay (el mismo calculo de FORTESEQ2, del vector interv.: pesos 1/6 1/5 1/4 1/3 1/2 1 para P4/M2/m3/M3/m2/TT). 1 = menos disonante ... N = mas, para avanzar hacia mas/menos disonancia. El pie muestra "diso <%> (<etiqueta>)".',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
