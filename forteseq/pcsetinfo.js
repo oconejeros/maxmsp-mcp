@@ -8,8 +8,17 @@
 //     clear                empty it
 //     bang                 re-emit the current analysis
 //
+//   inlet 0 (study mode -- Bigo shapes without MIDI):
+//     studyset <card> <idx1> <rot> <tonic> <inv>
+//                          build a set from a Forte class and push it to the jsui as `list`
+//                          + the usual `info` / `setclass`. card 2-9, idx1 1-based Forte
+//                          order (clamped), rot rotates the interval necklace (0 = prime
+//                          form; others its modes), tonic 0-11 anchor pc, inv 0|1 use the
+//                          inverted form. Gated in the patch by the Study toggle.
+//
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
+//                            `list <pc ...>`    (study mode only; the set to display)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
 //     name <sym> | tn <index> <351>
@@ -271,6 +280,62 @@ function clear() {
 	emit();
 }
 function bang() { emit(); }
+
+// ---- study mode: a set from a Forte class, no MIDI ---------------------------------
+// BY_CARD[n] = the card-n set classes as {pcs (prime form, starts at 0), forte}, one per
+// Forte ordinal (A/B pairs collapsed to the A/prime form -- the inv flag recovers the B).
+// 3-6 from FORTE_RAW; 2 = the six interval classes; 7-9 = complements of 5/4/3 (a set and
+// its complement share the Forte ordinal).
+var BY_CARD = null;
+function buildByCard() {
+	BY_CARD = {};
+	var toks = FORTE_RAW.replace(/\s+/g, " ").split(" ");
+	var seen = {};
+	for (var i = 0; i < toks.length; i++) {
+		var f = toks[i].split("|");
+		if (f.length !== 3) continue;
+		var base = f[0].replace(/[AB]$/, "");
+		if (seen[base]) continue;
+		seen[base] = 1;
+		var pcs = [];
+		for (var c = 0; c < f[1].length; c++) {
+			var ch = f[1].charAt(c);
+			pcs.push(ch === "A" ? 10 : ch === "B" ? 11 : parseInt(ch, 10));
+		}
+		var cd = pcs.length;
+		if (!BY_CARD[cd]) BY_CARD[cd] = [];
+		BY_CARD[cd].push({ pcs: pcs, forte: base });
+	}
+	BY_CARD[2] = [];
+	for (var d = 1; d <= 6; d++) BY_CARD[2].push({ pcs: [0, d], forte: "2-" + d });
+	for (var cc = 7; cc <= 9; cc++) {
+		var src = BY_CARD[12 - cc] || [];
+		BY_CARD[cc] = [];
+		for (var k = 0; k < src.length; k++)
+			BY_CARD[cc].push({ pcs: primeForm(complement(src[k].pcs)),
+				forte: cc + src[k].forte.substring(src[k].forte.indexOf("-")) });
+	}
+}
+
+function studyset(card, idx1, rot, tonic, inv) {
+	if (!BY_CARD) buildByCard();
+	card = Math.max(2, Math.min(9, Math.round(card)));
+	var lst = BY_CARD[card] || [];
+	if (!lst.length) return;
+	var idx = Math.max(0, Math.min(lst.length - 1, Math.round(idx1) - 1));
+	var base = lst[idx].pcs.slice();
+	if (inv) base = normal0(invert(base));
+	var n = base.length;
+	var r = (((Math.round(rot) % n) + n) % n);
+	var rel = [];
+	for (var i = 0; i < n; i++) rel.push(mod12(base[(i + r) % n] - base[r]));
+	var tn = mod12(Math.round(tonic));
+	var outPcs = [];
+	for (var j = 0; j < n; j++) outPcs.push(mod12(rel[j] + tn));
+	explicit = uniqSorted(outPcs);
+	outlet(0, ["list"].concat(explicit));   // -> jsui activeSet
+	emit();                                  // -> jsui footer (info / setclass)
+}
 
 // inline 351 Tn-class index (same canonical rotation-min as pcset351.js buildSets)
 var TN_CANON = null;

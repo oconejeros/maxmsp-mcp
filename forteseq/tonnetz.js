@@ -41,6 +41,10 @@
 // decoupled tonnetzfit.js: the interval vector whose lattice represents the recent music
 // most compactly, shown as a caption and optionally followed by the live abc.
 //
+// v9: `studymode 1` freezes out MIDI and shows a set dialled in by Forte class / rotation /
+// tonic instead (the actual set is built by pcsetinfo.js's `studyset` and arrives as `list`;
+// the Study toggle gates that path in the patch). For studying the shapes silently.
+//
 // v8: `vtet` = an eighth panel, Gollin's three-dimensional Tonnetz (1998; paper Fig. 4b/6b).
 // The complex K[a,b,c,d] has 4-note chords (dominant sevenths, half-diminished) as
 // tetrahedra; it is drawn as a flat isometric projection of the cubic lattice whose three
@@ -50,8 +54,11 @@
 //
 // Messages:
 //   note <pitch> <vel>   MIDI note; vel 0 = note-off. Ref-counted (per pitch class AND per
-//                        MIDI note); a fresh pitch-class onset pushes the trace.
-//   list <pc> ...        replace the active pitch-class set outright (no trace push)
+//                        MIDI note); a fresh pitch-class onset pushes the trace. Ignored
+//                        while studymode is on.
+//   list <pc> ...        replace the active pitch-class set outright (no trace push); this
+//                        is how the study set arrives (from pcsetinfo.js)
+//   studymode <0|1>      1 = ignore MIDI, show the study set instead; 0 = back to MIDI (clears)
 //   clear                drop all active notes and the trace
 //   vton/vchr/vfif/vvoc/vpno/vgtr/vdia/vtet <0|1>   show/hide each panel (Tonnetz, chromatic,
 //                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz, 3-D Tonnetz)
@@ -228,6 +235,7 @@ var xposeN = 0;
 var invcN = 0;
 var ghostSet = [];       // preview pitch classes (rebuilt each paint; empty when off)
 var infoText = "";
+var studyOn = 0;         // 1 = ignore MIDI, activeSet comes from the study set (pcsetinfo)
 var pianoMode = 0;       // 0 one octave, 1 full MIDI range
 var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes only
 var tuningIdx = 0;
@@ -242,7 +250,7 @@ for (var i = 0; i < 128; i++) midiVoices[i] = 0;
 // The jsui box is left oversized; we draw only within the floating window's real size, read
 // from the subpatcher's Wind. Also try to match the box rect to it (harmless if read-only).
 var BOX_PAD_X = 8;     // must match the jsui box x in build_tonnetz.py
-var BOX_TOP   = 152;   // five-row control strip reserved at the top of the window (match build_tonnetz.py jsui y)
+var BOX_TOP   = 182;   // six-row control strip reserved at the top of the window (match build_tonnetz.py jsui y)
 
 function windSize() {
 	try {
@@ -313,6 +321,7 @@ function pcAt(p, q) { return tzDiat ? scalePc(p * 2 + q * 4) : mod12(p * axX() +
 
 // ---- message handlers ---------------------------------------------------------------
 function note(pitch, vel) {
+	if (studyOn) return;                 // study mode: MIDI is frozen out
 	var n = Math.round(pitch);
 	var pc = mod12(n);
 	if (vel > 0) {
@@ -378,6 +387,15 @@ function setclass() {
 				break;
 			}
 		}
+	}
+	mgraphics.redraw();
+}
+function studymode(v) {
+	studyOn = v ? 1 : 0;
+	if (!studyOn) {                      // back to MIDI: wipe whatever the study set left lit
+		for (var i = 0; i < 12; i++) voices[i] = 0;
+		for (var j = 0; j < 128; j++) midiVoices[j] = 0;
+		activeSet = [];
 	}
 	mgraphics.redraw();
 }

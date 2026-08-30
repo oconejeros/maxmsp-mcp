@@ -20,7 +20,8 @@ jsui fills the rest and draws eight panels -- Tonnetz, chromatic circle, fifths 
 voice-leading space, piano keyboard, guitar fretboard, diatonic Tonnetz, and Gollin's 3-D
 Tonnetz (4-note chords as tetrahedra, isometric projection). Each has its own on/off toggle
 in row 1 (pick panels a dedo); whatever is on is packed into an auto-grid whose short last
-row is centred at the common cell width.
+row is centred at the common cell width. Row 6 is a study mode: dial in a Forte class +
+rotation + tonic and the set is shown on every panel with the MIDI frozen out.
 
     top patcher:
       notein --> pack (pitch vel) --> [p tonnetz_window] inlet 0
@@ -43,12 +44,16 @@ row is centred at the common cell width.
       live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors/RegTrace --> prepend <sel> --> jsui
       live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom/Pan --> prepend <sel> --> jsui
       live.toggle Plr/XfPrev/AutoFit + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
+      live.toggle Study --> t b i i --> prepend studymode --> jsui  (freeze MIDI)
+                                    \-> gate ctrl, \-> bang the study pak
+      StudyCard/Idx/Rot/Tonic/Inv --> pak --> prepend studyset --> [gate] --> js pcsetinfo.js
+                                    (pcsetinfo builds the set, sends it back as `list` --> jsui)
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-38 parameters. The button is a top-level param (key "obj-20"); the 37 controls inside the
+44 parameters. The button is a top-level param (key "obj-20"); the 43 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Six Push banks (8 + 8 + 8 + 8 + 4 + 2).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 2 + 6).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -116,6 +121,12 @@ ANN = {
     'InvC': 'Centro de inversion (clase de altura 0-11) para la previsualizacion.',
     'RegTrace': 'Dibuja la trayectoria como un camino de regiones (triangulos/aristas) en el Tonnetz, desvanecido por edad.',
     'AutoFit': 'Deja que el analisis de complejo mas compacto (tonnetzfit.js) fije el vector a/b/c en vivo.',
+    'Study': 'Modo estudio: muestra el conjunto elegido con Forte/rotacion/tonica e IGNORA el MIDI entrante. Apagarlo vuelve al MIDI.',
+    'StudyCard': 'Cardinalidad del conjunto a estudiar (2-9 notas).',
+    'StudyIdx': 'Que clase de conjunto de esa cardinalidad, en orden de Forte (1..N, se recorta al maximo disponible).',
+    'StudyRot': 'Rota el collar de intervalos: 0 = forma prima; cada paso arranca en la nota siguiente (los modos de la forma).',
+    'StudyTonic': 'Nota a la que se ancla el conjunto (transposicion).',
+    'StudyInv': 'Usa la inversion de la forma en vez de la forma prima.',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
@@ -157,10 +168,16 @@ CTRL = [
     ('InvC',       'InvC',      'obj-268', 'live.numbox',  'invc'),
     ('RegTrace',   'RegTrace',  'obj-270', 'live.toggle',  'regtrace'),
     ('AutoFit',    'AutoFit',   'obj-272', 'live.toggle',  'autofit'),
+    ('Study',      'Study',     'obj-300', 'live.toggle',  None),   # wired by hand (studymode + gate + pak)
+    ('StudyCard',  'StudyCard', 'obj-301', 'live.numbox',  None),
+    ('StudyIdx',   'StudyIdx',  'obj-302', 'live.numbox',  None),
+    ('StudyRot',   'StudyRot',  'obj-303', 'live.numbox',  None),
+    ('StudyTonic', 'StudyTon',  'obj-304', 'live.menu',    None),
+    ('StudyInv',   'StudyInv',  'obj-305', 'live.toggle',  None),
 ]
 TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet',
            'Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
-           'Plr', 'XfPrev', 'RegTrace', 'AutoFit']
+           'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
              'obj-162', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268']
@@ -172,6 +189,7 @@ BANKS = [
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
     ('Mas',       ['Abrir', 'TetPreset']),
+    ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv']),
 ]
 
 
@@ -237,6 +255,13 @@ VO = {
     'InvC':      num_vo('InvC', 'InvC', 0, 11, 0),
     'RegTrace':  toggle_vo('RegTrace', 0),
     'AutoFit':   toggle_vo('AutoFit', 0),
+    'Study':     toggle_vo('Study', 0),
+    'StudyCard': num_vo('StudyCard', 'StudyCard', 2, 9, 3),
+    'StudyIdx':  num_vo('StudyIdx', 'StudyIdx', 1, 50, 1),
+    'StudyRot':  num_vo('StudyRot', 'StudyRot', 0, 11, 0),
+    'StudyTonic': enum_vo('StudyTonic', 'StudyTon',
+                          ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], 0),
+    'StudyInv':  toggle_vo('StudyInv', 0),
 }
 
 
@@ -402,11 +427,53 @@ def build_subpatcher(appversion):
     control('AutoFit', 'obj-272', 'live.toggle', 'autofit', [434.0, 128.0, 15.0, 15.0])
     label(452.0, 128.0, 44.0, 'Ajuste')
 
+    # row 6 (y 158): study mode -- dial in a Forte class / rotation / tonic, MIDI frozen out.
+    # These 5 value controls feed a pak -> `prepend studyset` -> pcsetinfo, gated by Study.
+    control('Study', 'obj-300', 'live.toggle', None, [8.0, 158.0, 15.0, 15.0])
+    label(26.0, 158.0, 44.0, 'Estudio')
+    label(74.0, 158.0, 30.0, 'forte')
+    control('StudyCard', 'obj-301', 'live.numbox', None, [106.0, 158.0, 26.0, 18.0])
+    label(136.0, 158.0, 10.0, '#')
+    control('StudyIdx', 'obj-302', 'live.numbox', None, [148.0, 158.0, 32.0, 18.0])
+    label(184.0, 158.0, 20.0, 'rot')
+    control('StudyRot', 'obj-303', 'live.numbox', None, [206.0, 158.0, 26.0, 18.0])
+    label(236.0, 158.0, 22.0, 'ton')
+    control('StudyTonic', 'obj-304', 'live.menu', None, [260.0, 158.0, 54.0, 20.0])
+    control('StudyInv', 'obj-305', 'live.toggle', None, [322.0, 158.0, 15.0, 15.0])
+    label(340.0, 158.0, 58.0, 'inv forma')
+
+    # study plumbing: 5 controls -> pak -> prepend studyset -> gate -> pcsetinfo (obj-105).
+    # Study toggle: t b i i  -- studymode to jsui first, then open the gate, then bang the pak.
+    plumb('obj-310', 'pak 3 1 0 0 0', 372.0, PLUMB_Y + 470, 90.0, 'tzw_study_pak',
+          numinlets=5, numoutlets=1)
+    plumb('obj-311', 'prepend studyset', 372.0, PLUMB_Y + 496, 110.0, 'tzw_study_prep')
+    plumb('obj-312', 't b i i', 16.0, PLUMB_Y + 470, 60.0, 'tzw_study_trig',
+          numinlets=1, numoutlets=3, outlettype=['', '', ''])
+    plumb('obj-318', 'prepend studymode', 16.0, PLUMB_Y + 496, 120.0, 'tzw_pp_studymode')
+    plumb('obj-319', 'gate 1 0', 372.0, PLUMB_Y + 548, 50.0, 'tzw_study_gate',
+          numinlets=2, numoutlets=1)
+    hline('obj-300', 0, 'obj-312', 0)
+    hline('obj-312', 2, 'obj-318', 0)      # rightmost i (fires first): studymode -> jsui
+    hline('obj-318', 0, 'obj-100', 0)
+    hline('obj-312', 1, 'obj-319', 0)      # middle i: open/close the gate
+    hline('obj-312', 0, 'obj-310', 0)      # b (fires last): re-emit the pak
+    hline('obj-301', 0, 'obj-310', 0)      # StudyCard -> pak inlet 0 (hot)
+    for k, cid in enumerate(('obj-302', 'obj-303', 'obj-304', 'obj-305')):
+        tid = 'obj-31%d' % (4 + k)         # obj-314..317
+        plumb(tid, 't b i', 90.0 + k * 70, PLUMB_Y + 522, 40.0, 'tzw_study_t%d' % k,
+              numinlets=1, numoutlets=2, outlettype=['', ''])
+        hline(cid, 0, tid, 0)
+        hline(tid, 1, 'obj-310', k + 1)    # value -> pak cold inlet k+1
+        hline(tid, 0, 'obj-310', 0)        # bang -> pak hot inlet (re-emit)
+    hline('obj-310', 0, 'obj-311', 0)
+    hline('obj-311', 0, 'obj-319', 1)      # studyset list -> gate data inlet
+    hline('obj-319', 0, 'obj-105', 0)      # gate open -> pcsetinfo builds + emits
+
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
-    # y must match BOX_TOP in tonnetz.js (five 30px rows + margin).
+    # y must match BOX_TOP in tonnetz.js (six 30px rows + margin).
     mkbox(bl, id='obj-100', maxclass='jsui', numinlets=1, numoutlets=1, outlettype=[''],
-          patching_rect=[8.0, 152.0, 1600.0, 1100.0], parameter_enable=0,
+          patching_rect=[8.0, 182.0, 1600.0, 1100.0], parameter_enable=0,
           filename=JS, varname='tzw_ui')
 
     # initial state -> jsui (hidden loadbang chain)
@@ -554,7 +621,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v8: Gollin 3-D Tonnetz panel -- 4-note chords as tetrahedra)')
+    print('tonnetz.amxd  (v9: study mode -- pick Forte class / rotation / tonic, no MIDI)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))
