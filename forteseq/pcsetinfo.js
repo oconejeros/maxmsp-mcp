@@ -21,9 +21,10 @@
 //                          2 inv. de quintas (M7 == a rotation) | 3 espejo de quintas
 //                          (M7 == the inversion). Composes with disssort.
 //     studymove <0|1>      what `tonic` does: 0 = transpose the whole figure (default),
-//                          1 = "Rota raiz": the lit shape stays put (prime necklace at pc 0)
-//                          and `tonic` only rotates the jsui's note names / colours so the
-//                          chosen root is drawn where C sits (`studyspell` carries the offset).
+//                          1 = "Rota raiz": `list` stays the prime necklace at pc 0 and
+//                          `studyspell <tonic>` tells the jsui to rotate names/colours on the
+//                          chromatic Tonnetz + circles (shape looks pinned) while piano /
+//                          guitar shift the lit notes by that amount (still real pitches).
 //
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
 //                                               with `diso <pct>% (<label>)` then any of the
@@ -469,9 +470,10 @@ var DISO_SORT = 0;
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
 
 // StudyMove (menu): what StudyTonic does. 0 "Transpone" = slide the whole figure round the
-// chromatic circle (the original behaviour). 1 "Rota raiz" = the lit shape never moves (it
-// stays the prime necklace anchored at pc 0); StudyTonic only rotates the note names and
-// colours so the chosen root is spelled where C sits. `rot` still reshapes; `inv` still flips.
+// chromatic circle (the original behaviour). 1 "Rota raiz" = `list` stays the prime necklace
+// at pc 0; the chromatic Tonnetz + circles rotate names/colours so the root shows where C
+// sits, while piano/guitar shift the lit notes and keep showing real pitches. `rot` still
+// reshapes; `inv` still flips.
 var STUDY_MOVE = 0;
 function studymove(v) { STUDY_MOVE = v ? 1 : 0; }
 
@@ -527,12 +529,13 @@ function studyset(card, idx1, rot, tonic, inv) {
 	for (var i = 0; i < n; i++) rel.push(mod12(base[(i + r) % n] - base[r]));
 	var outPcs = [];
 	if (STUDY_MOVE) {
-		// Rota raiz: the lit shape never moves -- it stays the prime-form necklace anchored
-		// at pc 0. `tonic` only spins the note names / colours around that fixed shape, so
-		// the chosen root ends up drawn where C sits. spellRot carries that to the jsui.
+		// Rota raiz: `list` stays the prime necklace anchored at 0. spellRot tells the jsui
+		// how far to rotate names/colours on the chromatic Tonnetz + circles (shape looks
+		// pinned there); the fixed surfaces (piano/guitar) instead shift the lit notes by
+		// spellRot so they still show the real transposed pitches.
 		for (var j = 0; j < n; j++) outPcs.push(rel[j]);
 		spellRot = mod12(t);
-		studyRoot = 0;                      // pc-0 slot, now spelled as the root
+		studyRoot = spellRot;              // the real root pc
 		studyTag += "  raiz " + NOTE_NAMES[spellRot] + " (forma fija)";
 	} else {                                // Transpone: slide the whole figure to the tonic
 		var tn = mod12(t);

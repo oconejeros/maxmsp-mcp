@@ -67,10 +67,11 @@
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
 //   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
 //   studyroot <pc>       study mode: the pc to draw as the root (white, in COL_ROOT); -1 = none
-//   studyspell <n>       Rota raiz: rotate node names/colours by n semitones on the chromatic
-//                        Tonnetz and the two circles ONLY (lit shape stays put; the chosen
-//                        root ends up spelled at C's position). Piano, guitar, diatonic and
-//                        3-D Tonnetz keep real notes so they still show where notes are.
+//   studyspell <n>       Rota raiz: the chromatic Tonnetz + the two circles rotate their
+//                        names/colours by n semitones (lit shape stays put, root spelled at
+//                        C's slot); piano + guitar instead shift the lit notes by n so they
+//                        keep showing the real transposed pitches on their fixed surfaces;
+//                        diatonic + 3-D Tonnetz ignore it entirely.
 //   pianomode <0|1>      piano: 0 one octave (pitch classes) | 1 full MIDI 0..127 (notes)
 //   guitarmode <0|1>     guitar: 0 all fretboard positions of sounding pcs | 1 only exact notes
 //   tuning <i>           guitar tuning index (see TUNINGS)
@@ -476,7 +477,15 @@ function xpose(v) { xposeN = Math.max(0, Math.min(11, Math.round(v))); mgraphics
 function invc(v) { invcN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
 function info() { infoText = arrayfromargs(arguments).join(" "); mgraphics.redraw(); }
 function studyroot(v) { studyRootPc = Math.round(v); mgraphics.redraw(); }
-function isStudyRoot(pc) { return studyOn && studyRootPc >= 0 && pc === studyRootPc; }
+function isStudyRoot(pc) {
+	if (!studyOn || studyRootPc < 0) return false;
+	// on the relabel panels the root shows at C's slot; on the fixed surfaces, on its real key
+	var want = (spellHere && studySpell) ? mod12(studyRootPc - studySpell) : studyRootPc;
+	return pc === want;
+}
+// study-set membership as a FIXED surface sees it: piano / guitar show the transposed set,
+// so they counter-shift the raw (pc-0-anchored) activeSet by studySpell.
+function isActiveX(pc) { return isActive((studyOn && studySpell) ? mod12(pc - studySpell) : pc); }
 function studyspell(v) { studySpell = mod12(Math.round(v)); mgraphics.redraw(); }
 // display pitch class: in Rota raiz mode the lit geometry stays put and only the labels /
 // colours rotate, so everything drawn as text or hue goes through here (isActive / positions
@@ -1142,9 +1151,7 @@ function drawNode(x, y, rad, pc, isHarm) {
 }
 
 // ---- piano keyboard ---------------------------------------------------------------
-// piano keeps real notes: only flag the root when it is the actual sounding pc (not when
-// Rota raiz has spelled it elsewhere -- studySpell != 0)
-function keyFill(pc) { return (isStudyRoot(pc) && !studySpell) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
+function keyFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
 function isWhitePc(pc) { return WHITE_PC.indexOf(pc) >= 0; }
 
 // horizontal offset for content of width `total` inside a panel of width `w`:
@@ -1197,13 +1204,13 @@ function paintPiano(r) {
 			var wpc = WHITE_PC[i];
 			var wx = x0 + xoff + i * whiteW;
 			if (wx + whiteW < L || wx > R) continue;
-			drawKey(wx, y0, Math.max(1, whiteW - 1), h, wpc, isActive(wpc), inTrace(wpc), true);
+			drawKey(wx, y0, Math.max(1, whiteW - 1), h, wpc, isActiveX(wpc), inTrace(wpc), true);
 		}
 		for (var j = 0; j < 5; j++) {
 			var bpc = BLACK_PC[j];
 			var bx = x0 + xoff + (BLACK_AFTER[j] + 1) * whiteW - blackW / 2;
 			if (bx + blackW < L || bx > R) continue;
-			drawKey(bx, y0, blackW, blackH, bpc, isActive(bpc), inTrace(bpc), false);
+			drawKey(bx, y0, blackW, blackH, bpc, isActiveX(bpc), inTrace(bpc), false);
 		}
 		return;
 	}
@@ -1317,7 +1324,7 @@ function paintGuitar(r) {
 			var pc = mod12(pitch);
 			var on, traced = false;
 			if (guitarMode) on = an.indexOf(pitch) >= 0;
-			else { on = isActive(pc); traced = !on && inTrace(pc); }
+			else { on = isActiveX(pc); traced = !on && inTrace(pc); }
 			if (!on && !traced) continue;
 			var gx = fretX(f), gy = stringY(s);
 			if (gx < L - dr || gx > R + dr) continue;
