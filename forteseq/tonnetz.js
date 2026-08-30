@@ -505,11 +505,18 @@ function paint() {
 	}
 }
 
-// one framed panel, dispatched by kind string (see VIEW_KIND)
+// one framed panel, dispatched by kind string (see VIEW_KIND). The lattice panels draw a
+// little past their bounds (a node radius, or a full lattice step for the 3-D panel), so the
+// content is clipped to the panel rect -- otherwise adjacent panels in the grid overlap.
 function panel(r, kind) {
 	mgraphics.set_source_rgba(PANEL_BG);
 	mgraphics.rectangle(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
 	mgraphics.fill();
+
+	mgraphics.save();
+	mgraphics.reset_clip();
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.clip();
 
 	if (kind === 'tonnetz') paintTonnetz(r, 0);
 	else if (kind === 'diat') paintTonnetz(r, 1);
@@ -519,6 +526,9 @@ function panel(r, kind) {
 	else if (kind === 'tet') paintTet(r);
 	else if (kind === 'fifths') paintCircle(r, FIFTHS, "Quintas");
 	else paintCircle(r, CHROM, "Cromatico");
+
+	mgraphics.restore();
+	mgraphics.reset_clip();
 
 	mgraphics.set_source_rgba(FRAME);
 	mgraphics.set_line_width(1);
