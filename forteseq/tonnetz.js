@@ -35,6 +35,12 @@
 // of `keyroot`/`keymode` appear -- N=7, Bigo p.13). harm and P/L/R are chromatic-lattice
 // concepts and are suppressed on the diatonic panel.
 //
+// v7: `regtrace` draws the timed trajectory as a path of lattice REGIONS (Fig. 8/9) -- each
+// pitch-class-set segment is anchored to the triangle/edge/vertex nearest the previous one
+// (greedy "small movements") and drawn faded by age. `bestfit`/`autofit` come from the
+// decoupled tonnetzfit.js: the interval vector whose lattice represents the recent music
+// most compactly, shown as a caption and optionally followed by the live abc.
+//
 // Messages:
 //   note <pitch> <vel>   MIDI note; vel 0 = note-off. Ref-counted (per pitch class AND per
 //                        MIDI note); a fresh pitch-class onset pushes the trace.
@@ -55,7 +61,10 @@
 //   preset <i>           pick abc from PRESETS[i]
 //   radius <px>          lattice spacing in pixels (Tonnetz), 24..120
 //   trace <0|1>          keep recently-released pitch classes lit
-//   tracelen <n>         how many onsets the trace remembers (1..24)
+//   tracelen <n>         how many onsets / region segments the trace remembers (1..24)
+//   regtrace <0|1>       draw the trajectory as a path of lattice regions (Tonnetz only)
+//   bestfit <a> <b> <c>  most-compact interval vector for the recent music (from tonnetzfit.js)
+//   autofit <0|1>        let bestfit drive the live abc
 //   harm <0|1>           light lattice neighbours of sounding notes (Tonnetz only)
 //   faces <0|1>          fill a Tonnetz triangle when all three of its pitch classes sound
 //   labels <0|1>         note names (1, default) vs pitch-class numbers (0)
@@ -182,6 +191,10 @@ var labelsOn = 1;
 var colorsOn = 1;
 var chordPolyOn = 1;
 var tracePathOn = 0;
+var regTraceOn = 0;      // path of lattice regions (v7)
+var segs = [];           // recent pc-set segments: {set:[pcs], t:ms}
+var fitAbc = null;       // most-compact interval vector from tonnetzfit.js
+var autoFitOn = 0;
 var plrOn = 0;           // neo-Riemannian P/L/R arrows on the Tonnetz
 var xfPrevOn = 0;        // transformation-preview ghost
 var xfMode = 0;          // 0 transpose by xposeN, 1 invert about invcN
@@ -252,6 +265,14 @@ function pushTrace(pc) {
 	traceQ.push(pc);
 	while (traceQ.length > traceLen) traceQ.shift();
 }
+// a fresh pc-set opens a new trajectory segment (Fig. 8's segmentation rule)
+function pushSeg() {
+	var s = activeSet.slice().sort(function (a, b) { return a - b; });
+	if (s.length === 0) return;
+	if (segs.length && segs[segs.length - 1].set.join(",") === s.join(",")) return;
+	segs.push({ set: s, t: (new Date()).getTime() });
+	while (segs.length > traceLen) segs.shift();
+}
 // diatonic scale degree -> pitch class in the current key
 function scalePc(deg) {
 	var sc = keyMinor ? MIN_SCALE : MAJ_SCALE;
@@ -277,6 +298,7 @@ function note(pitch, vel) {
 		if (n >= 0 && n < 128 && midiVoices[n] > 0) midiVoices[n]--;
 	}
 	rebuildActive();
+	pushSeg();
 	mgraphics.redraw();
 }
 function activeNotes() {
@@ -291,6 +313,7 @@ function list() {
 		var pc = mod12(Math.round(a[i]));
 		if (activeSet.indexOf(pc) < 0) activeSet.push(pc);
 	}
+	pushSeg();
 	mgraphics.redraw();
 }
 function msg_int(v) { list(v); }
@@ -298,7 +321,7 @@ function msg_float(v) { list(v); }
 function clear() {
 	for (var i = 0; i < 12; i++) voices[i] = 0;
 	for (var j = 0; j < 128; j++) midiVoices[j] = 0;
-	activeSet = []; traceQ = [];
+	activeSet = []; traceQ = []; segs = [];
 	mgraphics.redraw();
 }
 function setViewFlag(i, v) { viewOn[i] = v ? 1 : 0; mgraphics.redraw(); }
@@ -354,6 +377,17 @@ function labels(v) { labelsOn = v ? 1 : 0; mgraphics.redraw(); }
 function colors(v) { colorsOn = v ? 1 : 0; mgraphics.redraw(); }
 function chordpoly(v) { chordPolyOn = v ? 1 : 0; mgraphics.redraw(); }
 function tracepath(v) { tracePathOn = v ? 1 : 0; mgraphics.redraw(); }
+function regtrace(v) { regTraceOn = v ? 1 : 0; mgraphics.redraw(); }
+function bestfit(a, b, c) {
+	fitAbc = [Math.round(a), Math.round(b), Math.round(c)];
+	if (autoFitOn) curAbc = fitAbc.slice();
+	mgraphics.redraw();
+}
+function autofit(v) {
+	autoFitOn = v ? 1 : 0;
+	if (autoFitOn && fitAbc) curAbc = fitAbc.slice();
+	mgraphics.redraw();
+}
 function plr(v) { plrOn = v ? 1 : 0; mgraphics.redraw(); }
 function xfprev(v) { xfPrevOn = v ? 1 : 0; mgraphics.redraw(); }
 function xfmode(v) { xfMode = v ? 1 : 0; mgraphics.redraw(); }
@@ -525,6 +559,7 @@ function paintTonnetz(r, diatonic) {
 			drawNode(x, y, rad, pcAt(p, q), harmSet.indexOf(pcAt(p, q)) >= 0);
 		}
 
+	if (regTraceOn && !tzDiat) paintRegionTrace(pMax, qMax);
 	if (plrOn && !tzDiat) paintPLR(pMax, qMax);
 
 	mgraphics.set_source_rgba(COL_TEXT_IDLE);
@@ -534,7 +569,96 @@ function paintTonnetz(r, diatonic) {
 	mgraphics.show_text(tzDiat
 		? ("Diatonico  " + NOTE_NAMES[keyRoot] + (keyMinor ? " menor" : " mayor"))
 		: "Tonnetz");
+	if (fitAbc && !tzDiat) {
+		mgraphics.set_source_rgba(COL_INFO);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(r.x + 8, r.y + r.h - 8);
+		mgraphics.show_text("ajuste  " + fitAbc.join(" ") + (autoFitOn ? "  (auto)" : ""));
+	}
 	tzDiat = 0;
+}
+
+// v7: the trajectory as a path of lattice regions. Each segment is anchored to the
+// triangle (>=3 notes), edge (2) or vertex (1) closest to the previous anchor -- the paper's
+// "small movements" criterion -- and the chain is drawn faded oldest -> newest.
+function anchorFor(set, prev, pMax, qMax) {
+	var tris = [[[0, 0], [1, 0], [0, 1]], [[1, 0], [0, 1], [1, 1]]];
+	var best = null, bestD = 1e18;
+	function consider(poly) {
+		var cx = 0, cy = 0, k;
+		for (k = 0; k < poly.length; k++) { cx += poly[k][0]; cy += poly[k][1]; }
+		cx /= poly.length; cy /= poly.length;
+		var d = prev ? (cx - prev[0]) * (cx - prev[0]) + (cy - prev[1]) * (cy - prev[1])
+		             : (cx - G.cx) * (cx - G.cx) + (cy - G.cy) * (cy - G.cy);
+		if (d < bestD) { bestD = d; best = { cx: cx, cy: cy, poly: poly }; }
+	}
+	var p, q;
+	if (set.length >= 3) {
+		for (p = -pMax; p <= pMax; p++)
+			for (q = -qMax; q <= qMax; q++)
+				for (var t = 0; t < 2; t++) {
+					var V = tris[t], ok = true, poly = [];
+					for (var v = 0; v < 3; v++) {
+						if (set.indexOf(pcAt(p + V[v][0], q + V[v][1])) < 0) { ok = false; break; }
+						poly.push([sx(p + V[v][0], q + V[v][1]), sy(p + V[v][0], q + V[v][1])]);
+					}
+					if (ok) consider(poly);
+				}
+		if (best) return best;
+	}
+	if (set.length >= 2) {
+		var dirs = [[1, 0], [0, 1], [1, -1]];
+		for (p = -pMax; p <= pMax; p++)
+			for (q = -qMax; q <= qMax; q++) {
+				if (set.indexOf(pcAt(p, q)) < 0) continue;
+				for (var e = 0; e < 3; e++) {
+					if (set.indexOf(pcAt(p + dirs[e][0], q + dirs[e][1])) < 0) continue;
+					consider([[sx(p, q), sy(p, q)],
+					          [sx(p + dirs[e][0], q + dirs[e][1]), sy(p + dirs[e][0], q + dirs[e][1])]]);
+				}
+			}
+		if (best) return best;
+	}
+	for (p = -pMax; p <= pMax; p++)
+		for (q = -qMax; q <= qMax; q++)
+			if (set.indexOf(pcAt(p, q)) >= 0) consider([[sx(p, q), sy(p, q)]]);
+	return best;
+}
+function paintRegionTrace(pMax, qMax) {
+	if (segs.length === 0) return;
+	var prev = null, anchors = [], i;
+	for (i = 0; i < segs.length; i++) {
+		var a = anchorFor(segs[i].set, prev, pMax, qMax);
+		anchors.push(a);
+		if (a) prev = [a.cx, a.cy];
+	}
+	for (i = 0; i < anchors.length; i++) {
+		var an = anchors[i];
+		if (!an) continue;
+		var age = (i + 1) / anchors.length;
+		if (i > 0 && anchors[i - 1]) {
+			mgraphics.set_source_rgba(COL_TRACE[0], COL_TRACE[1], COL_TRACE[2], 0.12 + 0.55 * age);
+			mgraphics.set_line_width(1.5);
+			mgraphics.move_to(anchors[i - 1].cx, anchors[i - 1].cy);
+			mgraphics.line_to(an.cx, an.cy);
+			mgraphics.stroke();
+		}
+		mgraphics.set_source_rgba(COL_TRACE[0], COL_TRACE[1], COL_TRACE[2], 0.08 + 0.30 * age);
+		if (an.poly.length >= 3) {
+			mgraphics.move_to(an.poly[0][0], an.poly[0][1]);
+			for (var k = 1; k < an.poly.length; k++) mgraphics.line_to(an.poly[k][0], an.poly[k][1]);
+			mgraphics.close_path();
+			mgraphics.fill();
+		} else if (an.poly.length === 2) {
+			mgraphics.set_line_width(3);
+			mgraphics.move_to(an.poly[0][0], an.poly[0][1]);
+			mgraphics.line_to(an.poly[1][0], an.poly[1][1]);
+			mgraphics.stroke();
+		} else {
+			mgraphics.ellipse(an.cx - 3, an.cy - 3, 6, 6);
+			mgraphics.fill();
+		}
+	}
 }
 
 // voice-leading space: the twelve trichord set-classes, hand-placed by parsimonious

@@ -28,8 +28,10 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
 
     inside [p tonnetz_window]:
       inlet --> prepend note --> jsui tonnetz.js
-                             \--> js pcsetinfo.js --outlet 0--> jsui   (`info <text>`)
-                                                  --outlet 1--> send ---tonnetzinfo
+                             |--> js pcsetinfo.js  --0--> jsui  (`info` / `setclass`)
+                             |                     --1--> send ---tonnetzinfo
+                             \--> js tonnetzfit.js --0--> jsui  (`bestfit <a b c>`)
+                                                   --1--> send ---tonnetzfit
       live.toggle Vw* (7)  --> prepend v{ton,chr,fif,voc,pno,gtr,dia} --> jsui  (panel on/off)
       live.menu "Key" + live.tab "KeyMode" --> prepend keyroot/keymode --> jsui  (diatonic panel)
       live.menu "Preset"    --> prepend preset    --> jsui
@@ -41,10 +43,10 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
       live.toggle Plr/XfPrev + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-34 parameters. The button is a top-level param (key "obj-20"); the 33 controls inside the
+36 parameters. The button is a top-level param (key "obj-20"); the 35 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Five Push banks (8 + 8 + 8 + 8 + 2).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Five Push banks (8 + 8 + 8 + 8 + 4).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -60,6 +62,7 @@ TEMPLATE = os.path.join(ROOT, 'forteseq', 'forteseqmidifilter.amxd')
 DEVICE = os.path.join(ROOT, 'forteseq', 'tonnetz.amxd')
 JS = 'tonnetz.js'
 JS_INFO = 'pcsetinfo.js'
+JS_FIT = 'tonnetzfit.js'
 BOOT = 'C:/Users/conej/PycharmProjects/maxmsp-mcp/forteseq'
 SUB = 'obj-10'                      # box id of the [p tonnetz_window] subpatcher
 
@@ -105,6 +108,8 @@ ANN = {
     'XfMode': 'Modo de la previsualizacion: Transponer (sube Xpose semitonos) o Invertir (refleja alrededor de la clase de altura InvC).',
     'Xpose': 'Semitonos de transposicion para la previsualizacion (0-11).',
     'InvC': 'Centro de inversion (clase de altura 0-11) para la previsualizacion.',
+    'RegTrace': 'Dibuja la trayectoria como un camino de regiones (triangulos/aristas) en el Tonnetz, desvanecido por edad.',
+    'AutoFit': 'Deja que el analisis de complejo mas compacto (tonnetzfit.js) fije el vector a/b/c en vivo.',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
@@ -142,10 +147,12 @@ CTRL = [
     ('XfMode',     'XfMode',    'obj-264', 'live.tab',     'xfmode'),
     ('Xpose',      'Xpose',     'obj-266', 'live.numbox',  'xpose'),
     ('InvC',       'InvC',      'obj-268', 'live.numbox',  'invc'),
+    ('RegTrace',   'RegTrace',  'obj-270', 'live.toggle',  'regtrace'),
+    ('AutoFit',    'AutoFit',   'obj-272', 'live.toggle',  'autofit'),
 ]
 TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat',
            'Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
-           'Plr', 'XfPrev']
+           'Plr', 'XfPrev', 'RegTrace', 'AutoFit']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
              'obj-162', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268']
@@ -153,9 +160,9 @@ BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-140', 'obj-141', 'obj-142', '
 BANKS = [
     ('Vistas',    ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'Abrir']),
     ('Tonnetz',   ['Preset', 'TonA', 'TonB', 'TonC', 'Radius', 'Key', 'KeyMode', 'Harmonize']),
-    ('Rastro',    ['Trace', 'TraceLen', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors', 'Plr']),
-    ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'PianoMode', 'GuitarMode', 'Tuning', 'Frets']),
-    ('Piano/Guit', ['Zoom', 'Pan']),
+    ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors']),
+    ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
+    ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
 ]
 
 
@@ -217,6 +224,8 @@ VO = {
     'XfMode':    enum_vo('XfMode', 'XfMode', ['Transponer', 'Invertir'], 0),
     'Xpose':     num_vo('Xpose', 'Xpose', 0, 11, 0),
     'InvC':      num_vo('InvC', 'InvC', 0, 11, 0),
+    'RegTrace':  toggle_vo('RegTrace', 0),
+    'AutoFit':   toggle_vo('AutoFit', 0),
 }
 
 
@@ -259,11 +268,19 @@ def build_subpatcher(appversion):
           varname='tzw_pcinfo', saved_object_attributes={'filename': JS_INFO, 'parameter_enable': 0},
           **HID)
     plumb('obj-112', 'send ---tonnetzinfo', 120.0, PLUMB_Y + 78, 140.0, 'tzw_sendinfo')
+    mkbox(bl, id='obj-106', maxclass='newobj', numinlets=1, numoutlets=2, outlettype=['', ''],
+          patching_rect=[250.0, PLUMB_Y + 52, 120.0, 22.0], text='js ' + JS_FIT,
+          varname='tzw_fit', saved_object_attributes={'filename': JS_FIT, 'parameter_enable': 0},
+          **HID)
+    plumb('obj-113', 'send ---tonnetzfit', 250.0, PLUMB_Y + 78, 140.0, 'tzw_sendfit')
     hline('obj-110', 0, 'obj-111', 0)
     hline('obj-111', 0, 'obj-100', 0)      # note <p> <v> -> jsui
-    hline('obj-111', 0, 'obj-105', 0)      # note <p> <v> -> analyser
-    hline('obj-105', 0, 'obj-100', 0)      # info <text> -> jsui
+    hline('obj-111', 0, 'obj-105', 0)      # note <p> <v> -> set-class analyser
+    hline('obj-111', 0, 'obj-106', 0)      # note <p> <v> -> compactness analyser
+    hline('obj-105', 0, 'obj-100', 0)      # info / setclass -> jsui
     hline('obj-105', 1, 'obj-112', 0)      # tagged fields -> send ---tonnetzinfo
+    hline('obj-106', 0, 'obj-100', 0)      # bestfit -> jsui
+    hline('obj-106', 1, 'obj-113', 0)      # fit lists -> send ---tonnetzfit
 
     prep_y = [PLUMB_Y + 110]
 
@@ -353,6 +370,10 @@ def build_subpatcher(appversion):
     control('Xpose', 'obj-266', 'live.numbox', 'xpose', [262.0, 110.0, 30.0, 18.0])
     label(298.0, 98.0, 24.0, 'eje')
     control('InvC', 'obj-268', 'live.numbox', 'invc', [298.0, 110.0, 30.0, 18.0])
+    control('RegTrace', 'obj-270', 'live.toggle', 'regtrace', [340.0, 108.0, 16.0, 16.0])
+    label(358.0, 109.0, 48.0, 'Regiones')
+    control('AutoFit', 'obj-272', 'live.toggle', 'autofit', [414.0, 108.0, 16.0, 16.0])
+    label(432.0, 109.0, 44.0, 'Ajuste')
 
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
@@ -387,6 +408,7 @@ def build_subpatcher(appversion):
         'dependency_cache': [
             {'name': JS, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
             {'name': JS_INFO, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
+            {'name': JS_FIT, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
         ],
         'autosave': 0,
     }
@@ -463,6 +485,7 @@ def main():
     P['dependency_cache'] = [
         {'name': JS, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
         {'name': JS_INFO, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
+        {'name': JS_FIT, 'bootpath': BOOT, 'type': 'TEXT', 'implicit': 1},
     ]
     P['rect'] = [140.0, 140.0, 480.0, 400.0]
     P['openinpresentation'] = 1
@@ -504,12 +527,12 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v6: per-panel toggles + voice-leading space + diatonic Tonnetz)')
+    print('tonnetz.amxd  (v7: + region trace + compactness analyser)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))
     print('  banks        : %s' % ' | '.join('%s[%d]' % (n, len(p)) for n, p in BANKS))
-    print('  js deps      : %s, %s' % (JS, JS_INFO))
+    print('  js deps      : %s, %s, %s' % (JS, JS_INFO, JS_FIT))
     print('  amxdtype     : %s (unchanged = MIDI effect)' % P['project'].get('amxdtype'))
 
     if not apply_it:
@@ -527,7 +550,7 @@ def main():
     assert len(back['boxes']) == n_top
     bb = next(b['box'] for b in back['boxes'] if b['box']['id'] == SUB)
     assert bb.get('patcher') and len(bb['patcher']['boxes']) == n_sub, 'subpatcher lost on roundtrip'
-    assert {d['name'] for d in back['dependency_cache']} == {JS, JS_INFO}
+    assert {d['name'] for d in back['dependency_cache']} == {JS, JS_INFO, JS_FIT}
     print('\nwrote %s' % DEVICE)
     print('now: python tools/check_structure.py forteseq/tonnetz.amxd')
 
