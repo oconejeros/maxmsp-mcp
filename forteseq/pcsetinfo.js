@@ -20,15 +20,21 @@
 //     studytrav <0..3>     restrict the walk: 0 all | 1 simetricos (inv. symmetric) |
 //                          2 inv. de quintas (M7 == a rotation) | 3 espejo de quintas
 //                          (M7 == the inversion). Composes with disssort.
+//     studymove <0|1>      what `tonic` does: 0 = transpose the whole figure (default),
+//                          1 = keep the figure at 0 and let `tonic` pick which member is
+//                          the root (the shape never moves).
 //
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
 //                                               with `diso <pct>% (<label>)` then any of the
-//                                               invariance tags `sim` / `q5` / `q5esp`)
+//                                               invariance tags `sim` / `q5` / `q5esp`; also
+//                                               carries `mod <McKay modality name>`)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //                            `list <pc ...>`    (study mode only; the set to display)
+//                            `studyroot <pc>`   (study mode: pc to draw as the root, -1 = none)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
-//     name <sym> | diso <pct 0..100, McKay> | inv <sym> <fifthSame> <fifthMirror> | tn <index> <351>
+//     name <sym> | modality <McKay name> | diso <pct 0..100, McKay> |
+//     inv <sym> <fifthSame> <fifthMirror> | tn <index> <351>
 //
 // Forte data (cardinalities 3-9) embedded from Wikipedia "List of set classes". Prime form
 // and normal order use the Rahn algorithm; A/B suffix from which representative the sounding
@@ -208,6 +214,74 @@ function mul7(pcs) {
 	for (var i = 0; i < pcs.length; i++) o.push(mod12(7 * pcs[i]));
 	return o;
 }
+// M5: the by-fourths reading, pc -> 5*pc mod 12 (= invert of M7). Used for McKay's modality.
+function mul5(pcs) {
+	var o = [];
+	for (var i = 0; i < pcs.length; i++) o.push(mod12(5 * pcs[i]));
+	return o;
+}
+
+// McKay's "modalities" (Harmonic Processions, ch. 26), transcribed verbatim from FORTESEQ2
+// (forteseq2.js MODALITY_TABLE): name a set by its QUINTAL prime form -- pack it along the
+// circle of fifths (M7) or fourths (M5), whichever is tighter -- then read its span
+// (offsets[last] + 1, the book counts the anchor as span 1) and which "extra" fifths (7,8,9)
+// beyond the diatonic envelope it holds. Span 8+ splits sharp vs flat by which reading won.
+var MODALITY_TABLE = [
+	{ span: 3,  mask: 0, sharp: "Suspended Triad",   flat: "Suspended Triad" },
+	{ span: 4,  mask: 0, sharp: "Quartal",           flat: "Quartal" },
+	{ span: 5,  mask: 0, sharp: "Pentatonic",        flat: "Pentatonic" },
+	{ span: 6,  mask: 0, sharp: "Ionian Hexachord",  flat: "Ionian Hexachord" },
+	{ span: 7,  mask: 0, sharp: "Diatonic",          flat: "Diatonic" },
+	{ span: 8,  mask: 0, sharp: "Lydian",            flat: "Mixolydian" },
+	{ span: 9,  mask: 0, sharp: "Enigmatic",         flat: "Mystic" },
+	{ span: 9,  mask: 1, sharp: "Blues",             flat: "Blues" },
+	{ span: 10, mask: 0, sharp: "Diminished",        flat: "Diminished" },
+	{ span: 10, mask: 1, sharp: "Hungarian",         flat: "Romanian" },
+	{ span: 10, mask: 2, sharp: "Augmented",         flat: "Augmented" },
+	{ span: 10, mask: 3, sharp: "Chromatic F#C#G#",  flat: "Chromatic BbEbAb" },
+	{ span: 11, mask: 2, sharp: "Whole-Tone",        flat: "Whole-Tone" },
+	{ span: 11, mask: 3, sharp: "Chromatic F#C#D#",  flat: "Chromatic BbEbDb" },
+	{ span: 11, mask: 5, sharp: "Octatonic",         flat: "Octatonic" },
+	{ span: 11, mask: 6, sharp: "Chromatic C#G#D#",  flat: "Chromatic EbAbDb" },
+	{ span: 11, mask: 7, sharp: "Chromatic F#C#G#D#", flat: "Chromatic BbEbAbDb" },
+	{ span: 12, mask: 7, sharp: "12-Tone",           flat: "12-Tone" }
+];
+var MODALITY_KEY = {};
+for (var _mi = 0; _mi < MODALITY_TABLE.length; _mi++)
+	MODALITY_KEY[MODALITY_TABLE[_mi].span + "," + MODALITY_TABLE[_mi].mask] = MODALITY_TABLE[_mi];
+
+function npEntry(offs) {
+	var n = 0;
+	for (var k = 0; k < offs.length; k++) n += Math.pow(10, offs[k]);
+	return n;
+}
+function spanMask(offs) {
+	var mx = offs[offs.length - 1], m = 0;
+	for (var k = 0; k < offs.length; k++) {
+		var o = offs[k];
+		if (o === mx) continue;   // the span-defining note itself is not a distinguishing extra
+		if (o === 7) m |= 1;
+		else if (o === 8) m |= 2;
+		else if (o === 9) m |= 4;
+	}
+	return { span: mx + 1, mask: m };
+}
+// McKay modality name, or "" if the set is too small / off the table.
+function modalityName(pcs) {
+	var s = uniqSorted(pcs);
+	if (s.length < 2) return "";
+	var sharp = normal0(mul7(s)), flat = normal0(mul5(s));
+	var eS = npEntry(sharp), eF = npEntry(flat), proj, win;
+	if (eS < eF) { proj = "sharp"; win = sharp; }
+	else if (eF < eS) { proj = "flat"; win = flat; }
+	else { proj = "sym"; win = sharp; }
+	var sm = spanMask(win);
+	var e = MODALITY_KEY[sm.span + "," + sm.mask];
+	if (!e) return "";
+	if (proj === "sym") return e.sharp === e.flat ? e.sharp : e.sharp + "/" + e.flat;
+	return proj === "sharp" ? e.sharp : e.flat;
+}
+
 // inversionally symmetric: the set equals its own mirror (interval necklace is a palindrome).
 function isInvSym(pcs) { return tnMask(pcs) === tnMask(invert(pcs)); }
 // "invarianza de quintas": chromatic and fifths-circle shapes match by rotation alone.
@@ -295,10 +369,12 @@ function activePcs() {
 }
 
 var studyTag = "";     // "3-11B  12/19" while a study set is showing; cleared by any MIDI
+var studyRoot = -1;    // the pc drawn as the root marker in study mode; -1 = none
 
 function note(pitch, vel) {
 	explicit = null;
 	studyTag = "";
+	studyRoot = -1;
 	var pc = mod12(Math.round(pitch));
 	if (vel > 0) voices[pc]++;
 	else if (voices[pc] > 0) voices[pc]--;
@@ -312,6 +388,7 @@ function clear() {
 	for (var i = 0; i < 12; i++) voices[i] = 0;
 	explicit = null;
 	studyTag = "";
+	studyRoot = -1;
 	emit();
 }
 function bang() { emit(); }
@@ -386,6 +463,13 @@ function disoLabel(pct) {
 var DISO_SORT = 0;
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
 
+// StudyMove (menu): what StudyTonic does. 0 "Transpone" = slide the whole figure round the
+// chromatic circle (the original behaviour). 1 "Rota raiz" = keep the figure anchored at 0
+// and let StudyTonic pick which member is the root instead -- the shape never moves, only
+// the root marker walks the notes.
+var STUDY_MOVE = 0;
+function studymove(v) { STUDY_MOVE = v ? 1 : 0; }
+
 var STUDY_FILTER = 0;     // 0 todos | 1 simetricos | 2 inv. de quintas | 3 espejo de quintas
 var FILTER_LABEL = ["todos", "simetricos", "inv.5tas", "espejo5tas"];
 var FILTER_TAG   = ["", "  simetricos", "  inv.5tas", "  espejo5tas"];
@@ -417,8 +501,10 @@ function studyset(card, idx1, rot, tonic, inv) {
 	var total = order.length;
 	if (!total) {
 		studyTag = "(sin sets: " + FILTER_LABEL[STUDY_FILTER] + ", card " + card + ")";
+		studyRoot = -1;
 		outlet(0, "info", "estudio " + studyTag);
 		outlet(0, "setclass", "");
+		outlet(0, "studyroot", -1);
 		return;
 	}
 	var pos = Math.max(0, Math.min(total - 1, Math.round(idx1) - 1));
@@ -429,14 +515,22 @@ function studyset(card, idx1, rot, tonic, inv) {
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
 	var r = (((Math.round(rot) % n) + n) % n);
-	var rel = [];
+	var rel = [];                            // interval necklace rotated to start on member r
 	for (var i = 0; i < n; i++) rel.push(mod12(base[(i + r) % n] - base[r]));
-	var tn = mod12(Math.round(tonic));
+	var t = Math.round(tonic);
 	var outPcs = [];
-	for (var j = 0; j < n; j++) outPcs.push(mod12(rel[j] + tn));
+	if (STUDY_MOVE) {                        // Rota raiz: figure fixed at 0, tonic picks the root
+		for (var j = 0; j < n; j++) outPcs.push(rel[j]);
+		studyRoot = rel[(((t % n) + n) % n)];
+		studyTag += "  raiz";
+	} else {                                 // Transpone: slide the whole figure to the tonic
+		var tn = mod12(t);
+		for (var k = 0; k < n; k++) outPcs.push(mod12(rel[k] + tn));
+		studyRoot = tn;                     // rel[0] is 0, so the anchored note is the tonic
+	}
 	explicit = uniqSorted(outPcs);
 	outlet(0, ["list"].concat(explicit));   // -> jsui activeSet
-	emit();                                  // -> jsui footer (info / setclass)
+	emit();                                  // -> jsui footer (info / setclass) + studyroot
 }
 
 // inline 351 Tn-class index (same canonical rotation-min as pcset351.js buildSets)
@@ -471,6 +565,7 @@ function emit() {
 	if (card === 0) {
 		outlet(0, "info", "-");
 		outlet(0, "setclass", "");
+		outlet(0, "studyroot", -1);
 		outlet(1, ["card", 0]);
 		return;
 	}
@@ -481,6 +576,7 @@ function emit() {
 	var prime = primeForm(pcs);
 	var forte = forteName(pcs);
 	var nm = forte && NAMES[forte] ? NAMES[forte] : "";
+	var modal = modalityName(pcs);   // McKay modality (FORTESEQ2's MODALITY_TABLE)
 	var tn = tnIndex(pcs);
 
 	var dpct = card >= 2 ? dissonancePercent(iv) : 0;
@@ -496,12 +592,14 @@ function emit() {
 	line += "  |  IV " + ivString(iv);
 	line += "  |  [" + prime.join(" ") + "]";
 	if (nm) line += "  |  " + nm;
+	if (modal) line += "  |  mod " + modal;
 	if (card >= 2) line += "  |  diso " + dpct.toFixed(1) + "% (" + disoLabel(dpct) + ")";
 	if (card >= 2 && invTags.length) line += "  |  " + invTags.join(" ");
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
 	outlet(0, "setclass", prime.join(" "));
+	outlet(0, "studyroot", studyTag ? studyRoot : -1);
 
 	outlet(1, ["card", card]);
 	outlet(1, ["notes"].concat(names));
@@ -509,6 +607,7 @@ function emit() {
 	outlet(1, ["iv"].concat(iv));
 	outlet(1, ["prime"].concat(prime));
 	outlet(1, ["name", nm || "-"]);
+	outlet(1, ["modality", modal || "-"]);               // McKay modality name
 	outlet(1, ["diso", Math.round(dpct * 100) / 100]);   // McKay dissonance, % of chromatic
 	outlet(1, ["inv", sym ? 1 : 0, q5 ? 1 : 0, q5e ? 1 : 0]);   // symmetric | fifth-same | fifth-mirror
 	outlet(1, ["tn", tn, 351]);

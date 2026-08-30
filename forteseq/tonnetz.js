@@ -66,6 +66,7 @@
 //   keyroot <0..11>      diatonic panel: tonic pitch class
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
 //   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
+//   studyroot <pc>       study mode: the pc to draw as the root (white, in COL_ROOT); -1 = none
 //   pianomode <0|1>      piano: 0 one octave (pitch classes) | 1 full MIDI 0..127 (notes)
 //   guitarmode <0|1>     guitar: 0 all fretboard positions of sounding pcs | 1 only exact notes
 //   tuning <i>           guitar tuning index (see TUNINGS)
@@ -146,6 +147,7 @@ var COL_IDLE  = [0.42, 0.42, 0.42, 1];
 var COL_TEXT_IDLE   = [0.68, 0.68, 0.68, 1];
 var COL_ACTIVE      = [0.594, 0.72, 0.928, 1];
 var COL_TEXT_ACTIVE = [0.10, 0.10, 0.10, 1];
+var COL_ROOT        = [1, 1, 1, 1];          // study mode: the root member, drawn distinct
 var COL_TRACE  = [0.72, 0.58, 0.16, 1];
 var COL_HARM   = [0.32, 0.68, 0.36, 1];
 var COL_EDGE   = [0.33, 0.33, 0.33, 1];
@@ -242,6 +244,7 @@ var invcN = 0;
 var ghostSet = [];       // preview pitch classes (rebuilt each paint; empty when off)
 var infoText = "";
 var studyOn = 0;         // 1 = ignore MIDI, activeSet comes from the study set (pcsetinfo)
+var studyRootPc = -1;    // pc pcsetinfo flagged as the study root (-1 = none); drawn in COL_ROOT
 var pianoMode = 0;       // 0 one octave, 1 full MIDI range
 var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes only
 var tuningIdx = 0;
@@ -465,6 +468,8 @@ function xfmode(v) { xfMode = v ? 1 : 0; mgraphics.redraw(); }
 function xpose(v) { xposeN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
 function invc(v) { invcN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
 function info() { infoText = arrayfromargs(arguments).join(" "); mgraphics.redraw(); }
+function studyroot(v) { studyRootPc = Math.round(v); mgraphics.redraw(); }
+function isStudyRoot(pc) { return studyOn && studyRootPc >= 0 && pc === studyRootPc; }
 
 // item G: pitch classes the preview would produce -- transpose (eq. 4) or invert (eq. 5).
 function computeGhost() {
@@ -551,8 +556,8 @@ function panel(r, kind) {
 	mgraphics.stroke();
 }
 
-function nodeFill(pc) { return colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE; }
-function nodeText(pc) { return colorsOn ? PC_TEXT[pc] : COL_TEXT_ACTIVE; }
+function nodeFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
+function nodeText(pc) { return isStudyRoot(pc) ? COL_TEXT_ACTIVE : (colorsOn ? PC_TEXT[pc] : COL_TEXT_ACTIVE); }
 
 // ---- generalized Tonnetz ---------------------------------------------------------
 var G = { cx: 0, cy: 0, S: 46, r: null };
@@ -1069,13 +1074,20 @@ function paintCircle(r, order, title) {
 
 // one lattice / circle vertex, coloured by its state
 function drawNode(x, y, rad, pc, isHarm) {
-	var rr = isActive(pc) ? rad * 1.15 : rad;   // item A: sounding vertices sit a bit proud
+	var rootHere = isStudyRoot(pc);
+	var rr = rootHere ? rad * 1.32 : (isActive(pc) ? rad * 1.15 : rad);   // item A: sounding vertices sit a bit proud
 	mgraphics.set_line_width(1.5);
 	mgraphics.ellipse(x - rr, y - rr, rr * 2, rr * 2);
 
 	var textCol;
 	if (isActive(pc)) {
-		mgraphics.set_source_rgba(nodeFill(pc)); mgraphics.fill();
+		mgraphics.set_source_rgba(nodeFill(pc));
+		if (rootHere) {
+			mgraphics.fill_preserve();
+			mgraphics.set_source_rgba(0.12, 0.12, 0.14, 1); mgraphics.set_line_width(2); mgraphics.stroke();
+		} else {
+			mgraphics.fill();
+		}
 		textCol = nodeText(pc);
 	} else if (inTrace(pc)) {
 		if (colorsOn) { var c = PC_COLOR[pc]; mgraphics.set_source_rgba(c[0], c[1], c[2], 0.45); }
@@ -1110,7 +1122,7 @@ function drawNode(x, y, rad, pc, isHarm) {
 }
 
 // ---- piano keyboard ---------------------------------------------------------------
-function keyFill(pc) { return colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE; }
+function keyFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
 function isWhitePc(pc) { return WHITE_PC.indexOf(pc) >= 0; }
 
 // horizontal offset for content of width `total` inside a panel of width `w`:
