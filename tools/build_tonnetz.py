@@ -47,13 +47,16 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
       live.toggle Study --> t b i i --> prepend studymode --> jsui  (freeze MIDI)
                                     \-> gate ctrl, \-> bang the study pak
       StudyCard/Idx/Rot/Tonic/Inv --> pak --> prepend studyset --> [gate] --> js pcsetinfo.js
-                                    (pcsetinfo builds the set, sends it back as `list` --> jsui)
+                                    (pcsetinfo builds the set, sends it back as `list` --> jsui;
+                                     the footer ends with a McKay dissonance readout)
+      live.toggle DissSort --> t b i --> prepend disssort --> pcsetinfo (order StudyIdx by dissonance)
+                                     \-> bang the study pak
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-44 parameters. The button is a top-level param (key "obj-20"); the 43 controls inside the
+45 parameters. The button is a top-level param (key "obj-20"); the 44 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 2 + 6).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 2 + 7).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -127,6 +130,7 @@ ANN = {
     'StudyRot': 'Rota el collar de intervalos: 0 = forma prima; cada paso arranca en la nota siguiente (los modos de la forma).',
     'StudyTonic': 'Nota a la que se ancla el conjunto (transposicion).',
     'StudyInv': 'Usa la inversion de la forma en vez de la forma prima.',
+    'DissSort': 'Ordena StudyIdx por disonancia (segun el vector interv., estilo McKay: m2/M7 y tritono pesan 1, M2/m7 0.5, el resto consonante). 1 = mas consonante ... N = mas disonante, para avanzar hacia mas/menos disonancia. El pie muestra "diso <r> (<etiqueta>)".',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
@@ -174,10 +178,11 @@ CTRL = [
     ('StudyRot',   'StudyRot',  'obj-303', 'live.numbox',  None),
     ('StudyTonic', 'StudyTon',  'obj-304', 'live.menu',    None),
     ('StudyInv',   'StudyInv',  'obj-305', 'live.toggle',  None),
+    ('DissSort',   'DissSort',  'obj-306', 'live.toggle',  None),   # -> prepend disssort -> pcsetinfo
 ]
 TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet',
            'Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
-           'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv']
+           'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv', 'DissSort']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
              'obj-162', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268']
@@ -189,7 +194,7 @@ BANKS = [
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
     ('Mas',       ['Abrir', 'TetPreset']),
-    ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv']),
+    ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort']),
 ]
 
 
@@ -262,6 +267,7 @@ VO = {
     'StudyTonic': enum_vo('StudyTonic', 'StudyTon',
                           ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], 0),
     'StudyInv':  toggle_vo('StudyInv', 0),
+    'DissSort':  toggle_vo('DissSort', 0),
 }
 
 
@@ -441,6 +447,8 @@ def build_subpatcher(appversion):
     control('StudyTonic', 'obj-304', 'live.menu', None, [260.0, 158.0, 54.0, 20.0])
     control('StudyInv', 'obj-305', 'live.toggle', None, [322.0, 158.0, 15.0, 15.0])
     label(340.0, 158.0, 58.0, 'inv forma')
+    control('DissSort', 'obj-306', 'live.toggle', None, [404.0, 158.0, 15.0, 15.0])
+    label(422.0, 158.0, 56.0, 'orden dis')
 
     # study plumbing: 5 controls -> pak -> prepend studyset -> gate -> pcsetinfo (obj-105).
     # Study toggle: t b i i  -- studymode to jsui first, then open the gate, then bang the pak.
@@ -468,6 +476,15 @@ def build_subpatcher(appversion):
     hline('obj-310', 0, 'obj-311', 0)
     hline('obj-311', 0, 'obj-319', 1)      # studyset list -> gate data inlet
     hline('obj-319', 0, 'obj-105', 0)      # gate open -> pcsetinfo builds + emits
+
+    # DissSort: flag to pcsetinfo (ungated -- harmless when Study is off), then re-bang the pak
+    plumb('obj-320', 't b i', 372.0, PLUMB_Y + 574, 40.0, 'tzw_disssort_t',
+          numinlets=1, numoutlets=2, outlettype=['', ''])
+    plumb('obj-321', 'prepend disssort', 372.0, PLUMB_Y + 600, 120.0, 'tzw_pp_disssort')
+    hline('obj-306', 0, 'obj-320', 0)
+    hline('obj-320', 1, 'obj-321', 0)      # i (fires first): disssort flag -> pcsetinfo
+    hline('obj-321', 0, 'obj-105', 0)
+    hline('obj-320', 0, 'obj-310', 0)      # b: re-emit the study pak (re-index)
 
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.

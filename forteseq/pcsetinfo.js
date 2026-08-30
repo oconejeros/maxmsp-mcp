@@ -15,13 +15,16 @@
 //                          order (clamped), rot rotates the interval necklace (0 = prime
 //                          form; others its modes), tonic 0-11 anchor pc, inv 0|1 use the
 //                          inverted form. Gated in the patch by the Study toggle.
+//     disssort <0|1>       1 = idx1 walks the cardinality ordered by dissonance instead of
+//                          Forte order (1 = most consonant .. N = most dissonant)
 //
-//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer)
+//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; now
+//                                               ends with `diso <r> (<label>)`)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //                            `list <pc ...>`    (study mode only; the set to display)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
-//     name <sym> | tn <index> <351>
+//     name <sym> | diso <ratio 0..1> | tn <index> <351>
 //
 // Forte data (cardinalities 3-9) embedded from Wikipedia "List of set classes". Prime form
 // and normal order use the Rahn algorithm; A/B suffix from which representative the sounding
@@ -317,13 +320,47 @@ function buildByCard() {
 	}
 }
 
+// McKay-style dissonance from the interval vector: the fraction of a set's dyads that are
+// dissonant intervals -- m2/M7 (ic1) and the tritone (ic6) full weight, M2/m7 (ic2) half,
+// m3/M3/P4/P5 (ic3-5) consonant. 0 = all consonant, 1 = all dissonant. Invariant under
+// transposition / inversion / rotation, so it labels the set class.
+var DISO_W = [1.0, 0.5, 0.0, 0.0, 0.0, 1.0];   // ic1..ic6
+function disoRatio(iv) {
+	var dy = 0, di = 0;
+	for (var i = 0; i < 6; i++) { dy += iv[i]; di += iv[i] * DISO_W[i]; }
+	return dy > 0 ? di / dy : 0;
+}
+function disoLabel(d) {
+	return d < 0.10 ? "muy consonante" : d < 0.30 ? "consonante"
+	     : d < 0.50 ? "medio" : d < 0.70 ? "disonante" : "muy disonante";
+}
+
+// DissSort: order the study index by dissonance (1 = most consonant, N = most dissonant)
+// so StudyIdx steps toward more / less dissonance. DISO_ORDER[card] caches the permutation.
+var DISO_SORT = 0;
+var DISO_ORDER = {};
+function disssort(v) { DISO_SORT = v ? 1 : 0; }
+function disoOrder(card) {
+	if (DISO_ORDER[card]) return DISO_ORDER[card];
+	var lst = BY_CARD[card] || [], ord = [];
+	for (var i = 0; i < lst.length; i++) ord.push(i);
+	ord.sort(function (a, b) {
+		var da = disoRatio(intervalVector(lst[a].pcs)), db = disoRatio(intervalVector(lst[b].pcs));
+		return da !== db ? da - db : a - b;
+	});
+	DISO_ORDER[card] = ord;
+	return ord;
+}
+
 function studyset(card, idx1, rot, tonic, inv) {
 	if (!BY_CARD) buildByCard();
 	card = Math.max(2, Math.min(9, Math.round(card)));
 	var lst = BY_CARD[card] || [];
 	if (!lst.length) return;
-	var idx = Math.max(0, Math.min(lst.length - 1, Math.round(idx1) - 1));
-	studyTag = lst[idx].forte + (inv ? "*" : "") + "  " + (idx + 1) + "/" + lst.length;
+	var pos = Math.max(0, Math.min(lst.length - 1, Math.round(idx1) - 1));
+	var idx = DISO_SORT ? disoOrder(card)[pos] : pos;
+	studyTag = lst[idx].forte + (inv ? "*" : "") + "  " + (pos + 1) + "/" + lst.length
+		+ (DISO_SORT ? "  x diso" : "");
 	var base = lst[idx].pcs.slice();
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
@@ -382,12 +419,15 @@ function emit() {
 	var nm = forte && NAMES[forte] ? NAMES[forte] : "";
 	var tn = tnIndex(pcs);
 
+	var dz = card >= 2 ? disoRatio(iv) : 0;
+
 	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
 		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
 	if (forte) line += "  |  " + forte;
 	line += "  |  IV " + ivString(iv);
 	line += "  |  [" + prime.join(" ") + "]";
 	if (nm) line += "  |  " + nm;
+	if (card >= 2) line += "  |  diso " + dz.toFixed(2) + " (" + disoLabel(dz) + ")";
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
@@ -399,6 +439,7 @@ function emit() {
 	outlet(1, ["iv"].concat(iv));
 	outlet(1, ["prime"].concat(prime));
 	outlet(1, ["name", nm || "-"]);
+	outlet(1, ["diso", Math.round(dz * 1000) / 1000]);
 	outlet(1, ["tn", tn, 351]);
 }
 
