@@ -67,8 +67,10 @@
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
 //   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
 //   studyroot <pc>       study mode: the pc to draw as the root (white, in COL_ROOT); -1 = none
-//   studyspell <n>       Rota raiz: rotate all node names/colours by n semitones (lit shape
-//                        stays put; the chosen root ends up spelled at C's position)
+//   studyspell <n>       Rota raiz: rotate node names/colours by n semitones on the chromatic
+//                        Tonnetz and the two circles ONLY (lit shape stays put; the chosen
+//                        root ends up spelled at C's position). Piano, guitar, diatonic and
+//                        3-D Tonnetz keep real notes so they still show where notes are.
 //   pianomode <0|1>      piano: 0 one octave (pitch classes) | 1 full MIDI 0..127 (notes)
 //   guitarmode <0|1>     guitar: 0 all fretboard positions of sounding pcs | 1 only exact notes
 //   tuning <i>           guitar tuning index (see TUNINGS)
@@ -478,8 +480,11 @@ function isStudyRoot(pc) { return studyOn && studyRootPc >= 0 && pc === studyRoo
 function studyspell(v) { studySpell = mod12(Math.round(v)); mgraphics.redraw(); }
 // display pitch class: in Rota raiz mode the lit geometry stays put and only the labels /
 // colours rotate, so everything drawn as text or hue goes through here (isActive / positions
-// stay on the real pc).
-function sp(pc) { return (studyOn && studySpell) ? mod12(pc + studySpell) : pc; }
+// stay on the real pc). Only the chromatic Tonnetz and the two circles rotate their names --
+// piano, guitar, the diatonic Tonnetz and the 3-D Tonnetz must keep showing real notes, so
+// `spellHere` is raised only by those panels.
+var spellHere = 0;
+function sp(pc) { return (spellHere && studyOn && studySpell) ? mod12(pc + studySpell) : pc; }
 
 // item G: pitch classes the preview would produce -- transpose (eq. 4) or invert (eq. 5).
 function computeGhost() {
@@ -493,6 +498,7 @@ function computeGhost() {
 
 // ---- painting ---------------------------------------------------------------------
 function paint() {
+	spellHere = 0;
 	var wh = viewportWH();
 	var W = wh[0], H = wh[1];
 	var footer = 22;
@@ -610,6 +616,7 @@ function edge(p0, q0, p1, q1) {
 }
 function paintTonnetz(r, diatonic) {
 	tzDiat = diatonic ? 1 : 0;
+	spellHere = diatonic ? 0 : 1;   // the chromatic Tonnetz rotates names in Rota raiz; the diatonic one never does
 	G.cx = r.x + r.w / 2; G.cy = r.y + r.h / 2; G.S = spacing; G.r = r;
 	var S = spacing, p, q;
 	var pMax = Math.min(26, Math.ceil(r.w / S) + 2);
@@ -675,6 +682,7 @@ function paintTonnetz(r, diatonic) {
 		mgraphics.show_text("ajuste  " + fitAbc.join(" ") + (autoFitOn ? "  (auto)" : ""));
 	}
 	tzDiat = 0;
+	spellHere = 0;
 }
 
 // v7: the trajectory as a path of lattice regions. Each segment is anchored to the
@@ -998,6 +1006,7 @@ function paintTet(r) {
 
 // ---- chromatic / fifths circle -------------------------------------------------
 function paintCircle(r, order, title) {
+	spellHere = 1;   // both circles rotate their names / colours in Rota raiz
 	var cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 6;
 	var rad = Math.min(r.w, r.h) / 2 - 22;
 	if (rad < 20) rad = 20;
@@ -1080,6 +1089,7 @@ function paintCircle(r, order, title) {
 		var pt = ptOf(pc);
 		drawNode(pt[0], pt[1], nr, pc, false);
 	}
+	spellHere = 0;
 }
 
 // one lattice / circle vertex, coloured by its state
@@ -1132,7 +1142,9 @@ function drawNode(x, y, rad, pc, isHarm) {
 }
 
 // ---- piano keyboard ---------------------------------------------------------------
-function keyFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
+// piano keeps real notes: only flag the root when it is the actual sounding pc (not when
+// Rota raiz has spelled it elsewhere -- studySpell != 0)
+function keyFill(pc) { return (isStudyRoot(pc) && !studySpell) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
 function isWhitePc(pc) { return WHITE_PC.indexOf(pc) >= 0; }
 
 // horizontal offset for content of width `total` inside a panel of width `w`:
