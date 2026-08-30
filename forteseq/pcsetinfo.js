@@ -8,23 +8,27 @@
 //     clear                empty it
 //     bang                 re-emit the current analysis
 //
-//   inlet 0 (study mode -- Bigo shapes without MIDI):
+//   inlet 0 (study mode -- shapes without MIDI):
 //     studyset <card> <idx1> <rot> <tonic> <inv>
 //                          build a set from a Forte class and push it to the jsui as `list`
-//                          + the usual `info` / `setclass`. card 2-9, idx1 1-based Forte
-//                          order (clamped), rot rotates the interval necklace (0 = prime
-//                          form; others its modes), tonic 0-11 anchor pc, inv 0|1 use the
-//                          inverted form. Gated in the patch by the Study toggle.
-//     disssort <0|1>       1 = idx1 walks the cardinality ordered by dissonance instead of
-//                          Forte order (1 = most consonant .. N = most dissonant)
+//                          + the usual `info` / `setclass`. card 1-12 (the union covers all
+//                          351 Tn-classes), idx1 1-based position in the current traversal
+//                          (clamped), rot rotates the interval necklace (0 = prime form;
+//                          others its modes), tonic 0-11 anchor pc, inv 0|1 inverted form.
+//                          Gated in the patch by the Study toggle.
+//     disssort <0|1>       1 = order the walk by McKay dissonance (1 = least .. N = most)
+//     studytrav <0..3>     restrict the walk: 0 all | 1 simetricos (inv. symmetric) |
+//                          2 inv. de quintas (M7 == a rotation) | 3 espejo de quintas
+//                          (M7 == the inversion). Composes with disssort.
 //
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
-//                                               with `diso <pct>% (<label>)` -- McKay level)
+//                                               with `diso <pct>% (<label>)` then any of the
+//                                               invariance tags `sim` / `q5` / `q5esp`)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //                            `list <pc ...>`    (study mode only; the set to display)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
-//     name <sym> | diso <pct 0..100, McKay> | tn <index> <351>
+//     name <sym> | diso <pct 0..100, McKay> | inv <sym> <fifthSame> <fifthMirror> | tn <index> <351>
 //
 // Forte data (cardinalities 3-9) embedded from Wikipedia "List of set classes". Prime form
 // and normal order use the Rahn algorithm; A/B suffix from which representative the sounding
@@ -187,6 +191,30 @@ function invMask(m) {
 	return r;
 }
 
+// transposition-only fingerprint: min 12-bit mask over the 12 rotations (no inversion).
+function tnMask(pcs) {
+	var s = uniqSorted(pcs);
+	if (!s.length) return 0;
+	var m = 0, i;
+	for (i = 0; i < s.length; i++) m |= (1 << s[i]);
+	var best = m, cur = m;
+	for (var r = 0; r < 11; r++) { cur = ((cur << 1) | (cur >> 11)) & 0xFFF; if (cur < best) best = cur; }
+	return best;
+}
+// M7: the circle-of-fifths map, pc -> 7*pc mod 12 (self-inverse). Drawing a set on the
+// fifths circle == drawing mul7(set) on the chromatic circle.
+function mul7(pcs) {
+	var o = [];
+	for (var i = 0; i < pcs.length; i++) o.push(mod12(7 * pcs[i]));
+	return o;
+}
+// inversionally symmetric: the set equals its own mirror (interval necklace is a palindrome).
+function isInvSym(pcs) { return tnMask(pcs) === tnMask(invert(pcs)); }
+// "invarianza de quintas": chromatic and fifths-circle shapes match by rotation alone.
+function isFifthSame(pcs) { return tnMask(pcs) === tnMask(mul7(pcs)); }
+// "espejo de quintas": they match only after a flip -- M7 gives the inversion, not a rotation.
+function isFifthMirror(pcs) { return !isFifthSame(pcs) && canonMask(pcs) === canonMask(mul7(pcs)); }
+
 function intervalVector(pcs) {
 	var s = uniqSorted(pcs);
 	var v = [0, 0, 0, 0, 0, 0];
@@ -290,9 +318,9 @@ function bang() { emit(); }
 
 // ---- study mode: a set from a Forte class, no MIDI ---------------------------------
 // BY_CARD[n] = every card-n Forte catalog entry as {pcs (prime form, starts at 0), forte},
-// in catalog order, A and B (the two inversions) kept as SEPARATE entries -- so trichords
-// give 19, tetrachords 43, pentachords 66, hexachords 80. 3-6 straight from FORTE_RAW;
-// 2 = the six interval classes; 7-9 = complements of the 5/4/3 catalog (same count each).
+// in catalog order, A and B (the two inversions) kept as SEPARATE entries. Full range 1..12:
+// 1,6,19,43,66,80,66,43,19,6,1,1 = 351 (every non-empty Tn-class). 3-6 straight from
+// FORTE_RAW; 1 and 2 synthetic; 7-12 = complements of the 5..0 catalog (same count each).
 var BY_CARD = null;
 function buildByCard() {
 	BY_CARD = {};
@@ -309,15 +337,19 @@ function buildByCard() {
 		if (!BY_CARD[cd]) BY_CARD[cd] = [];
 		BY_CARD[cd].push({ pcs: pcs, forte: f[0] });
 	}
+	BY_CARD[1] = [{ pcs: [0], forte: "1-1" }];
 	BY_CARD[2] = [];
 	for (var d = 1; d <= 6; d++) BY_CARD[2].push({ pcs: [0, d], forte: "2-" + d });
-	for (var cc = 7; cc <= 9; cc++) {
+	for (var cc = 7; cc <= 11; cc++) {          // 7<-5, 8<-4, 9<-3, 10<-2, 11<-1
 		var src = BY_CARD[12 - cc] || [];
 		BY_CARD[cc] = [];
 		for (var k = 0; k < src.length; k++)
 			BY_CARD[cc].push({ pcs: primeForm(complement(src[k].pcs)),
 				forte: cc + src[k].forte.substring(src[k].forte.indexOf("-")) });
 	}
+	var agg = [];
+	for (var p = 0; p < 12; p++) agg.push(p);
+	BY_CARD[12] = [{ pcs: agg, forte: "12-1" }];
 }
 
 // Dosia McKay's dissonance level, from the interval vector -- the same calculation FORTESEQ2
@@ -340,34 +372,51 @@ function disoLabel(pct) {
 	     : pct < 20 ? "medio" : pct < 40 ? "disonante" : "muy disonante";
 }
 
-// DissSort: order the study index by dissonance (1 = least dissonant, N = most dissonant)
-// so StudyIdx steps toward more / less dissonance. DISO_ORDER[card] caches the permutation.
-// Within one cardinality the pair count is constant, so raw sum and per-pair give the same
-// order -- this matches FORTESEQ2's ORDER_DISS (sort by dissonanceOf ascending).
+// DissSort (toggle): order the walk by dissonance (1 = least, N = most). StudyTrav (menu):
+// restrict the walk to set classes with a chosen invariance. They compose -- filter the
+// list, then optionally sort that subset by dissonanceOf ascending (FORTESEQ2's ORDER_DISS).
 var DISO_SORT = 0;
-var DISO_ORDER = {};
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
-function disoOrder(card) {
-	if (DISO_ORDER[card]) return DISO_ORDER[card];
-	var lst = BY_CARD[card] || [], ord = [];
-	for (var i = 0; i < lst.length; i++) ord.push(i);
-	ord.sort(function (a, b) {
-		var da = dissonanceOf(intervalVector(lst[a].pcs)), db = dissonanceOf(intervalVector(lst[b].pcs));
-		return da !== db ? da - db : a - b;
-	});
-	DISO_ORDER[card] = ord;
-	return ord;
+
+var STUDY_FILTER = 0;     // 0 todos | 1 simetricos | 2 inv. de quintas | 3 espejo de quintas
+var FILTER_LABEL = ["todos", "simetricos", "inv.5tas", "espejo5tas"];
+var FILTER_TAG   = ["", "  simetricos", "  inv.5tas", "  espejo5tas"];
+var FILT_ORDER = {};      // key = card*4 + filter -> array of catalog indices, catalog order
+function studytrav(v) { STUDY_FILTER = Math.max(0, Math.min(3, Math.round(v))); }
+function filterList(card, f) {
+	var key = card * 4 + f;
+	if (FILT_ORDER[key]) return FILT_ORDER[key];
+	var lst = BY_CARD[card] || [], out = [];
+	for (var i = 0; i < lst.length; i++) {
+		var p = lst[i].pcs;
+		if (f === 0 || (f === 1 && isInvSym(p)) || (f === 2 && isFifthSame(p)) || (f === 3 && isFifthMirror(p)))
+			out.push(i);
+	}
+	FILT_ORDER[key] = out;
+	return out;
 }
 
 function studyset(card, idx1, rot, tonic, inv) {
 	if (!BY_CARD) buildByCard();
-	card = Math.max(2, Math.min(9, Math.round(card)));
+	card = Math.max(1, Math.min(12, Math.round(card)));
 	var lst = BY_CARD[card] || [];
 	if (!lst.length) return;
-	var pos = Math.max(0, Math.min(lst.length - 1, Math.round(idx1) - 1));
-	var idx = DISO_SORT ? disoOrder(card)[pos] : pos;
-	studyTag = lst[idx].forte + (inv ? "*" : "") + "  " + (pos + 1) + "/" + lst.length
-		+ (DISO_SORT ? "  x diso" : "");
+	var order = filterList(card, STUDY_FILTER).slice();
+	if (DISO_SORT) order.sort(function (a, b) {
+		var da = dissonanceOf(intervalVector(lst[a].pcs)), db = dissonanceOf(intervalVector(lst[b].pcs));
+		return da !== db ? da - db : a - b;
+	});
+	var total = order.length;
+	if (!total) {
+		studyTag = "(sin sets: " + FILTER_LABEL[STUDY_FILTER] + ", card " + card + ")";
+		outlet(0, "info", "estudio " + studyTag);
+		outlet(0, "setclass", "");
+		return;
+	}
+	var pos = Math.max(0, Math.min(total - 1, Math.round(idx1) - 1));
+	var idx = order[pos];
+	studyTag = lst[idx].forte + (inv ? "*" : "") + "  " + (pos + 1) + "/" + total
+		+ FILTER_TAG[STUDY_FILTER] + (DISO_SORT ? "  x diso" : "");
 	var base = lst[idx].pcs.slice();
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
@@ -427,6 +476,11 @@ function emit() {
 	var tn = tnIndex(pcs);
 
 	var dpct = card >= 2 ? dissonancePercent(iv) : 0;
+	var sym = isInvSym(pcs), q5 = isFifthSame(pcs), q5e = isFifthMirror(pcs);
+	var invTags = [];
+	if (sym) invTags.push("sim");
+	if (q5) invTags.push("q5");
+	if (q5e) invTags.push("q5esp");
 
 	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
 		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
@@ -435,6 +489,7 @@ function emit() {
 	line += "  |  [" + prime.join(" ") + "]";
 	if (nm) line += "  |  " + nm;
 	if (card >= 2) line += "  |  diso " + dpct.toFixed(1) + "% (" + disoLabel(dpct) + ")";
+	if (card >= 2 && invTags.length) line += "  |  " + invTags.join(" ");
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
@@ -447,6 +502,7 @@ function emit() {
 	outlet(1, ["prime"].concat(prime));
 	outlet(1, ["name", nm || "-"]);
 	outlet(1, ["diso", Math.round(dpct * 100) / 100]);   // McKay dissonance, % of chromatic
+	outlet(1, ["inv", sym ? 1 : 0, q5 ? 1 : 0, q5e ? 1 : 0]);   // symmetric | fifth-same | fifth-mirror
 	outlet(1, ["tn", tn, 351]);
 }
 

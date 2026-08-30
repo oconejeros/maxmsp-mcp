@@ -15,7 +15,7 @@ jsui, every control and the analyser live in an inline subpatcher `[p tonnetz_wi
 opens as its OWN floating window (outside the rack) via `[pcontrol]`; `live.thisdevice`
 opens it on load. The subpatcher opens in PATCHING view (not presentation) so tonnetz.js's
 fitToWindow() -- which sets its own box rect from `this.patcher.wind.size` -- actually
-resizes the canvas as the window is dragged. A 5-row control strip sits at the top; the
+resizes the canvas as the window is dragged. A 6-row control strip sits at the top; the
 jsui fills the rest and draws eight panels -- Tonnetz, chromatic circle, fifths circle,
 voice-leading space, piano keyboard, guitar fretboard, diatonic Tonnetz, and Gollin's 3-D
 Tonnetz (4-note chords as tetrahedra, isometric projection). Each has its own on/off toggle
@@ -41,7 +41,7 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
       live.numbox A/B/C    <-> pak 3 4 5 / prepend abc <-> jsui   (Preset <-> a/b/c stay in sync
                                via jsui outlet 0: `abc a b c` -> numboxes, `presetsel i` -> menu)
       live.numbox Radius/TraceLen --> prepend radius / tracelen --> jsui
-      live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors/RegTrace --> prepend <sel> --> jsui
+      live.toggle Trace/Harmonize/Faces/Labels/TracePath/Colors/RegTrace + live.menu Conex --> prepend <sel> --> jsui
       live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom/Pan --> prepend <sel> --> jsui
       live.toggle Plr/XfPrev/AutoFit + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       live.toggle Study --> t b i i --> prepend studymode --> jsui  (freeze MIDI)
@@ -49,14 +49,14 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
       StudyCard/Idx/Rot/Tonic/Inv --> pak --> prepend studyset --> [gate] --> js pcsetinfo.js
                                     (pcsetinfo builds the set, sends it back as `list` --> jsui;
                                      footer ends with McKay dissonance %, same calc as FORTESEQ2)
-      live.toggle DissSort --> t b i --> prepend disssort --> pcsetinfo (order StudyIdx by dissonance)
-                                     \-> bang the study pak
+      live.toggle DissSort / live.menu StudyTrav --> t b i --> prepend disssort / studytrav
+                                     --> pcsetinfo (order / filter the walk), \-> bang the study pak
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-45 parameters. The button is a top-level param (key "obj-20"); the 44 controls inside the
+46 parameters. The button is a top-level param (key "obj-20"); the 45 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 2 + 7).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 2 + 8).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -109,7 +109,7 @@ ANN = {
     'Faces': 'Rellena un triangulo del Tonnetz cuando suenan sus tres notas.',
     'Labels': 'Nombres de nota (activado) o numeros de clase de altura (desactivado).',
     'Colors': 'Colorea por nota (rueda de quintas, tipo sidebrain) vs azul uniforme.',
-    'ChordPoly': 'Une las notas que suenan en un poligono sobre los circulos (aum = triangulo, dism7 = cuadrado).',
+    'Conex': 'Conexiones sobre los circulos (cromatico + quintas): Off, Poligono (une las notas en orden), Todas (cada diada, color por clase de intervalo), o solo m2/M2/m3/M3/4-5/TT.',
     'TracePath': 'Dibuja el rastro como un camino cronologico con desvanecido sobre los circulos.',
     'PianoMode': 'Piano: Octava = una sola octava por clase de altura. Completo = todo el rango MIDI 0-127, nota por nota.',
     'GuitarMode': 'Guitarra: Repetidas = todas las posiciones del mastil de cada nota que suena. Suena = solo la altura exacta.',
@@ -125,12 +125,13 @@ ANN = {
     'RegTrace': 'Dibuja la trayectoria como un camino de regiones (triangulos/aristas) en el Tonnetz, desvanecido por edad.',
     'AutoFit': 'Deja que el analisis de complejo mas compacto (tonnetzfit.js) fije el vector a/b/c en vivo.',
     'Study': 'Modo estudio: muestra el conjunto elegido con Forte/rotacion/tonica e IGNORA el MIDI entrante. Apagarlo vuelve al MIDI.',
-    'StudyCard': 'Cardinalidad del conjunto a estudiar (2-9 notas).',
-    'StudyIdx': 'Entrada del catalogo de Forte para esa cardinalidad, en orden, A y B (las dos inversiones) por separado: 19 tricordes, 43 tetracordes, 66 pentacordes, 80 hexacordes. Se recorta al maximo. El pie muestra el nombre.',
+    'StudyCard': 'Cardinalidad del conjunto a estudiar (1-12 notas). Junto con StudyIdx recorre las 351 clases Tn.',
+    'StudyIdx': 'Posicion en el recorrido de esa cardinalidad (catalogo de Forte, A y B por separado: 19 tricordes, 43 tetracordes, 66 pentacordes, 80 hexacordes; menos si StudyTrav filtra). Se recorta al maximo. El pie muestra el nombre y n/total.',
     'StudyRot': 'Rota el collar de intervalos: 0 = forma prima; cada paso arranca en la nota siguiente (los modos de la forma).',
     'StudyTonic': 'Nota a la que se ancla el conjunto (transposicion).',
     'StudyInv': 'Usa la inversion de la forma en vez de la forma prima.',
-    'DissSort': 'Ordena StudyIdx por el nivel de disonancia de McKay (el mismo calculo de FORTESEQ2, del vector interv.: pesos 1/6 1/5 1/4 1/3 1/2 1 para P4/M2/m3/M3/m2/TT). 1 = menos disonante ... N = mas, para avanzar hacia mas/menos disonancia. El pie muestra "diso <%> (<etiqueta>)".',
+    'DissSort': 'Ordena el recorrido por el nivel de disonancia de McKay (el mismo calculo de FORTESEQ2, del vector interv.: pesos 1/6 1/5 1/4 1/3 1/2 1 para P4/M2/m3/M3/m2/TT). 1 = menos disonante ... N = mas. El pie muestra "diso <%> (<etiqueta>)".',
+    'StudyTrav': 'Filtra el recorrido a las clases con una simetria (M7 = mapa al circulo de quintas): Todos; Simetricos (el set es su propio espejo); Inv. de quintas (la forma coincide en cromatico y quintas solo rotando); Espejo de quintas (coinciden solo volteando). Compone con DissSort.',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
@@ -156,7 +157,7 @@ CTRL = [
     ('Harmonize',  'Harmonize', 'obj-170', 'live.toggle',  'harm'),
     ('Faces',      'Faces',     'obj-180', 'live.toggle',  'faces'),
     ('Labels',     'Labels',    'obj-190', 'live.toggle',  'labels'),
-    ('ChordPoly',  'ChordPoly', 'obj-210', 'live.toggle',  'chordpoly'),
+    ('Conex',      'Conex',     'obj-210', 'live.menu',     'conex'),
     ('TracePath',  'TracePath', 'obj-212', 'live.toggle',  'tracepath'),
     ('Colors',     'Colors',    'obj-214', 'live.toggle',  'colors'),
     ('PianoMode',  'PianoMode', 'obj-240', 'live.tab',     'pianomode'),
@@ -179,22 +180,23 @@ CTRL = [
     ('StudyTonic', 'StudyTon',  'obj-304', 'live.menu',    None),
     ('StudyInv',   'StudyInv',  'obj-305', 'live.toggle',  None),
     ('DissSort',   'DissSort',  'obj-306', 'live.toggle',  None),   # -> prepend disssort -> pcsetinfo
+    ('StudyTrav',  'StudyTrv',  'obj-307', 'live.menu',    None),   # -> prepend studytrav -> pcsetinfo
 ]
 TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet',
-           'Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
+           'Trace', 'Harmonize', 'Faces', 'Labels', 'TracePath', 'Colors',
            'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv', 'DissSort']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
-             'obj-162', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
-             'obj-264', 'obj-266', 'obj-268']
+             'obj-162', 'obj-210', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
+             'obj-264', 'obj-266', 'obj-268', 'obj-307']
 
 BANKS = [
     ('Vistas',    ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet']),
     ('Tonnetz',   ['Preset', 'TonA', 'TonB', 'TonC', 'Radius', 'Key', 'KeyMode', 'Harmonize']),
-    ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors']),
+    ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'Conex', 'TracePath', 'Colors']),
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
     ('Mas',       ['Abrir', 'TetPreset']),
-    ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort']),
+    ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort', 'StudyTrav']),
 ]
 
 
@@ -244,7 +246,8 @@ VO = {
     'Harmonize': toggle_vo('Harmonize', 1),
     'Faces':     toggle_vo('Faces', 1),
     'Labels':    toggle_vo('Labels', 1),
-    'ChordPoly': toggle_vo('ChordPoly', 1),
+    'Conex':     enum_vo('Conex', 'Conex',
+                         ['Off', 'Poligono', 'Todas', 'm2', 'M2', 'm3', 'M3', '4-5', 'TT'], 1),
     'TracePath': toggle_vo('TracePath', 0),
     'Colors':    toggle_vo('Colors', 1),
     'PianoMode': enum_vo('PianoMode', 'PianoMode', ['Octava', 'Completo'], 0),
@@ -261,13 +264,15 @@ VO = {
     'RegTrace':  toggle_vo('RegTrace', 0),
     'AutoFit':   toggle_vo('AutoFit', 0),
     'Study':     toggle_vo('Study', 0),
-    'StudyCard': num_vo('StudyCard', 'StudyCard', 2, 9, 3),
+    'StudyCard': num_vo('StudyCard', 'StudyCard', 1, 12, 3),
     'StudyIdx':  num_vo('StudyIdx', 'StudyIdx', 1, 80, 1),
     'StudyRot':  num_vo('StudyRot', 'StudyRot', 0, 11, 0),
     'StudyTonic': enum_vo('StudyTonic', 'StudyTon',
                           ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], 0),
     'StudyInv':  toggle_vo('StudyInv', 0),
     'DissSort':  toggle_vo('DissSort', 0),
+    'StudyTrav': enum_vo('StudyTrav', 'StudyTrv',
+                         ['Todos', 'Simetricos', 'Inv.5tas', 'Espejo5tas'], 0),
 }
 
 
@@ -347,7 +352,7 @@ def build_subpatcher(appversion):
               presentation=1, presentation_rect=[float(x), float(y), float(w), 15.0],
               fontsize=9.0, text=txt, varname='tzw_lb%d_%d' % (int(x), int(y)))
 
-    # --- control strip: five 30px rows, fits ~510 px wide; inline labels so nothing overlaps -
+    # --- control strip: six 30px rows, fits ~510 px wide; inline labels so nothing overlaps -
     # row 1 (y 8): pick panels a dedo -- one toggle per view -- + the diatonic key
     vtog = [('VwTonnetz', 'obj-120', 'vton', 'Ton'), ('VwChrom', 'obj-121', 'vchr', 'Cro'),
             ('VwFifths', 'obj-122', 'vfif', 'Qui'), ('VwVoice', 'obj-123', 'vvoc', 'Voc'),
@@ -396,16 +401,16 @@ def build_subpatcher(appversion):
     label(420.0, 40.0, 16.0, '3D')
     control('TetPreset', 'obj-131', 'live.menu', 'tetpreset', [436.0, 40.0, 74.0, 18.0])
 
-    # row 3 (y 68): the seven analysis toggles, each labelled
+    # row 3 (y 68): six analysis toggles, each labelled, then the Conex menu
     tog = [('Trace', 'obj-160', 'trace', 'Rastro'), ('Harmonize', 'obj-170', 'harm', 'Vecinos'),
            ('Faces', 'obj-180', 'faces', 'Estruct'), ('Labels', 'obj-190', 'labels', 'Nombres'),
-           ('ChordPoly', 'obj-210', 'chordpoly', 'Poligono'),
            ('TracePath', 'obj-212', 'tracepath', 'Camino'), ('Colors', 'obj-214', 'colors', 'Color')]
     tx = 8.0
     for longname, cid, sel, word in tog:
         control(longname, cid, 'live.toggle', sel, [tx, 68.0, 15.0, 15.0])
         label(tx + 18, 68.0, 52.0, word)
         tx += 70.0
+    control('Conex', 'obj-210', 'live.menu', 'conex', [438.0, 68.0, 72.0, 20.0])
 
     # row 4 (y 98): piano / guitar controls
     control('PianoMode',  'obj-240', 'live.tab',  'pianomode',  [8.0, 98.0, 88.0, 20.0])
@@ -434,21 +439,23 @@ def build_subpatcher(appversion):
     label(452.0, 128.0, 44.0, 'Ajuste')
 
     # row 6 (y 158): study mode -- dial in a Forte class / rotation / tonic, MIDI frozen out.
-    # These 5 value controls feed a pak -> `prepend studyset` -> pcsetinfo, gated by Study.
+    # StudyCard/Idx/Rot/Tonic/Inv feed a pak -> `prepend studyset` -> pcsetinfo (gated by
+    # Study); DissSort + StudyTrav order/filter the walk. Tight row -- terse labels.
     control('Study', 'obj-300', 'live.toggle', None, [8.0, 158.0, 15.0, 15.0])
-    label(26.0, 158.0, 44.0, 'Estudio')
-    label(74.0, 158.0, 30.0, 'forte')
-    control('StudyCard', 'obj-301', 'live.numbox', None, [106.0, 158.0, 26.0, 18.0])
-    label(136.0, 158.0, 10.0, '#')
-    control('StudyIdx', 'obj-302', 'live.numbox', None, [148.0, 158.0, 32.0, 18.0])
-    label(184.0, 158.0, 20.0, 'rot')
-    control('StudyRot', 'obj-303', 'live.numbox', None, [206.0, 158.0, 26.0, 18.0])
-    label(236.0, 158.0, 22.0, 'ton')
-    control('StudyTonic', 'obj-304', 'live.menu', None, [260.0, 158.0, 54.0, 20.0])
-    control('StudyInv', 'obj-305', 'live.toggle', None, [322.0, 158.0, 15.0, 15.0])
-    label(340.0, 158.0, 58.0, 'inv forma')
-    control('DissSort', 'obj-306', 'live.toggle', None, [404.0, 158.0, 15.0, 15.0])
-    label(422.0, 158.0, 56.0, 'orden dis')
+    label(26.0, 158.0, 42.0, 'Estudio')
+    label(72.0, 158.0, 28.0, 'forte')
+    control('StudyCard', 'obj-301', 'live.numbox', None, [102.0, 158.0, 24.0, 18.0])
+    label(128.0, 158.0, 8.0, '#')
+    control('StudyIdx', 'obj-302', 'live.numbox', None, [140.0, 158.0, 30.0, 18.0])
+    label(174.0, 158.0, 18.0, 'rot')
+    control('StudyRot', 'obj-303', 'live.numbox', None, [194.0, 158.0, 24.0, 18.0])
+    label(222.0, 158.0, 20.0, 'ton')
+    control('StudyTonic', 'obj-304', 'live.menu', None, [244.0, 158.0, 48.0, 20.0])
+    control('StudyInv', 'obj-305', 'live.toggle', None, [298.0, 158.0, 15.0, 15.0])
+    label(316.0, 158.0, 20.0, 'inv')
+    control('DissSort', 'obj-306', 'live.toggle', None, [342.0, 158.0, 15.0, 15.0])
+    label(360.0, 158.0, 18.0, 'dis')
+    control('StudyTrav', 'obj-307', 'live.menu', None, [384.0, 158.0, 120.0, 20.0])
 
     # study plumbing: 5 controls -> pak -> prepend studyset -> gate -> pcsetinfo (obj-105).
     # Study toggle: t b i i  -- studymode to jsui first, then open the gate, then bang the pak.
@@ -485,6 +492,15 @@ def build_subpatcher(appversion):
     hline('obj-320', 1, 'obj-321', 0)      # i (fires first): disssort flag -> pcsetinfo
     hline('obj-321', 0, 'obj-105', 0)
     hline('obj-320', 0, 'obj-310', 0)      # b: re-emit the study pak (re-index)
+
+    # StudyTrav: filter flag to pcsetinfo (ungated), then re-bang the pak -- same shape
+    plumb('obj-322', 't b i', 372.0, PLUMB_Y + 626, 40.0, 'tzw_studytrav_t',
+          numinlets=1, numoutlets=2, outlettype=['', ''])
+    plumb('obj-323', 'prepend studytrav', 372.0, PLUMB_Y + 652, 120.0, 'tzw_pp_studytrav')
+    hline('obj-307', 0, 'obj-322', 0)
+    hline('obj-322', 1, 'obj-323', 0)      # i (fires first): studytrav filter -> pcsetinfo
+    hline('obj-323', 0, 'obj-105', 0)
+    hline('obj-322', 0, 'obj-310', 0)      # b: re-emit the study pak (re-filter)
 
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
@@ -638,7 +654,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v9: study mode -- pick Forte class / rotation / tonic, no MIDI)')
+    print('tonnetz.amxd  (v10: 351-set study catalog + invariance filters + Conex)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))

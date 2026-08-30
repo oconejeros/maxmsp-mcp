@@ -84,7 +84,8 @@
 //   faces <0|1>          fill a Tonnetz triangle when all three of its pitch classes sound
 //   labels <0|1>         note names (1, default) vs pitch-class numbers (0)
 //   colors <0|1>         per-pitch-class colours (1, default) vs uniform blue
-//   chordpoly <0|1>      join the sounding notes into a polygon on the circles (1, default)
+//   conex <0..8>         circle connections: 0 off, 1 chord polygon (default), 2 every dyad,
+//                        3..8 = only interval class 1..6 (m2 M2 m3 M3 P4/P5 TT), coloured
 //   tracepath <0|1>      draw the trace as a chronological path on the circles (0, default)
 //   plr <0|1>            draw P/L/R arrows from a sounding maj/min triad (Tonnetz only)
 //   xfprev <0|1>         draw a transformation preview as ghost rings (does not touch MIDI)
@@ -157,6 +158,11 @@ var COL_GHOST  = [0.87, 0.42, 0.92, 1];   // transformation-preview ghost (magen
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 var FIFTHS = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
 var CHROM  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+// one colour per interval class (ic1 m2 .. ic6 tritone) for the Conex interval-edge overlay
+var IC_COL = [
+	[0.90, 0.32, 0.32], [0.93, 0.60, 0.26], [0.86, 0.80, 0.28],
+	[0.38, 0.76, 0.44], [0.36, 0.62, 0.92], [0.70, 0.46, 0.88]
+];
 
 // piano
 var WHITE_PC   = [0, 2, 4, 5, 7, 9, 11];       // pitch classes of the white keys, in order
@@ -222,7 +228,7 @@ var harmOn  = 1;
 var facesOn = 1;
 var labelsOn = 1;
 var colorsOn = 1;
-var chordPolyOn = 1;
+var conexMode = 1;   // circles: 0 off | 1 chord polygon | 2 all dyads | 3..8 = only ic 1..6
 var tracePathOn = 0;
 var regTraceOn = 0;      // path of lattice regions (v7)
 var segs = [];           // recent pc-set segments: {set:[pcs], t:ms}
@@ -440,7 +446,7 @@ function harm(v) { harmOn = v ? 1 : 0; mgraphics.redraw(); }
 function faces(v) { facesOn = v ? 1 : 0; mgraphics.redraw(); }
 function labels(v) { labelsOn = v ? 1 : 0; mgraphics.redraw(); }
 function colors(v) { colorsOn = v ? 1 : 0; mgraphics.redraw(); }
-function chordpoly(v) { chordPolyOn = v ? 1 : 0; mgraphics.redraw(); }
+function conex(v) { conexMode = Math.max(0, Math.min(8, Math.round(v))); mgraphics.redraw(); }
 function tracepath(v) { tracePathOn = v ? 1 : 0; mgraphics.redraw(); }
 function regtrace(v) { regTraceOn = v ? 1 : 0; mgraphics.redraw(); }
 function bestfit(a, b, c) {
@@ -993,8 +999,8 @@ function paintCircle(r, order, title) {
 		return [cx + rad * Math.cos(ang), cy + rad * Math.sin(ang)];
 	}
 
-	// chord polygon: sounding notes joined in circle order
-	if (chordPolyOn && activeSet.length >= 2) {
+	// Conex mode 1: sounding notes joined into a polygon in circle order
+	if (conexMode === 1 && activeSet.length >= 2) {
 		var pts = [];
 		for (var a = 0; a < activeSet.length; a++) pts.push([order.indexOf(activeSet[a]), ptOf(activeSet[a])]);
 		pts.sort(function (u, v) { return u[0] - v[0]; });
@@ -1004,6 +1010,24 @@ function paintCircle(r, order, title) {
 		mgraphics.close_path();
 		mgraphics.set_source_rgba(COL_POLY_F); mgraphics.fill_preserve();
 		mgraphics.set_source_rgba(COL_POLY); mgraphics.stroke();
+	}
+
+	// Conex mode 2+: every dyad of the sounding set, coloured by interval class. Mode 2 draws
+	// them all; modes 3..8 keep only ic 1..6 (m2, M2, m3, M3, P4/P5, tritone).
+	if (conexMode >= 2 && activeSet.length >= 2) {
+		mgraphics.set_line_width(1.4);
+		for (var ea = 0; ea < activeSet.length; ea++)
+			for (var eb = ea + 1; eb < activeSet.length; eb++) {
+				var dd = mod12(activeSet[eb] - activeSet[ea]);
+				var ic = dd > 6 ? 12 - dd : dd;                 // 1..6
+				if (conexMode !== 2 && conexMode - 2 !== ic) continue;
+				var pea = ptOf(activeSet[ea]), peb = ptOf(activeSet[eb]);
+				var ecol = IC_COL[ic - 1];
+				mgraphics.set_source_rgba(ecol[0], ecol[1], ecol[2], 0.85);
+				mgraphics.move_to(pea[0], pea[1]);
+				mgraphics.line_to(peb[0], peb[1]);
+				mgraphics.stroke();
+			}
 	}
 
 	// transformation-preview ghost polygon
