@@ -263,8 +263,11 @@ function activePcs() {
 	return a;
 }
 
+var studyTag = "";     // "3-11B  12/19" while a study set is showing; cleared by any MIDI
+
 function note(pitch, vel) {
 	explicit = null;
+	studyTag = "";
 	var pc = mod12(Math.round(pitch));
 	if (vel > 0) voices[pc]++;
 	else if (voices[pc] > 0) voices[pc]--;
@@ -277,26 +280,23 @@ function list() {
 function clear() {
 	for (var i = 0; i < 12; i++) voices[i] = 0;
 	explicit = null;
+	studyTag = "";
 	emit();
 }
 function bang() { emit(); }
 
 // ---- study mode: a set from a Forte class, no MIDI ---------------------------------
-// BY_CARD[n] = the card-n set classes as {pcs (prime form, starts at 0), forte}, one per
-// Forte ordinal (A/B pairs collapsed to the A/prime form -- the inv flag recovers the B).
-// 3-6 from FORTE_RAW; 2 = the six interval classes; 7-9 = complements of 5/4/3 (a set and
-// its complement share the Forte ordinal).
+// BY_CARD[n] = every card-n Forte catalog entry as {pcs (prime form, starts at 0), forte},
+// in catalog order, A and B (the two inversions) kept as SEPARATE entries -- so trichords
+// give 19, tetrachords 43, pentachords 66, hexachords 80. 3-6 straight from FORTE_RAW;
+// 2 = the six interval classes; 7-9 = complements of the 5/4/3 catalog (same count each).
 var BY_CARD = null;
 function buildByCard() {
 	BY_CARD = {};
 	var toks = FORTE_RAW.replace(/\s+/g, " ").split(" ");
-	var seen = {};
 	for (var i = 0; i < toks.length; i++) {
 		var f = toks[i].split("|");
 		if (f.length !== 3) continue;
-		var base = f[0].replace(/[AB]$/, "");
-		if (seen[base]) continue;
-		seen[base] = 1;
 		var pcs = [];
 		for (var c = 0; c < f[1].length; c++) {
 			var ch = f[1].charAt(c);
@@ -304,7 +304,7 @@ function buildByCard() {
 		}
 		var cd = pcs.length;
 		if (!BY_CARD[cd]) BY_CARD[cd] = [];
-		BY_CARD[cd].push({ pcs: pcs, forte: base });
+		BY_CARD[cd].push({ pcs: pcs, forte: f[0] });
 	}
 	BY_CARD[2] = [];
 	for (var d = 1; d <= 6; d++) BY_CARD[2].push({ pcs: [0, d], forte: "2-" + d });
@@ -323,6 +323,7 @@ function studyset(card, idx1, rot, tonic, inv) {
 	var lst = BY_CARD[card] || [];
 	if (!lst.length) return;
 	var idx = Math.max(0, Math.min(lst.length - 1, Math.round(idx1) - 1));
+	studyTag = lst[idx].forte + (inv ? "*" : "") + "  " + (idx + 1) + "/" + lst.length;
 	var base = lst[idx].pcs.slice();
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
@@ -381,7 +382,8 @@ function emit() {
 	var nm = forte && NAMES[forte] ? NAMES[forte] : "";
 	var tn = tnIndex(pcs);
 
-	var line = card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
+	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
+		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
 	if (forte) line += "  |  " + forte;
 	line += "  |  IV " + ivString(iv);
 	line += "  |  [" + prime.join(" ") + "]";
