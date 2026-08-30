@@ -343,9 +343,17 @@ function buildByCard() {
 	for (var cc = 7; cc <= 11; cc++) {          // 7<-5, 8<-4, 9<-3, 10<-2, 11<-1
 		var src = BY_CARD[12 - cc] || [];
 		BY_CARD[cc] = [];
-		for (var k = 0; k < src.length; k++)
-			BY_CARD[cc].push({ pcs: primeForm(complement(src[k].pcs)),
-				forte: cc + src[k].forte.substring(src[k].forte.indexOf("-")) });
+		for (var k = 0; k < src.length; k++) {
+			// primeForm collapses inversion, so an A source and its B source both land on
+			// the complement class's A form. Re-derive A here and flip it for the B rows so
+			// 7-29A / 7-29B (etc.) stay the two distinct inversions the user studies.
+			var sf = src[k].forte;
+			var pf = primeForm(complement(src[k].pcs));
+			BY_CARD[cc].push({
+				pcs: sf.charAt(sf.length - 1) === "B" ? normal0(invert(pf)) : pf,
+				forte: cc + sf.substring(sf.indexOf("-"))
+			});
+		}
 	}
 	var agg = [];
 	for (var p = 0; p < 12; p++) agg.push(p);
