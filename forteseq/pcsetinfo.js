@@ -21,8 +21,8 @@
 //                          2 inv. de quintas (M7 == a rotation) | 3 espejo de quintas
 //                          (M7 == the inversion). Composes with disssort.
 //     studymove <0|1>      what `tonic` does: 0 = transpose the whole figure (default),
-//                          1 = keep the figure at 0 and let `tonic` pick which member is
-//                          the root (the shape never moves).
+//                          1 = `tonic` picks which member is the root and pins it to pc 0
+//                          (node C); the figure re-spells around that fixed point.
 //
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
 //                                               with `diso <pct>% (<label>)` then any of the
@@ -464,9 +464,9 @@ var DISO_SORT = 0;
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
 
 // StudyMove (menu): what StudyTonic does. 0 "Transpone" = slide the whole figure round the
-// chromatic circle (the original behaviour). 1 "Rota raiz" = keep the figure anchored at 0
-// and let StudyTonic pick which member is the root instead -- the shape never moves, only
-// the root marker walks the notes.
+// chromatic circle (the original behaviour). 1 "Rota raiz" = StudyTonic picks which member
+// is the root and pins it to pc 0 (node C); the figure re-spells its intervals around that
+// fixed point, so the root marker stays put on C while the rest of the shape rotates.
 var STUDY_MOVE = 0;
 function studymove(v) { STUDY_MOVE = v ? 1 : 0; }
 
@@ -514,15 +514,18 @@ function studyset(card, idx1, rot, tonic, inv) {
 	var base = lst[idx].pcs.slice();
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
-	var r = (((Math.round(rot) % n) + n) % n);
+	var t = Math.round(tonic);
+	// Rota raiz: `tonic` folds into the rotation index instead of transposing -- it picks
+	// which member becomes the root, and that member is pinned to pc 0 (node C). Transpone:
+	// `tonic` is a plain transposition on top of the StudyRot necklace rotation.
+	var r = ((((Math.round(rot) + (STUDY_MOVE ? t : 0)) % n) + n) % n);
 	var rel = [];                            // interval necklace rotated to start on member r
 	for (var i = 0; i < n; i++) rel.push(mod12(base[(i + r) % n] - base[r]));
-	var t = Math.round(tonic);
 	var outPcs = [];
-	if (STUDY_MOVE) {                        // Rota raiz: figure fixed at 0, tonic picks the root
+	if (STUDY_MOVE) {                        // Rota raiz: necklace anchored at 0, root sits on C
 		for (var j = 0; j < n; j++) outPcs.push(rel[j]);
-		studyRoot = rel[(((t % n) + n) % n)];
-		studyTag += "  raiz";
+		studyRoot = 0;
+		studyTag += "  raiz en C";
 	} else {                                 // Transpone: slide the whole figure to the tonic
 		var tn = mod12(t);
 		for (var k = 0; k < n; k++) outPcs.push(mod12(rel[k] + tn));

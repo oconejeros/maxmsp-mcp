@@ -129,9 +129,9 @@ ANN = {
     'StudyCard': 'Cardinalidad del conjunto a estudiar (1-12 notas). Junto con StudyIdx recorre las 351 clases Tn.',
     'StudyIdx': 'Posicion en el recorrido de esa cardinalidad (catalogo de Forte, A y B por separado: 19 tricordes, 43 tetracordes, 66 pentacordes, 80 hexacordes; menos si StudyTrav filtra). Se recorta al maximo. El pie muestra el nombre y n/total.',
     'StudyRot': 'Rota el collar de intervalos: 0 = forma prima; cada paso arranca en la nota siguiente (los modos de la forma).',
-    'StudyTonic': 'Con StudyMove=Transpone: nota a la que se ancla el conjunto. Con StudyMove=Rota raiz: elige cual de las notas del conjunto es la raiz (la figura no se mueve).',
+    'StudyTonic': 'Con StudyMove=Transpone: nota a la que se ancla el conjunto. Con StudyMove=Rota raiz: elige cual de las notas es la raiz; esa nota queda fija en el nodo C y la figura se re-deletrea a su alrededor.',
     'StudyInv': 'Usa la inversion de la forma en vez de la forma prima.',
-    'StudyMove': 'Que hace StudyTonic: Transpone = mueve toda la figura por el circulo cromatico (lo de siempre). Rota raiz = deja la figura fija en 0 y StudyTonic solo recorre que nota es la raiz. La raiz se dibuja en blanco.',
+    'StudyMove': 'Que hace StudyTonic: Transpone = mueve toda la figura por el circulo cromatico (lo de siempre). Rota raiz = StudyTonic recorre que nota del conjunto es la raiz, y la deja anclada en el nodo C (la marca blanca no se mueve, gira el resto de la figura).',
     'DissSort': 'Ordena el recorrido por el nivel de disonancia de McKay (el mismo calculo de FORTESEQ2, del vector interv.: pesos 1/6 1/5 1/4 1/3 1/2 1 para P4/M2/m3/M3/m2/TT). 1 = menos disonante ... N = mas. El pie muestra "diso <%> (<etiqueta>)".',
     'StudyTrav': 'Filtra el recorrido a las clases con una simetria (M7 = mapa al circulo de quintas): Todos; Simetricos (el set es su propio espejo); Inv. de quintas (la forma coincide en cromatico y quintas solo rotando); Espejo de quintas (coinciden solo volteando). Compone con DissSort.',
 }
