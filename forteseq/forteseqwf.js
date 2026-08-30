@@ -119,6 +119,28 @@ function wfHierarchy(m, n, r, levels, reverse) {
 	return out;
 }
 
+// How the r-recursion ends, from a base (m, n, r) -- forward-iterating the r-map (wfNextLevel's
+// Eq. 2/4 on the counts alone, no word needed) until r hits 1 (isochronous) or a step budget
+// runs out. Word length starts at m+n and grows by m each step (every L splits, every S stays),
+// so this also yields the pulse count of the isochronous grid. `maxSteps` caps the metallic /
+// generic-irrational cases, where r cycles or wanders and exactly 1 is never reached.
+//   -> { level, pulses, capped }
+//      level  : 0-based hierarchy level where r == 1 (0 = the base is already isochronous), or -1
+//      pulses : onset count of that isochronous level, or -1
+//      capped : true if the budget ran out first -- "deeply non-isochronous"
+function isochronyOutlook(m, n, r, maxSteps) {
+	if (maxSteps === undefined) maxSteps = 64;
+	if (Math.abs(r - 1) < 1e-9) return { level: 0, pulses: m + n, capped: false };
+	for (var step = 1; step <= maxSteps; step++) {
+		var len = 2 * m + n;                          // this step's word length
+		if (r >= 2) { n = m + n; r = r - 1; }         // (m, n, r) -> (m, m+n, r-1)
+		else { var nm = m + n; r = 1 / (r - 1); n = m; m = nm; }   // -> (m+n, m, 1/(r-1))
+		if (!isFinite(r)) return { level: -1, pulses: -1, capped: true };
+		if (Math.abs(r - 1) < 1e-9) return { level: step, pulses: len, capped: false };
+	}
+	return { level: -1, pulses: -1, capped: true };
+}
+
 // --- durations and onset times, per level, independent of every other level --------------------
 
 // mL + ns = d (d = period duration, from the tempo control) and r = L/s together pin down L and s
@@ -676,6 +698,15 @@ function figuraMs(div, bpm) {
 	return Math.max(1, (60000 / bpm) * (4 / div));
 }
 
+// A cycle fires only when Run is on, and -- in tempo-sync mode -- only while the Live transport is
+// playing. Free-running mode ignores the transport entirely (that is the point of not syncing).
+// Pure so --check can pin the truth table; startCycle() and the patch's metro gate both use it.
+function shouldRunCycle(running, syncTempo, transportPlaying) {
+	if (!running) return false;
+	if (syncTempo && !transportPlaying) return false;
+	return true;
+}
+
 // Euclidean accent grid: fill cells 0..cycle-1 from bjorklund(k, cycle) rotated by rot, clear the
 // rest. Reuses this file's own bjorklund. Returns a fresh 16-array.
 function euclidGrid(k, cycle, rot) {
@@ -718,6 +749,9 @@ var periodMs = 2000;
 var syncTempo = 0;
 var beatsPerPeriod = 4;
 var liveTempo = 120;
+// Live transport play state, from a live.observer on live_set is_playing (see forteseqwf.amxd).
+// Only consulted in sync mode -- see shouldRunCycle() / startCycle() / settransport().
+var transportPlaying = 0;
 
 // Preset bank + morph. presetBank holds config dicts (see CONFIG_SPEC); a morph blends two of its
 // slots -- slot 0 meaning "the current edited state" -- without touching the visible controls or
@@ -807,6 +841,14 @@ function recomputeSyncedPeriod() {
 	outlet(0, -1, periodMs);
 }
 function setsynctempo(v) { syncTempo = v ? 1 : 0; recomputeSyncedPeriod(); }
+// In sync mode a stopped transport means "no cycles". Kill any Tasks already in flight so the tail
+// does not ring out; the free-running metro keeps ticking and startCycle()'s gate silently drops
+// each cycle until the transport starts again (then the next tick plays -- no Run re-toggle).
+// Free-running mode (Sync off) ignores the transport entirely.
+function settransport(v) {
+	transportPlaying = v ? 1 : 0;
+	if (syncTempo && !transportPlaying) stopAllTasks();
+}
 function setbeatsperperiod(v) { beatsPerPeriod = clampFloat(Number(v), MIN_BEATS_PER_PERIOD, MAX_BEATS_PER_PERIOD); recomputeSyncedPeriod(); }
 function settempo(bpm) { bpm = Number(bpm); if (isFinite(bpm) && bpm > 0) { liveTempo = bpm; recomputeSyncedPeriod(); } }
 
@@ -1182,7 +1224,11 @@ function scheduleOnset(lv, delayMs, pitch, vel, dur) {
 // buy nothing and risks a stale-hierarchy bug when a param changes mid-cycle.
 function startCycle() {
 	stopAllTasks();
-	if (!running) return;
+	// Run off, or sync mode with the transport stopped -> nothing this cycle. The metro keeps
+	// free-running on wall-clock ms (so it can never fail to restart, unlike a stalled
+	// transport-quantized metro), and this gate just drops the cycles: when the transport starts
+	// again, the very next tick plays -- no need to re-toggle Run.
+	if (!shouldRunCycle(running, syncTempo, transportPlaying)) return;
 
 	// Re-seed the RNG per cycle from the fixed seed XOR the cycle number: bars evolve, but the
 	// whole run is reproducible from rngSeed (which setrun(1) restarts). Cheap enough to do
@@ -1206,8 +1252,14 @@ function startCycle() {
 	// its own (see wfHierarchy's own comment) -- that distinction is exactly what "which level is
 	// my rhythm actually at" means, and nothing else in this file exposes it. Tag 0 (see fireNote)
 	// keeps this off the note-routing path entirely.
+	// Layout: 0  levelCount  r[0..k-1]  pulses[0..k-1]  isoLevel  isoPulses  isoCapped
+	// isoLevel/isoPulses come from the forward r-map probe (independent of the Levels cap), so the
+	// viz can show "isochrony at level X, N pulses" even when the built ladder stopped short.
 	var diag = [0, h.length];
 	for (var dl = 0; dl < h.length; dl++) diag.push(h[dl].r);
+	for (dl = 0; dl < h.length; dl++) diag.push(h[dl].word.length);
+	var ol = isochronyOutlook(cfg.m, cfg.n, cfg.r);
+	diag.push(ol.level, ol.pulses, ol.capped ? 1 : 0);
 	outlet.apply(this, [0].concat(diag));
 
 	// Per level: onsets + U/C (unchanged -- prevOnsets is still the FULL onset set so the next
@@ -1306,6 +1358,58 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			var durs = wfDurations(h[3], 1200);
 			for (var i = 1; i < durs.length; i++) approxEq(durs[i], durs[0], 'Fig7 level3 duration[' + i + '] == duration[0]');
 			if (failures === 0) console.log('OK   checkFig7Example: 2L1S -> 2L3S -> 5L2S -> 12 isochronous, r0=2.5 matches the book\'s own figure.');
+		}
+
+		// isochronyOutlook: the forward r-probe agrees with actually building the hierarchy out to
+		// isochrony, matches the Fig. 7 pulse count, and correctly reports "never" for the metallic
+		// ratios (r cycles) and integers (r -> r-1 -> ... -> 1 in exactly r-1 steps).
+		function checkIsochronyOutlook() {
+			var f0 = failures;
+			var o = isochronyOutlook(2, 1, 2.5);
+			eq(o.level, 3, 'outlook Fig7 level'); eq(o.pulses, 12, 'outlook Fig7 pulses'); eq(o.capped, false, 'outlook Fig7 not capped');
+
+			// base already isochronous
+			var oi = isochronyOutlook(3, 5, 1);
+			eq(oi.level, 0, 'outlook r=1 level'); eq(oi.pulses, 8, 'outlook r=1 pulses');
+
+			// integer r=k reaches isochrony in exactly k-1 steps; cross-check pulses against a real build
+			for (var k = 2; k <= 6; k++) {
+				var ok = isochronyOutlook(1, 1, k);
+				eq(ok.level, k - 1, 'outlook int r=' + k + ' level');
+				var hk = wfHierarchy(1, 1, k, k + 2);
+				eq(wfIsIsochronous(hk[hk.length - 1]), true, 'outlook int r=' + k + ' build ends isochronous');
+				eq(ok.pulses, hk[hk.length - 1].word.length, 'outlook int r=' + k + ' pulses match build');
+				eq(ok.level, hk.length - 1, 'outlook int r=' + k + ' level matches build');
+			}
+
+			// metallic ratios never reach r == 1 -- the probe must report capped, not a bogus level
+			var metals = [metallicRatio(1), metallicRatio(2), metallicRatio(3), 1 + Math.sqrt(2)];
+			for (var i = 0; i < metals.length; i++) {
+				var om = isochronyOutlook(3, 5, metals[i], 200);
+				eq(om.capped, true, 'outlook metallic ' + metals[i].toFixed(4) + ' capped');
+				eq(om.level, -1, 'outlook metallic ' + metals[i].toFixed(4) + ' level -1');
+			}
+
+			// a rational that does terminate, but past a shallow Levels cap: probe still finds it
+			var od = isochronyOutlook(3, 5, 1.2);   // 1.2 -> 5 -> 4 -> 3 -> 2 -> 1
+			eq(od.capped, false, 'outlook r=1.2 terminates');
+			eq(od.level, 5, 'outlook r=1.2 level');
+			var hd = wfHierarchy(3, 5, 1.2, 12);
+			eq(od.pulses, hd[hd.length - 1].word.length, 'outlook r=1.2 pulses match build');
+
+			if (failures === f0) console.log('OK   checkIsochronyOutlook: forward r-probe matches the built hierarchy (level + pulse count), Fig. 7 = 12, metallic ratios report "never".');
+		}
+
+		// The run gate: sync mode follows the Live transport, free-running mode does not.
+		function checkRunGate() {
+			var f0 = failures;
+			eq(shouldRunCycle(0, 0, 0), false, 'run off -> no cycle');
+			eq(shouldRunCycle(0, 1, 1), false, 'run off -> no cycle even in sync + playing');
+			eq(shouldRunCycle(1, 0, 0), true, 'free-run + transport stopped -> still runs');
+			eq(shouldRunCycle(1, 0, 1), true, 'free-run + transport playing -> runs');
+			eq(shouldRunCycle(1, 1, 0), false, 'sync + transport stopped -> no cycle');
+			eq(shouldRunCycle(1, 1, 1), true, 'sync + transport playing -> cycle');
+			if (failures === f0) console.log('OK   checkRunGate: sync mode gates on the Live transport, free-running mode ignores it.');
 		}
 
 		// The real verification for the r-value recursion, since no source gives the equations:
@@ -1711,6 +1815,8 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 		function main() {
 			checkFig7Example();
 			checkTermination();
+			checkIsochronyOutlook();
+			checkRunGate();
 			checkRefinement();
 			checkComplementary();
 			checkLeftRight();
