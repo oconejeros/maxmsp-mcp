@@ -78,10 +78,14 @@
 //   invc <0..11>         inversion centre (pitch class) for the invert preview
 //   info <text ...>      set the footer analysis line (from pcsetinfo.js)
 //   refresh              force a resize check + redraw
+//
+// Outlet 0 (back into the patch, to keep the Preset menu and the a/b/c numboxes in sync):
+//   abc <a> <b> <c>      emitted when a preset is picked -> drives the a/b/c numboxes
+//   presetsel <i>        emitted when a/b/c equals a preset -> selects it in the menu
 
 autowatch = 1;
 inlets = 1;
-outlets = 0;
+outlets = 1;   // back to the patch: `abc a b c` (from a preset pick) and `presetsel <i>`
 
 mgraphics.init();
 mgraphics.relative_coords = 0;
@@ -176,6 +180,7 @@ var traceQ = [];
 var viewOn   = [1, 1, 1, 0, 0, 0, 0];
 var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat'];
 var curAbc   = [3, 4, 5];
+var lastPresetSel = 0;   // which PRESETS row abc currently equals (-1 = none); guards the sync loop
 var keyRoot  = 0;        // diatonic panel tonic (pitch class)
 var keyMinor = 0;        // 0 major, 1 natural minor
 var tzDiat   = 0;        // set by paintTonnetz while it draws the diatonic panel; pcAt() reads it
@@ -356,13 +361,29 @@ function tuning(v) { tuningIdx = Math.max(0, Math.min(TUNINGS.length - 1, Math.r
 function frets(v) { fretCount = Math.max(12, Math.min(24, Math.round(v))); mgraphics.redraw(); }
 function zoom(v) { zoomF = Math.max(1, Math.min(8, v)); mgraphics.redraw(); }
 function pan(v) { panF = Math.max(0, Math.min(1, v)); mgraphics.redraw(); }
+// abc <- the a/b/c numboxes. If the vector matches a preset, tell the menu to follow (once).
 function abc(a, b, c) {
 	curAbc = [Math.max(1, Math.round(a)), Math.max(1, Math.round(b)), Math.max(1, Math.round(c))];
+	var idx = -1;
+	for (var i = 0; i < PRESETS.length; i++)
+		if (PRESETS[i][0] === curAbc[0] && PRESETS[i][1] === curAbc[1] && PRESETS[i][2] === curAbc[2]) { idx = i; break; }
+	if (idx >= 0 && idx !== lastPresetSel) {
+		lastPresetSel = idx;
+		outlet(0, "presetsel", idx);
+	} else if (idx < 0) {
+		lastPresetSel = -1;
+	}
 	mgraphics.redraw();
 }
+// preset <- the menu. Push the vector out to the a/b/c numboxes so the two always agree.
 function preset(i) {
 	i = Math.round(i);
-	if (i >= 0 && i < PRESETS.length) { curAbc = PRESETS[i].slice(); mgraphics.redraw(); }
+	if (i >= 0 && i < PRESETS.length) {
+		curAbc = PRESETS[i].slice();
+		lastPresetSel = i;
+		outlet(0, "abc", curAbc[0], curAbc[1], curAbc[2]);
+		mgraphics.redraw();
+	}
 }
 function radius(v) { spacing = Math.max(24, Math.min(120, v)); mgraphics.redraw(); }
 function trace(v) { traceOn = v ? 1 : 0; mgraphics.redraw(); }

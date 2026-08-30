@@ -35,7 +35,8 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
       live.toggle Vw* (7)  --> prepend v{ton,chr,fif,voc,pno,gtr,dia} --> jsui  (panel on/off)
       live.menu "Key" + live.tab "KeyMode" --> prepend keyroot/keymode --> jsui  (diatonic panel)
       live.menu "Preset"    --> prepend preset    --> jsui
-      live.numbox A/B/C     --> pak 3 4 5 --> prepend abc --> jsui
+      live.numbox A/B/C    <-> pak 3 4 5 / prepend abc <-> jsui   (Preset <-> a/b/c stay in sync
+                               via jsui outlet 0: `abc a b c` -> numboxes, `presetsel i` -> menu)
       live.numbox Radius/TraceLen --> prepend radius / tracelen --> jsui
       live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors/RegTrace --> prepend <sel> --> jsui
       live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom/Pan --> prepend <sel> --> jsui
@@ -332,6 +333,20 @@ def build_subpatcher(appversion):
     hline('obj-142', 0, 'obj-145', 2)
     hline('obj-145', 0, 'obj-146', 0)
     hline('obj-146', 0, 'obj-100', 0)
+    # Preset <-> a/b/c sync: the jsui's outlet 0 carries `abc a b c` (after a preset pick)
+    # and `presetsel i` (when a/b/c equals a preset). route them back to the numboxes / menu.
+    plumb('obj-147', 'route abc presetsel', 372.0, PLUMB_Y + 352, 140.0, 'tzw_route_sync',
+          numoutlets=3, outlettype=['', '', ''])
+    plumb('obj-148', 'unpack 0 0 0', 372.0, PLUMB_Y + 378, 90.0, 'tzw_unpack_abc',
+          numoutlets=3, outlettype=['', '', ''])
+    plumb('obj-149', 'prepend set', 520.0, PLUMB_Y + 378, 70.0, 'tzw_prep_setmenu')
+    hline('obj-100', 0, 'obj-147', 0)
+    hline('obj-147', 0, 'obj-148', 0)      # `abc a b c` -> unpack -> the a/b/c numboxes
+    hline('obj-148', 0, 'obj-140', 0)
+    hline('obj-148', 1, 'obj-141', 0)
+    hline('obj-148', 2, 'obj-142', 0)
+    hline('obj-147', 1, 'obj-149', 0)      # `presetsel i` -> set the Preset menu (no re-output)
+    hline('obj-149', 0, 'obj-130', 0)
     label(276.0, 40.0, 32.0, 'radio')
     control('Radius', 'obj-150', 'live.numbox', 'radius', [312.0, 40.0, 34.0, 18.0])
     label(352.0, 40.0, 34.0, 'traza')
@@ -526,7 +541,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v7b: tidied 5-row control strip, dials -> numboxes)')
+    print('tonnetz.amxd  (v7c: Preset <-> a/b/c kept in sync)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))
