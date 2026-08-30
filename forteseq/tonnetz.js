@@ -505,18 +505,12 @@ function paint() {
 	}
 }
 
-// one framed panel, dispatched by kind string (see VIEW_KIND). The lattice panels draw a
-// little past their bounds (a node radius, or a full lattice step for the 3-D panel), so the
-// content is clipped to the panel rect -- otherwise adjacent panels in the grid overlap.
+// one framed panel, dispatched by kind string (see VIEW_KIND). The lattice panels bound their
+// own drawing to the rect (see inRect / inR) since mgraphics clipping is unreliable here.
 function panel(r, kind) {
 	mgraphics.set_source_rgba(PANEL_BG);
 	mgraphics.rectangle(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
 	mgraphics.fill();
-
-	mgraphics.save();
-	mgraphics.reset_clip();
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
-	mgraphics.clip();
 
 	if (kind === 'tonnetz') paintTonnetz(r, 0);
 	else if (kind === 'diat') paintTonnetz(r, 1);
@@ -526,9 +520,6 @@ function panel(r, kind) {
 	else if (kind === 'tet') paintTet(r);
 	else if (kind === 'fifths') paintCircle(r, FIFTHS, "Quintas");
 	else paintCircle(r, CHROM, "Cromatico");
-
-	mgraphics.restore();
-	mgraphics.reset_clip();
 
 	mgraphics.set_source_rgba(FRAME);
 	mgraphics.set_line_width(1);
@@ -544,8 +535,8 @@ var G = { cx: 0, cy: 0, S: 46, r: null };
 function sx(p, q) { return G.cx + p * G.S + q * G.S * 0.5; }
 function sy(p, q) { return G.cy - q * G.S * 0.8660254; }
 function inRect(x, y) {
-	return x > G.r.x - G.S * 0.5 && x < G.r.x + G.r.w + G.S * 0.5 &&
-	       y > G.r.y - G.S * 0.5 && y < G.r.y + G.r.h + G.S * 0.5;
+	return x > G.r.x + 2 && x < G.r.x + G.r.w - 2 &&
+	       y > G.r.y + 2 && y < G.r.y + G.r.h - 2;
 }
 function harmNeighbours() {
 	var out = [];
@@ -559,10 +550,17 @@ function harmNeighbours() {
 	return out;
 }
 function triFace(p, q, tri) {
-	for (var i = 0; i < 3; i++) if (!isActive(pcAt(p + tri[i][0], q + tri[i][1]))) return;
-	mgraphics.move_to(sx(p + tri[0][0], q + tri[0][1]), sy(p + tri[0][0], q + tri[0][1]));
-	mgraphics.line_to(sx(p + tri[1][0], q + tri[1][1]), sy(p + tri[1][0], q + tri[1][1]));
-	mgraphics.line_to(sx(p + tri[2][0], q + tri[2][1]), sy(p + tri[2][0], q + tri[2][1]));
+	var xs = [], ys = [];
+	for (var i = 0; i < 3; i++) {
+		var pp = p + tri[i][0], qq = q + tri[i][1];
+		if (!isActive(pcAt(pp, qq))) return;
+		var X = sx(pp, qq), Y = sy(pp, qq);
+		if (!inRect(X, Y)) return;            // keep the whole face inside the panel
+		xs.push(X); ys.push(Y);
+	}
+	mgraphics.move_to(xs[0], ys[0]);
+	mgraphics.line_to(xs[1], ys[1]);
+	mgraphics.line_to(xs[2], ys[2]);
 	mgraphics.close_path();
 	mgraphics.fill();
 }
@@ -593,7 +591,9 @@ function paintTonnetz(r, diatonic) {
 	for (p = -pMax; p <= pMax; p++)
 		for (q = -qMax; q <= qMax; q++) {
 			if (!inRect(sx(p, q), sy(p, q))) continue;
-			edge(p, q, p + 1, q); edge(p, q, p, q + 1); edge(p, q, p + 1, q - 1);
+			if (inRect(sx(p + 1, q), sy(p + 1, q))) edge(p, q, p + 1, q);
+			if (inRect(sx(p, q + 1), sy(p, q + 1))) edge(p, q, p, q + 1);
+			if (inRect(sx(p + 1, q - 1), sy(p + 1, q - 1))) edge(p, q, p + 1, q - 1);
 		}
 
 	// item A: the chord's 1-simplices -- any lattice edge with both endpoints sounding
@@ -603,9 +603,9 @@ function paintTonnetz(r, diatonic) {
 		for (p = -pMax; p <= pMax; p++)
 			for (q = -qMax; q <= qMax; q++) {
 				if (!inRect(sx(p, q), sy(p, q)) || !isActive(pcAt(p, q))) continue;
-				if (isActive(pcAt(p + 1, q)))     edge(p, q, p + 1, q);
-				if (isActive(pcAt(p, q + 1)))     edge(p, q, p, q + 1);
-				if (isActive(pcAt(p + 1, q - 1))) edge(p, q, p + 1, q - 1);
+				if (isActive(pcAt(p + 1, q)) && inRect(sx(p + 1, q), sy(p + 1, q)))         edge(p, q, p + 1, q);
+				if (isActive(pcAt(p, q + 1)) && inRect(sx(p, q + 1), sy(p, q + 1)))         edge(p, q, p, q + 1);
+				if (isActive(pcAt(p + 1, q - 1)) && inRect(sx(p + 1, q - 1), sy(p + 1, q - 1))) edge(p, q, p + 1, q - 1);
 			}
 	}
 
@@ -880,7 +880,7 @@ function paintTet(r) {
 	function iy(i, j, k) { return cy + (i + k) * S * SIN - j * S; }
 	function tpc(i, j, k) { return mod12(i * g1 + j * g2 + k * g3); }
 	function inR(x, y) {
-		return x > r.x - S && x < r.x + r.w + S && y > r.y - S && y < r.y + r.h + S;
+		return x > r.x + 2 && x < r.x + r.w - 2 && y > r.y + 2 && y < r.y + r.h - 2;
 	}
 
 	// 1-skeleton: the six edge directions within a tetrahedron cell
@@ -892,11 +892,11 @@ function paintTet(r) {
 		for (j = -RG; j <= RG; j++)
 			for (k = -RG; k <= RG; k++) {
 				var x0 = ix(i, j, k), y0 = iy(i, j, k);
-				var vis0 = inR(x0, y0);
+				if (!inR(x0, y0)) continue;
 				for (var e = 0; e < EDIRS.length; e++) {
 					var d = EDIRS[e];
 					var x1 = ix(i + d[0], j + d[1], k + d[2]), y1 = iy(i + d[0], j + d[1], k + d[2]);
-					if (!vis0 && !inR(x1, y1)) continue;
+					if (!inR(x1, y1)) continue;   // both ends inside -> no edge crosses the frame
 					mgraphics.move_to(x0, y0);
 					mgraphics.line_to(x1, y1);
 					mgraphics.stroke();
@@ -910,15 +910,14 @@ function paintTet(r) {
 	var filled = 0;   // a symmetric chord (dim7) spans hundreds of tetrahedra -- cap the fill
 	function tryTet(bi, bj, bk, V) {
 		if (filled >= 24) return;
-		var xs = [], ys = [], v, anyVis = false;
+		var xs = [], ys = [], v;
 		for (v = 0; v < 4; v++) {
 			var I = bi + V[v][0], J = bj + V[v][1], K = bk + V[v][2];
 			if (!isActive(tpc(I, J, K))) return;
 			var px = ix(I, J, K), py = iy(I, J, K);
-			if (inR(px, py)) anyVis = true;
+			if (!inR(px, py)) return;   // keep the whole tetrahedron inside the frame
 			xs.push(px); ys.push(py);
 		}
-		if (!anyVis) return;
 		var f;
 		mgraphics.set_source_rgba(COL_FACE);
 		for (f = 0; f < 4; f++) {
