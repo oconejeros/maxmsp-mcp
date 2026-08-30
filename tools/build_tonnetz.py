@@ -16,9 +16,11 @@ opens as its OWN floating window (outside the rack) via `[pcontrol]`; `live.this
 opens it on load. The subpatcher opens in PATCHING view (not presentation) so tonnetz.js's
 fitToWindow() -- which sets its own box rect from `this.patcher.wind.size` -- actually
 resizes the canvas as the window is dragged. A 5-row control strip sits at the top; the
-jsui fills the rest and draws seven panels -- Tonnetz, chromatic circle, fifths circle,
-voice-leading space, piano keyboard, guitar fretboard, diatonic Tonnetz. Each has its own
-on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an auto-grid.
+jsui fills the rest and draws eight panels -- Tonnetz, chromatic circle, fifths circle,
+voice-leading space, piano keyboard, guitar fretboard, diatonic Tonnetz, and Gollin's 3-D
+Tonnetz (4-note chords as tetrahedra, isometric projection). Each has its own on/off toggle
+in row 1 (pick panels a dedo); whatever is on is packed into an auto-grid whose short last
+row is centred at the common cell width.
 
     top patcher:
       notein --> pack (pitch vel) --> [p tonnetz_window] inlet 0
@@ -32,9 +34,9 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
                              |                     --1--> send ---tonnetzinfo
                              \--> js tonnetzfit.js --0--> jsui  (`bestfit <a b c>`)
                                                    --1--> send ---tonnetzfit
-      live.toggle Vw* (7)  --> prepend v{ton,chr,fif,voc,pno,gtr,dia} --> jsui  (panel on/off)
+      live.toggle Vw* (8)  --> prepend v{ton,chr,fif,voc,pno,gtr,dia,tet} --> jsui  (panel on/off)
       live.menu "Key" + live.tab "KeyMode" --> prepend keyroot/keymode --> jsui  (diatonic panel)
-      live.menu "Preset"    --> prepend preset    --> jsui
+      live.menu "Preset" / "TetPreset" --> prepend preset / tetpreset --> jsui
       live.numbox A/B/C    <-> pak 3 4 5 / prepend abc <-> jsui   (Preset <-> a/b/c stay in sync
                                via jsui outlet 0: `abc a b c` -> numboxes, `presetsel i` -> menu)
       live.numbox Radius/TraceLen --> prepend radius / tracelen --> jsui
@@ -43,10 +45,10 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
       live.toggle Plr/XfPrev/AutoFit + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-36 parameters. The button is a top-level param (key "obj-20"); the 35 controls inside the
+38 parameters. The button is a top-level param (key "obj-20"); the 37 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Five Push banks (8 + 8 + 8 + 8 + 4).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Six Push banks (8 + 8 + 8 + 8 + 4 + 2).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -70,6 +72,8 @@ SUB = 'obj-10'                      # box id of the [p tonnetz_window] subpatche
 # must match PRESETS[] in tonnetz.js
 PRESETS = ['3 4 5  classic', '1 1 10  chromatic', '2 2 8  whole-tone', '1 4 7', '2 3 7',
            '1 2 9', '3 3 6', '4 4 4  augmented', '1 5 6', '2 5 5']
+# must match TET_PRESETS[] in tonnetz.js -- the 3-D (Gollin) Tonnetz 4-note chord classes
+TET_PRESET_NAMES = ['dom7 / hd7', 'm7', 'maj7', 'dim7', 'mM7', 'aug7']
 # must match TUNINGS[] in tonnetz.js
 GUITAR_TUNINGS = ['Estandar', 'Drop D', 'DADGAD', 'Bajo 4', 'Bajo 5', 'Ukelele']
 
@@ -82,6 +86,8 @@ ANN = {
     'VwPiano': 'Muestra u oculta el teclado de piano.',
     'VwGuitar': 'Muestra u oculta el mastil de guitarra.',
     'VwDiat': 'Muestra u oculta el Tonnetz diatonico (solo las 7 notas de la tonalidad Key).',
+    'VwTet': 'Muestra u oculta el Tonnetz 3D de Gollin: acordes de 4 notas (7as) como tetraedros en proyeccion isometrica plana.',
+    'TetPreset': 'Clase de acorde de 4 notas del Tonnetz 3D: 7a de dominante/semidism, menor 7, mayor 7, dism 7, menor-mayor 7 o 7 aumentada. Define los ejes del complejo K[a,b,c,d].',
     'Key': 'Tonica del Tonnetz diatonico.',
     'KeyMode': 'Escala del Tonnetz diatonico: Mayor o menor natural.',
     'Preset': 'Vector de clases de intervalo [a,b,c] de las aristas del triangulo. 3 4 5 = Tonnetz clasico. Mover A/B/C lo sobrescribe.',
@@ -121,9 +127,11 @@ CTRL = [
     ('VwPiano',    'VwPno',     'obj-124', 'live.toggle',  'vpno'),
     ('VwGuitar',   'VwGtr',     'obj-125', 'live.toggle',  'vgtr'),
     ('VwDiat',     'VwDia',     'obj-126', 'live.toggle',  'vdia'),
+    ('VwTet',      'VwTet',     'obj-127', 'live.toggle',  'vtet'),
     ('Key',        'Key',       'obj-128', 'live.menu',    'keyroot'),
     ('KeyMode',    'KeyMode',   'obj-129', 'live.tab',     'keymode'),
     ('Preset',     'Preset',    'obj-130', 'live.menu',    'preset'),
+    ('TetPreset',  'TetPre',    'obj-131', 'live.menu',    'tetpreset'),
     ('TonA',       'TonA',      'obj-140', 'live.numbox',  None),
     ('TonB',       'TonB',      'obj-141', 'live.numbox',  None),
     ('TonC',       'TonC',      'obj-142', 'live.numbox',  None),
@@ -150,19 +158,20 @@ CTRL = [
     ('RegTrace',   'RegTrace',  'obj-270', 'live.toggle',  'regtrace'),
     ('AutoFit',    'AutoFit',   'obj-272', 'live.toggle',  'autofit'),
 ]
-TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat',
+TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet',
            'Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
            'Plr', 'XfPrev', 'RegTrace', 'AutoFit']
-BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
+BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
              'obj-162', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268']
 
 BANKS = [
-    ('Vistas',    ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'Abrir']),
+    ('Vistas',    ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet']),
     ('Tonnetz',   ['Preset', 'TonA', 'TonB', 'TonC', 'Radius', 'Key', 'KeyMode', 'Harmonize']),
     ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors']),
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
+    ('Mas',       ['Abrir', 'TetPreset']),
 ]
 
 
@@ -197,6 +206,8 @@ VO = {
     'VwPiano':   toggle_vo('VwPiano', 0),
     'VwGuitar':  toggle_vo('VwGuitar', 0),
     'VwDiat':    toggle_vo('VwDiat', 0),
+    'VwTet':     toggle_vo('VwTet', 0),
+    'TetPreset': enum_vo('TetPreset', 'TetPre', TET_PRESET_NAMES, 0),
     'Key':       enum_vo('Key', 'Key',
                          ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], 0),
     'KeyMode':   enum_vo('KeyMode', 'KeyMode', ['Mayor', 'Menor'], 0),
@@ -310,14 +321,14 @@ def build_subpatcher(appversion):
     vtog = [('VwTonnetz', 'obj-120', 'vton', 'Ton'), ('VwChrom', 'obj-121', 'vchr', 'Cro'),
             ('VwFifths', 'obj-122', 'vfif', 'Qui'), ('VwVoice', 'obj-123', 'vvoc', 'Voc'),
             ('VwPiano', 'obj-124', 'vpno', 'Pno'), ('VwGuitar', 'obj-125', 'vgtr', 'Gtr'),
-            ('VwDiat', 'obj-126', 'vdia', 'Dia')]
+            ('VwDiat', 'obj-126', 'vdia', 'Dia'), ('VwTet', 'obj-127', 'vtet', '3D')]
     vx = 8.0
     for longname, cid, sel, word in vtog:
         control(longname, cid, 'live.toggle', sel, [vx, 8.0, 14.0, 14.0])
-        label(vx + 16, 8.0, 24.0, word)
-        vx += 44.0
-    control('Key',     'obj-128', 'live.menu', 'keyroot', [320.0, 6.0, 62.0, 20.0])
-    control('KeyMode', 'obj-129', 'live.tab',  'keymode', [388.0, 6.0, 90.0, 20.0])
+        label(vx + 16, 8.0, 20.0, word)
+        vx += 40.0
+    control('Key',     'obj-128', 'live.menu', 'keyroot', [330.0, 6.0, 54.0, 20.0])
+    control('KeyMode', 'obj-129', 'live.tab',  'keymode', [390.0, 6.0, 84.0, 20.0])
 
     # row 2 (y 38): Tonnetz shape -- preset, a/b/c vector, spacing, trace length
     control('Preset', 'obj-130', 'live.menu', 'preset', [8.0, 37.0, 140.0, 20.0])
@@ -351,6 +362,8 @@ def build_subpatcher(appversion):
     control('Radius', 'obj-150', 'live.numbox', 'radius', [312.0, 40.0, 34.0, 18.0])
     label(352.0, 40.0, 34.0, 'traza')
     control('TraceLen', 'obj-162', 'live.numbox', 'tracelen', [388.0, 40.0, 28.0, 18.0])
+    label(420.0, 40.0, 16.0, '3D')
+    control('TetPreset', 'obj-131', 'live.menu', 'tetpreset', [436.0, 40.0, 74.0, 18.0])
 
     # row 3 (y 68): the seven analysis toggles, each labelled
     tog = [('Trace', 'obj-160', 'trace', 'Rastro'), ('Harmonize', 'obj-170', 'harm', 'Vecinos'),
@@ -541,7 +554,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v7c: Preset <-> a/b/c kept in sync)')
+    print('tonnetz.amxd  (v8: Gollin 3-D Tonnetz panel -- 4-note chords as tetrahedra)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))

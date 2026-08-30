@@ -41,13 +41,21 @@
 // decoupled tonnetzfit.js: the interval vector whose lattice represents the recent music
 // most compactly, shown as a caption and optionally followed by the live abc.
 //
+// v8: `vtet` = an eighth panel, Gollin's three-dimensional Tonnetz (1998; paper Fig. 4b/6b).
+// The complex K[a,b,c,d] has 4-note chords (dominant sevenths, half-diminished) as
+// tetrahedra; it is drawn as a flat isometric projection of the cubic lattice whose three
+// axes are the cumulative interval sums of `tetpreset`. When four sounding pitch classes
+// span a lattice tetrahedron its faces are filled. Also: a short last row of the panel grid
+// is now centred at the common cell width instead of one panel stretching to full width.
+//
 // Messages:
 //   note <pitch> <vel>   MIDI note; vel 0 = note-off. Ref-counted (per pitch class AND per
 //                        MIDI note); a fresh pitch-class onset pushes the trace.
 //   list <pc> ...        replace the active pitch-class set outright (no trace push)
 //   clear                drop all active notes and the trace
-//   vton/vchr/vfif/vvoc/vpno/vgtr/vdia <0|1>   show/hide each panel (Tonnetz, chromatic,
-//                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz)
+//   vton/vchr/vfif/vvoc/vpno/vgtr/vdia/vtet <0|1>   show/hide each panel (Tonnetz, chromatic,
+//                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz, 3-D Tonnetz)
+//   tetpreset <i>        3-D Tonnetz: pick the 4-note chord class from TET_PRESETS[i]
 //   keyroot <0..11>      diatonic panel: tonic pitch class
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
 //   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
@@ -175,10 +183,23 @@ var midiVoices = [];     // midiVoices[n] = held notes of that exact MIDI note (
 var activeSet = [];
 var traceQ = [];
 
-// seven independent panel flags: Tonnetz, chromatic, fifths, voice-leading, piano, guitar,
-// diatonic Tonnetz. Whatever is on is packed into an auto-grid by paint().
-var viewOn   = [1, 1, 1, 0, 0, 0, 0];
-var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat'];
+// eight independent panel flags: Tonnetz, chromatic, fifths, voice-leading, piano, guitar,
+// diatonic Tonnetz, 3-D (Gollin) Tonnetz. Whatever is on is packed into an auto-grid by paint().
+var viewOn   = [1, 1, 1, 0, 0, 0, 0, 0];
+var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat', 'tet'];
+
+// item E: Gollin's 3-D Tonnetz K[a,b,c,d]. Each preset is a 4-note chord's cyclic interval
+// structure (sums to 12); the three lattice axes are its cumulative sums a, a+b, a+b+c.
+// MUST match TET_PRESET_NAMES in build_tonnetz.py.
+var TET_PRESETS = [
+	[2, 3, 3, 4],   // 0  dominant 7th / half-diminished (Forte 4-27)
+	[3, 4, 3, 2],   // 1  minor 7th (4-26)
+	[4, 3, 4, 1],   // 2  major 7th (4-20)
+	[3, 3, 3, 3],   // 3  diminished 7th (4-28)
+	[3, 4, 4, 1],   // 4  minor-major 7th (4-19)
+	[2, 2, 4, 4]    // 5  augmented 7th / 7#5 (4-24)
+];
+var tetAbc = [2, 3, 3, 4];
 var curAbc   = [3, 4, 5];
 var lastPresetSel = 0;   // which PRESETS row abc currently equals (-1 = none); guards the sync loop
 var keyRoot  = 0;        // diatonic panel tonic (pitch class)
@@ -337,6 +358,11 @@ function vvoc(v) { setViewFlag(3, v); }
 function vpno(v) { setViewFlag(4, v); }
 function vgtr(v) { setViewFlag(5, v); }
 function vdia(v) { setViewFlag(6, v); }
+function vtet(v) { setViewFlag(7, v); }
+function tetpreset(i) {
+	i = Math.round(i);
+	if (i >= 0 && i < TET_PRESETS.length) { tetAbc = TET_PRESETS[i].slice(); mgraphics.redraw(); }
+}
 function keyroot(v) { keyRoot = mod12(Math.round(v)); mgraphics.redraw(); }
 function keymode(v) { keyMinor = v ? 1 : 0; mgraphics.redraw(); }
 function setclass() {
@@ -448,17 +474,19 @@ function paint() {
 		mgraphics.move_to(16, cH / 2);
 		mgraphics.show_text("Sin vistas -- enciende una arriba");
 	} else {
-		// auto-grid: near-square, last row's cells widen to fill
+		// auto-grid: near-square; a short last row keeps the common cell width and is
+		// centred (rather than one panel stretching across the whole width).
 		var nA = active.length;
 		var cols = Math.ceil(Math.sqrt(nA));
 		var rows = Math.ceil(nA / cols);
+		var cellW = W / cols;
 		var cellH = cH / rows;
 		var k = 0;
 		for (var gr = 0; gr < rows; gr++) {
 			var inRow = (gr < rows - 1) ? cols : (nA - cols * (rows - 1));
-			var cellW = W / inRow;
+			var xoff = (W - inRow * cellW) / 2;
 			for (var gc = 0; gc < inRow; gc++) {
-				panel({ x: gc * cellW, y: gr * cellH, w: cellW, h: cellH }, VIEW_KIND[active[k]]);
+				panel({ x: xoff + gc * cellW, y: gr * cellH, w: cellW, h: cellH }, VIEW_KIND[active[k]]);
 				k++;
 			}
 		}
@@ -488,6 +516,7 @@ function panel(r, kind) {
 	else if (kind === 'piano') paintPiano(r);
 	else if (kind === 'guitar') paintGuitar(r);
 	else if (kind === 'vl') paintVL(r);
+	else if (kind === 'tet') paintTet(r);
 	else if (kind === 'fifths') paintCircle(r, FIFTHS, "Quintas");
 	else paintCircle(r, CHROM, "Cromatico");
 
@@ -815,6 +844,108 @@ function paintPLR(pMax, qMax) {
 		mgraphics.move_to(ncx + 4, ncy - 4);
 		mgraphics.show_text(lbl);
 	}
+}
+
+// ---- Gollin's three-dimensional Tonnetz (item E) --------------------------------
+// K[a,b,c,d]: 4-note chords (dominant seventh / half-diminished) as tetrahedra, drawn as a
+// flat isometric projection of the cubic lattice. The three axes are the cumulative interval
+// sums g1 = a, g2 = a+b, g3 = a+b+c, so a lattice cell's "up" tetrahedron
+// {n, n+g1, n+g2, n+g3} and "down" tetrahedron fill the alternated cubic honeycomb; the
+// octahedral gaps are non-chord regions and stay empty (paper Fig. 4b / 6b, p.12-14). No
+// depth sort -- this is a lattice schematic, like the figures, not a shaded 3-D render.
+function paintTet(r) {
+	mgraphics.set_source_rgba(COL_TEXT_IDLE);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(10);
+	mgraphics.move_to(r.x + 8, r.y + 15);
+	mgraphics.show_text("Tonnetz 3D  K[" + tetAbc.join(" ") + "]");
+
+	var g1 = tetAbc[0], g2 = tetAbc[0] + tetAbc[1], g3 = tetAbc[0] + tetAbc[1] + tetAbc[2];
+	var S = Math.max(16, Math.min(54, spacing * 0.68));
+	var COS = 0.8660254, SIN = 0.5;
+	var cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 6;
+	var RG = Math.max(2, Math.min(3, Math.round(Math.min(r.w, r.h) / (S * 2))));
+
+	function ix(i, j, k) { return cx + (i - k) * S * COS; }
+	function iy(i, j, k) { return cy + (i + k) * S * SIN - j * S; }
+	function tpc(i, j, k) { return mod12(i * g1 + j * g2 + k * g3); }
+	function inR(x, y) {
+		return x > r.x - S && x < r.x + r.w + S && y > r.y - S && y < r.y + r.h + S;
+	}
+
+	// 1-skeleton: the six edge directions within a tetrahedron cell
+	var EDIRS = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, -1, 0], [1, 0, -1], [0, 1, -1]];
+	mgraphics.set_source_rgba(COL_EDGE);
+	mgraphics.set_line_width(1);
+	var i, j, k;
+	for (i = -RG; i <= RG; i++)
+		for (j = -RG; j <= RG; j++)
+			for (k = -RG; k <= RG; k++) {
+				var x0 = ix(i, j, k), y0 = iy(i, j, k);
+				var vis0 = inR(x0, y0);
+				for (var e = 0; e < EDIRS.length; e++) {
+					var d = EDIRS[e];
+					var x1 = ix(i + d[0], j + d[1], k + d[2]), y1 = iy(i + d[0], j + d[1], k + d[2]);
+					if (!vis0 && !inR(x1, y1)) continue;
+					mgraphics.move_to(x0, y0);
+					mgraphics.line_to(x1, y1);
+					mgraphics.stroke();
+				}
+			}
+
+	// filled tetrahedra: any cell whose four pitch classes all sound
+	var UP = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+	var DN = [[1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+	var FACES = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+	var filled = 0;   // a symmetric chord (dim7) spans hundreds of tetrahedra -- cap the fill
+	function tryTet(bi, bj, bk, V) {
+		if (filled >= 24) return;
+		var xs = [], ys = [], v, anyVis = false;
+		for (v = 0; v < 4; v++) {
+			var I = bi + V[v][0], J = bj + V[v][1], K = bk + V[v][2];
+			if (!isActive(tpc(I, J, K))) return;
+			var px = ix(I, J, K), py = iy(I, J, K);
+			if (inR(px, py)) anyVis = true;
+			xs.push(px); ys.push(py);
+		}
+		if (!anyVis) return;
+		var f;
+		mgraphics.set_source_rgba(COL_FACE);
+		for (f = 0; f < 4; f++) {
+			mgraphics.move_to(xs[FACES[f][0]], ys[FACES[f][0]]);
+			mgraphics.line_to(xs[FACES[f][1]], ys[FACES[f][1]]);
+			mgraphics.line_to(xs[FACES[f][2]], ys[FACES[f][2]]);
+			mgraphics.close_path();
+			mgraphics.fill();
+		}
+		mgraphics.set_source_rgba(COL_POLY);
+		mgraphics.set_line_width(1.5);
+		for (f = 0; f < 4; f++) {
+			mgraphics.move_to(xs[FACES[f][0]], ys[FACES[f][0]]);
+			mgraphics.line_to(xs[FACES[f][1]], ys[FACES[f][1]]);
+			mgraphics.line_to(xs[FACES[f][2]], ys[FACES[f][2]]);
+			mgraphics.close_path();
+			mgraphics.stroke();
+		}
+		filled++;
+	}
+	if (activeSet.length >= 4) {
+		for (i = -RG; i <= RG; i++)
+			for (j = -RG; j <= RG; j++)
+				for (k = -RG; k <= RG; k++) { tryTet(i, j, k, UP); tryTet(i, j, k, DN); }
+	}
+
+	// vertices (drawNode gives colour / active swell / trace / ghost ring for free)
+	mgraphics.select_font_face("Arial Bold");
+	mgraphics.set_font_size(9);
+	var rad = Math.max(7, Math.min(12, S * 0.30));
+	for (i = -RG; i <= RG; i++)
+		for (j = -RG; j <= RG; j++)
+			for (k = -RG; k <= RG; k++) {
+				var vx = ix(i, j, k), vy = iy(i, j, k);
+				if (!inR(vx, vy)) continue;
+				drawNode(vx, vy, rad, tpc(i, j, k), false);
+			}
 }
 
 // ---- chromatic / fifths circle -------------------------------------------------
