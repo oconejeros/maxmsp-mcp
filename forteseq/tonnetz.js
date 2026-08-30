@@ -27,13 +27,24 @@
 // `invc`) by drawing the resulting pitch classes as magenta ghost rings -- purely a drawing,
 // the MIDI is never touched (Fig. 11, eqs. 4/5).
 //
+// v6: the single "view" tab is replaced by seven independent on/off flags (`vton` `vchr`
+// `vfif` `vvoc` `vpno` `vgtr` `vdia`); whatever is on is packed into a near-square auto-grid.
+// Two are new panels: `vvoc` = a voice-leading space of the twelve trichord set-classes
+// (HexaChord's third representation; fed the current set-class by pcsetinfo.js's `setclass`
+// message), and `vdia` = a diatonic Tonnetz (axes are diatonic thirds, only the seven notes
+// of `keyroot`/`keymode` appear -- N=7, Bigo p.13). harm and P/L/R are chromatic-lattice
+// concepts and are suppressed on the diatonic panel.
+//
 // Messages:
 //   note <pitch> <vel>   MIDI note; vel 0 = note-off. Ref-counted (per pitch class AND per
 //                        MIDI note); a fresh pitch-class onset pushes the trace.
 //   list <pc> ...        replace the active pitch-class set outright (no trace push)
 //   clear                drop all active notes and the trace
-//   view <0..5>          0 all (default) | 1 Tonnetz | 2 chromatic | 3 fifths | 4 piano | 5 guitar
-//   space <0..2>         legacy alias -> view 1..3
+//   vton/vchr/vfif/vvoc/vpno/vgtr/vdia <0|1>   show/hide each panel (Tonnetz, chromatic,
+//                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz)
+//   keyroot <0..11>      diatonic panel: tonic pitch class
+//   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
+//   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
 //   pianomode <0|1>      piano: 0 one octave (pitch classes) | 1 full MIDI 0..127 (notes)
 //   guitarmode <0|1>     guitar: 0 all fretboard positions of sounding pcs | 1 only exact notes
 //   tuning <i>           guitar tuning index (see TUNINGS)
@@ -151,9 +162,18 @@ var midiVoices = [];     // midiVoices[n] = held notes of that exact MIDI note (
 var activeSet = [];
 var traceQ = [];
 
-var curView  = 0;        // 0 all, 1 tonnetz, 2 chromatic, 3 fifths, 4 piano, 5 guitar
-                         // (state var kept apart from the view() handler -- a `var view` shadows it)
+// seven independent panel flags: Tonnetz, chromatic, fifths, voice-leading, piano, guitar,
+// diatonic Tonnetz. Whatever is on is packed into an auto-grid by paint().
+var viewOn   = [1, 1, 1, 0, 0, 0, 0];
+var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat'];
 var curAbc   = [3, 4, 5];
+var keyRoot  = 0;        // diatonic panel tonic (pitch class)
+var keyMinor = 0;        // 0 major, 1 natural minor
+var tzDiat   = 0;        // set by paintTonnetz while it draws the diatonic panel; pcAt() reads it
+var MAJ_SCALE = [0, 2, 4, 5, 7, 9, 11];
+var MIN_SCALE = [0, 2, 3, 5, 7, 8, 10];
+var vlClass  = "";       // current set-class prime-form string (from pcsetinfo `setclass`)
+var vlQ      = [];        // recent matched trichord primes, for the path
 var spacing  = 46;
 var traceOn = 1, traceLen = 8;
 var harmOn  = 1;
@@ -232,9 +252,17 @@ function pushTrace(pc) {
 	traceQ.push(pc);
 	while (traceQ.length > traceLen) traceQ.shift();
 }
-function axX() { return curAbc[0]; }
-function axY() { return curAbc[0] + curAbc[1]; }
-function pcAt(p, q) { return mod12(p * axX() + q * axY()); }
+// diatonic scale degree -> pitch class in the current key
+function scalePc(deg) {
+	var sc = keyMinor ? MIN_SCALE : MAJ_SCALE;
+	deg = ((deg % 7) + 7) % 7;
+	return mod12(keyRoot + sc[deg]);
+}
+// axes: chromatic uses curAbc (semitones); diatonic uses a fixed stack of diatonic thirds
+// (2 scale steps per x, 4 per y) so triangles are diatonic triads.
+function axX() { return tzDiat ? 2 : curAbc[0]; }
+function axY() { return tzDiat ? 4 : curAbc[0] + curAbc[1]; }
+function pcAt(p, q) { return tzDiat ? scalePc(p * 2 + q * 4) : mod12(p * axX() + q * axY()); }
 
 // ---- message handlers ---------------------------------------------------------------
 function note(pitch, vel) {
@@ -273,8 +301,32 @@ function clear() {
 	activeSet = []; traceQ = [];
 	mgraphics.redraw();
 }
-function view(v) { curView = Math.max(0, Math.min(5, Math.round(v))); mgraphics.redraw(); }
-function space(v) { curView = Math.max(0, Math.min(2, Math.round(v))) + 1; mgraphics.redraw(); }
+function setViewFlag(i, v) { viewOn[i] = v ? 1 : 0; mgraphics.redraw(); }
+function vton(v) { setViewFlag(0, v); }
+function vchr(v) { setViewFlag(1, v); }
+function vfif(v) { setViewFlag(2, v); }
+function vvoc(v) { setViewFlag(3, v); }
+function vpno(v) { setViewFlag(4, v); }
+function vgtr(v) { setViewFlag(5, v); }
+function vdia(v) { setViewFlag(6, v); }
+function keyroot(v) { keyRoot = mod12(Math.round(v)); mgraphics.redraw(); }
+function keymode(v) { keyMinor = v ? 1 : 0; mgraphics.redraw(); }
+function setclass() {
+	var s = arrayfromargs(arguments).join(" ");
+	if (s !== vlClass) {
+		vlClass = s;
+		for (var i = 0; i < VL_NODES.length; i++) {
+			if (VL_NODES[i][0] === s) {
+				if (vlQ.length === 0 || vlQ[vlQ.length - 1] !== s) {
+					vlQ.push(s);
+					while (vlQ.length > 8) vlQ.shift();
+				}
+				break;
+			}
+		}
+	}
+	mgraphics.redraw();
+}
 function pianomode(v) { pianoMode = v ? 1 : 0; mgraphics.redraw(); }
 function guitarmode(v) { guitarMode = v ? 1 : 0; mgraphics.redraw(); }
 function tuning(v) { tuningIdx = Math.max(0, Math.min(TUNINGS.length - 1, Math.round(v))); mgraphics.redraw(); }
@@ -331,18 +383,30 @@ function paint() {
 	mgraphics.rectangle(0, 0, W, H);
 	mgraphics.fill();
 
-	if (curView === 0) {
-		var row1 = Math.round(cH * 0.46);
-		var row2 = Math.round((cH - row1) / 2);
-		var row3 = cH - row1 - row2;
-		var cw = W / 3;
-		panel({ x: 0,      y: 0, w: cw, h: row1 }, 1);
-		panel({ x: cw,     y: 0, w: cw, h: row1 }, 2);
-		panel({ x: cw * 2, y: 0, w: W - cw * 2, h: row1 }, 3);
-		panel({ x: 0, y: row1, w: W, h: row2 }, 4);
-		panel({ x: 0, y: row1 + row2, w: W, h: row3 }, 5);
+	var active = [];
+	for (var vi = 0; vi < viewOn.length; vi++) if (viewOn[vi]) active.push(vi);
+
+	if (active.length === 0) {
+		mgraphics.set_source_rgba(COL_TEXT_IDLE);
+		mgraphics.select_font_face("Arial");
+		mgraphics.set_font_size(12);
+		mgraphics.move_to(16, cH / 2);
+		mgraphics.show_text("Sin vistas -- enciende una arriba");
 	} else {
-		panel({ x: 0, y: 0, w: W, h: cH }, curView);
+		// auto-grid: near-square, last row's cells widen to fill
+		var nA = active.length;
+		var cols = Math.ceil(Math.sqrt(nA));
+		var rows = Math.ceil(nA / cols);
+		var cellH = cH / rows;
+		var k = 0;
+		for (var gr = 0; gr < rows; gr++) {
+			var inRow = (gr < rows - 1) ? cols : (nA - cols * (rows - 1));
+			var cellW = W / inRow;
+			for (var gc = 0; gc < inRow; gc++) {
+				panel({ x: gc * cellW, y: gr * cellH, w: cellW, h: cellH }, VIEW_KIND[active[k]]);
+				k++;
+			}
+		}
 	}
 
 	// footer: set-class info
@@ -358,17 +422,19 @@ function paint() {
 	}
 }
 
-// one framed panel: whichView 1=Tonnetz 2=chromatic 3=fifths 4=piano 5=guitar
-function panel(r, whichView) {
+// one framed panel, dispatched by kind string (see VIEW_KIND)
+function panel(r, kind) {
 	mgraphics.set_source_rgba(PANEL_BG);
 	mgraphics.rectangle(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
 	mgraphics.fill();
 
-	if (whichView === 1) paintTonnetz(r);
-	else if (whichView === 4) paintPiano(r);
-	else if (whichView === 5) paintGuitar(r);
-	else paintCircle(r, whichView === 3 ? FIFTHS : CHROM,
-		whichView === 3 ? "Quintas" : "Cromatico");
+	if (kind === 'tonnetz') paintTonnetz(r, 0);
+	else if (kind === 'diat') paintTonnetz(r, 1);
+	else if (kind === 'piano') paintPiano(r);
+	else if (kind === 'guitar') paintGuitar(r);
+	else if (kind === 'vl') paintVL(r);
+	else if (kind === 'fifths') paintCircle(r, FIFTHS, "Quintas");
+	else paintCircle(r, CHROM, "Cromatico");
 
 	mgraphics.set_source_rgba(FRAME);
 	mgraphics.set_line_width(1);
@@ -411,12 +477,13 @@ function edge(p0, q0, p1, q1) {
 	mgraphics.line_to(sx(p1, q1), sy(p1, q1));
 	mgraphics.stroke();
 }
-function paintTonnetz(r) {
+function paintTonnetz(r, diatonic) {
+	tzDiat = diatonic ? 1 : 0;
 	G.cx = r.x + r.w / 2; G.cy = r.y + r.h / 2; G.S = spacing; G.r = r;
 	var S = spacing, p, q;
 	var pMax = Math.min(26, Math.ceil(r.w / S) + 2);
 	var qMax = Math.min(26, Math.ceil(r.h / (S * 0.8660254)) + 2);
-	var harmSet = harmNeighbours();
+	var harmSet = tzDiat ? [] : harmNeighbours();
 
 	if (facesOn && activeSet.length >= 3) {
 		mgraphics.set_source_rgba(COL_FACE);
@@ -458,7 +525,85 @@ function paintTonnetz(r) {
 			drawNode(x, y, rad, pcAt(p, q), harmSet.indexOf(pcAt(p, q)) >= 0);
 		}
 
-	if (plrOn) paintPLR(pMax, qMax);
+	if (plrOn && !tzDiat) paintPLR(pMax, qMax);
+
+	mgraphics.set_source_rgba(COL_TEXT_IDLE);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(10);
+	mgraphics.move_to(r.x + 8, r.y + 15);
+	mgraphics.show_text(tzDiat
+		? ("Diatonico  " + NOTE_NAMES[keyRoot] + (keyMinor ? " menor" : " mayor"))
+		: "Tonnetz");
+	tzDiat = 0;
+}
+
+// voice-leading space: the twelve trichord set-classes, hand-placed by parsimonious
+// proximity (HexaChord's third representation, after Tymoczko 2011). Keys are Rahn prime
+// forms -- exactly what pcsetinfo.js sends in its `setclass` message.
+var VL_NODES = [
+	["0 1 2", 0.10, 0.24, "3-1"],  ["0 1 3", 0.24, 0.40, "3-2"],
+	["0 1 4", 0.22, 0.66, "3-3"],  ["0 1 5", 0.20, 0.88, "3-4"],
+	["0 1 6", 0.44, 0.90, "3-5"],  ["0 2 4", 0.46, 0.15, "3-6"],
+	["0 2 5", 0.50, 0.48, "3-7"],  ["0 2 6", 0.64, 0.27, "3-8"],
+	["0 2 7", 0.70, 0.60, "3-9"],  ["0 3 6", 0.80, 0.39, "3-10"],
+	["0 3 7", 0.84, 0.70, "3-11"], ["0 4 8", 0.94, 0.52, "3-12"]
+];
+var VL_EDGES = [
+	[0, 1], [1, 2], [2, 3], [3, 4], [1, 5], [5, 6], [1, 7], [7, 5],
+	[7, 8], [6, 8], [8, 9], [9, 10], [10, 11], [9, 7], [6, 4], [4, 8], [5, 3]
+];
+function paintVL(r) {
+	mgraphics.set_source_rgba(COL_TEXT_IDLE);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(10);
+	mgraphics.move_to(r.x + 8, r.y + 15);
+	mgraphics.show_text("Conduccion de voces");
+
+	var pad = 26;
+	var x0 = r.x + pad, y0 = r.y + pad + 6;
+	var w = r.w - pad * 2, h = r.h - pad * 2 - 6;
+	if (w < 40 || h < 40) return;
+	function px(i) { return x0 + VL_NODES[i][1] * w; }
+	function py(i) { return y0 + VL_NODES[i][2] * h; }
+
+	mgraphics.set_source_rgba(COL_EDGE);
+	mgraphics.set_line_width(1);
+	for (var e = 0; e < VL_EDGES.length; e++) {
+		mgraphics.move_to(px(VL_EDGES[e][0]), py(VL_EDGES[e][0]));
+		mgraphics.line_to(px(VL_EDGES[e][1]), py(VL_EDGES[e][1]));
+		mgraphics.stroke();
+	}
+
+	if (vlQ.length >= 2) {
+		var idxOf = {};
+		for (var n = 0; n < VL_NODES.length; n++) idxOf[VL_NODES[n][0]] = n;
+		mgraphics.set_line_width(2);
+		for (var t = 1; t < vlQ.length; t++) {
+			var ia = idxOf[vlQ[t - 1]], ib = idxOf[vlQ[t]];
+			if (ia === undefined || ib === undefined) continue;
+			var aa = 0.15 + 0.75 * (t / (vlQ.length - 1));
+			mgraphics.set_source_rgba(COL_TRACE[0], COL_TRACE[1], COL_TRACE[2], aa);
+			mgraphics.move_to(px(ia), py(ia)); mgraphics.line_to(px(ib), py(ib)); mgraphics.stroke();
+		}
+	}
+
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(8);
+	var rad = Math.max(7, Math.min(15, Math.min(w, h) * 0.055));
+	for (var i = 0; i < VL_NODES.length; i++) {
+		var on = VL_NODES[i][0] === vlClass;
+		mgraphics.ellipse(px(i) - rad, py(i) - rad, rad * 2, rad * 2);
+		if (on) {
+			mgraphics.set_source_rgba(COL_ACTIVE); mgraphics.fill();
+		} else {
+			mgraphics.set_source_rgba(PANEL_BG); mgraphics.fill_preserve();
+			mgraphics.set_source_rgba(COL_IDLE); mgraphics.set_line_width(1); mgraphics.stroke();
+		}
+		var lab = VL_NODES[i][3];
+		mgraphics.set_source_rgba(on ? COL_TEXT_ACTIVE : COL_TEXT_IDLE);
+		mgraphics.move_to(px(i) - lab.length * 2.4, py(i) + 3);
+		mgraphics.show_text(lab);
+	}
 }
 
 // item B: neo-Riemannian P/L/R. From the sounding major or minor triad, draw an arrow to

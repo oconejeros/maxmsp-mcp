@@ -8,7 +8,8 @@
 //     clear                empty it
 //     bang                 re-emit the current analysis
 //
-//   outlet 0 -> tonnetz.js : `info <text>`   (one compact line for the jsui footer)
+//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer)
+//                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
 //     name <sym> | tn <index> <351>
@@ -302,6 +303,7 @@ function emit() {
 
 	if (card === 0) {
 		outlet(0, "info", "-");
+		outlet(0, "setclass", "");
 		outlet(1, ["card", 0]);
 		return;
 	}
@@ -322,6 +324,7 @@ function emit() {
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
+	outlet(0, "setclass", prime.join(" "));
 
 	outlet(1, ["card", card]);
 	outlet(1, ["notes"].concat(names));
