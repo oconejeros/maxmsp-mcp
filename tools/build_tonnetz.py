@@ -36,11 +36,10 @@ on/off toggle in row 1 (pick panels a dedo); whatever is on is packed into an au
       live.menu "Key" + live.tab "KeyMode" --> prepend keyroot/keymode --> jsui  (diatonic panel)
       live.menu "Preset"    --> prepend preset    --> jsui
       live.numbox A/B/C     --> pak 3 4 5 --> prepend abc --> jsui
-      live.dial "Radius"    --> prepend radius    --> jsui
-      live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors --> prepend <sel> --> jsui
-      live.numbox TraceLen  --> prepend tracelen  --> jsui
-      live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom + live.dial Pan --> prepend <sel> --> jsui
-      live.toggle Plr/XfPrev + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
+      live.numbox Radius/TraceLen --> prepend radius / tracelen --> jsui
+      live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors/RegTrace --> prepend <sel> --> jsui
+      live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom/Pan --> prepend <sel> --> jsui
+      live.toggle Plr/XfPrev/AutoFit + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
 36 parameters. The button is a top-level param (key "obj-20"); the 35 controls inside the
@@ -127,7 +126,7 @@ CTRL = [
     ('TonA',       'TonA',      'obj-140', 'live.numbox',  None),
     ('TonB',       'TonB',      'obj-141', 'live.numbox',  None),
     ('TonC',       'TonC',      'obj-142', 'live.numbox',  None),
-    ('Radius',     'Radius',    'obj-150', 'live.dial',    'radius'),
+    ('Radius',     'Radius',    'obj-150', 'live.numbox',  'radius'),
     ('Trace',      'Trace',     'obj-160', 'live.toggle',  'trace'),
     ('TraceLen',   'TraceLen',  'obj-162', 'live.numbox',  'tracelen'),
     ('Harmonize',  'Harmonize', 'obj-170', 'live.toggle',  'harm'),
@@ -141,7 +140,7 @@ CTRL = [
     ('Tuning',     'Tuning',    'obj-244', 'live.menu',    'tuning'),
     ('Frets',      'Frets',     'obj-246', 'live.numbox',  'frets'),
     ('Zoom',       'Zoom',      'obj-248', 'live.numbox',  'zoom'),
-    ('Pan',        'Pan',       'obj-250', 'live.dial',    'pan'),
+    ('Pan',        'Pan',       'obj-250', 'live.numbox',  'pan'),
     ('Plr',        'Plr',       'obj-260', 'live.toggle',  'plr'),
     ('XfPrev',     'XfPrev',    'obj-262', 'live.toggle',  'xfprev'),
     ('XfMode',     'XfMode',    'obj-264', 'live.tab',     'xfmode'),
@@ -305,26 +304,26 @@ def build_subpatcher(appversion):
               presentation=1, presentation_rect=[float(x), float(y), float(w), 15.0],
               fontsize=9.0, text=txt, varname='tzw_lb%d_%d' % (int(x), int(y)))
 
-    # --- control strip: five rows, fits ~490 px wide ---------------------------------------
-    # row 1 (y 6): pick panels a dedo -- one toggle per view -- + the diatonic key
+    # --- control strip: five 30px rows, fits ~510 px wide; inline labels so nothing overlaps -
+    # row 1 (y 8): pick panels a dedo -- one toggle per view -- + the diatonic key
     vtog = [('VwTonnetz', 'obj-120', 'vton', 'Ton'), ('VwChrom', 'obj-121', 'vchr', 'Cro'),
             ('VwFifths', 'obj-122', 'vfif', 'Qui'), ('VwVoice', 'obj-123', 'vvoc', 'Voc'),
             ('VwPiano', 'obj-124', 'vpno', 'Pno'), ('VwGuitar', 'obj-125', 'vgtr', 'Gtr'),
             ('VwDiat', 'obj-126', 'vdia', 'Dia')]
     vx = 8.0
     for longname, cid, sel, word in vtog:
-        control(longname, cid, 'live.toggle', sel, [vx, 6.0, 15.0, 15.0])
-        label(vx + 16, 7.0, 26.0, word)
-        vx += 46.0
-    control('Key',     'obj-128', 'live.menu', 'keyroot', [vx + 4, 6.0, 68.0, 20.0])
-    control('KeyMode', 'obj-129', 'live.tab',  'keymode', [vx + 78, 6.0, 84.0, 20.0])
+        control(longname, cid, 'live.toggle', sel, [vx, 8.0, 14.0, 14.0])
+        label(vx + 16, 8.0, 24.0, word)
+        vx += 44.0
+    control('Key',     'obj-128', 'live.menu', 'keyroot', [320.0, 6.0, 62.0, 20.0])
+    control('KeyMode', 'obj-129', 'live.tab',  'keymode', [388.0, 6.0, 90.0, 20.0])
 
-    # row 2 (y 32): Tonnetz shape -- preset, a/b/c vector, spacing, trace length
-    control('Preset', 'obj-130', 'live.menu', 'preset', [8.0, 32.0, 150.0, 22.0])
-    label(168.0, 26.0, 40.0, 'a  b  c')
-    control('TonA', 'obj-140', 'live.numbox', None, [168.0, 40.0, 30.0, 18.0])
-    control('TonB', 'obj-141', 'live.numbox', None, [202.0, 40.0, 30.0, 18.0])
-    control('TonC', 'obj-142', 'live.numbox', None, [236.0, 40.0, 30.0, 18.0])
+    # row 2 (y 38): Tonnetz shape -- preset, a/b/c vector, spacing, trace length
+    control('Preset', 'obj-130', 'live.menu', 'preset', [8.0, 37.0, 140.0, 20.0])
+    label(154.0, 40.0, 30.0, 'a b c')
+    control('TonA', 'obj-140', 'live.numbox', None, [186.0, 40.0, 26.0, 18.0])
+    control('TonB', 'obj-141', 'live.numbox', None, [214.0, 40.0, 26.0, 18.0])
+    control('TonC', 'obj-142', 'live.numbox', None, [242.0, 40.0, 26.0, 18.0])
     plumb('obj-145', 'pak 3 4 5', 372.0, PLUMB_Y + 300, 60.0, 'tzw_pak',
           numinlets=3, numoutlets=1)
     plumb('obj-146', 'prepend abc', 372.0, PLUMB_Y + 326, 90.0, 'tzw_pp_abc')
@@ -333,53 +332,53 @@ def build_subpatcher(appversion):
     hline('obj-142', 0, 'obj-145', 2)
     hline('obj-145', 0, 'obj-146', 0)
     hline('obj-146', 0, 'obj-100', 0)
-    label(274.0, 26.0, 40.0, 'Radio')
-    control('Radius', 'obj-150', 'live.dial', 'radius', [276.0, 38.0, 24.0, 24.0])
-    label(312.0, 26.0, 16.0, 'n')
-    control('TraceLen', 'obj-162', 'live.numbox', 'tracelen', [310.0, 40.0, 30.0, 18.0])
+    label(276.0, 40.0, 32.0, 'radio')
+    control('Radius', 'obj-150', 'live.numbox', 'radius', [312.0, 40.0, 34.0, 18.0])
+    label(352.0, 40.0, 34.0, 'traza')
+    control('TraceLen', 'obj-162', 'live.numbox', 'tracelen', [388.0, 40.0, 28.0, 18.0])
 
-    # row 3 (y 58): the seven analysis toggles, each labelled
+    # row 3 (y 68): the seven analysis toggles, each labelled
     tog = [('Trace', 'obj-160', 'trace', 'Rastro'), ('Harmonize', 'obj-170', 'harm', 'Vecinos'),
            ('Faces', 'obj-180', 'faces', 'Estruct'), ('Labels', 'obj-190', 'labels', 'Nombres'),
            ('ChordPoly', 'obj-210', 'chordpoly', 'Poligono'),
            ('TracePath', 'obj-212', 'tracepath', 'Camino'), ('Colors', 'obj-214', 'colors', 'Color')]
     tx = 8.0
     for longname, cid, sel, word in tog:
-        control(longname, cid, 'live.toggle', sel, [tx, 58.0, 16.0, 16.0])
-        label(tx + 18, 59.0, 52.0, word)
-        tx += 74.0
+        control(longname, cid, 'live.toggle', sel, [tx, 68.0, 15.0, 15.0])
+        label(tx + 18, 68.0, 52.0, word)
+        tx += 70.0
 
-    # row 4 (y 82): piano / guitar controls
-    control('PianoMode',  'obj-240', 'live.tab',    'pianomode',  [8.0, 82.0, 100.0, 20.0])
-    control('GuitarMode', 'obj-242', 'live.tab',    'guitarmode', [116.0, 82.0, 120.0, 20.0])
-    control('Tuning',     'obj-244', 'live.menu',   'tuning',     [244.0, 82.0, 96.0, 20.0])
-    label(348.0, 74.0, 34.0, 'Trast')
-    control('Frets', 'obj-246', 'live.numbox', 'frets', [348.0, 86.0, 28.0, 18.0])
-    label(384.0, 74.0, 32.0, 'Zoom')
-    control('Zoom', 'obj-248', 'live.numbox', 'zoom', [386.0, 86.0, 30.0, 18.0])
-    label(424.0, 74.0, 24.0, 'Pan')
-    control('Pan', 'obj-250', 'live.dial', 'pan', [446.0, 80.0, 22.0, 22.0])
+    # row 4 (y 98): piano / guitar controls
+    control('PianoMode',  'obj-240', 'live.tab',  'pianomode',  [8.0, 98.0, 88.0, 20.0])
+    control('GuitarMode', 'obj-242', 'live.tab',  'guitarmode', [102.0, 98.0, 98.0, 20.0])
+    control('Tuning',     'obj-244', 'live.menu', 'tuning',     [206.0, 98.0, 84.0, 20.0])
+    label(296.0, 100.0, 30.0, 'trast')
+    control('Frets', 'obj-246', 'live.numbox', 'frets', [328.0, 100.0, 26.0, 18.0])
+    label(360.0, 100.0, 30.0, 'zoom')
+    control('Zoom', 'obj-248', 'live.numbox', 'zoom', [392.0, 100.0, 26.0, 18.0])
+    label(424.0, 100.0, 24.0, 'pan')
+    control('Pan', 'obj-250', 'live.numbox', 'pan', [450.0, 100.0, 34.0, 18.0])
 
-    # row 5 (y 106): neo-Riemannian arrows + transformation preview
-    control('Plr', 'obj-260', 'live.toggle', 'plr', [8.0, 108.0, 16.0, 16.0])
-    label(26.0, 109.0, 40.0, 'P/L/R')
-    control('XfPrev', 'obj-262', 'live.toggle', 'xfprev', [70.0, 108.0, 16.0, 16.0])
-    label(88.0, 109.0, 34.0, 'Prev')
-    control('XfMode', 'obj-264', 'live.tab', 'xfmode', [126.0, 106.0, 130.0, 20.0])
-    label(262.0, 98.0, 16.0, 'T')
-    control('Xpose', 'obj-266', 'live.numbox', 'xpose', [262.0, 110.0, 30.0, 18.0])
-    label(298.0, 98.0, 24.0, 'eje')
-    control('InvC', 'obj-268', 'live.numbox', 'invc', [298.0, 110.0, 30.0, 18.0])
-    control('RegTrace', 'obj-270', 'live.toggle', 'regtrace', [340.0, 108.0, 16.0, 16.0])
-    label(358.0, 109.0, 48.0, 'Regiones')
-    control('AutoFit', 'obj-272', 'live.toggle', 'autofit', [414.0, 108.0, 16.0, 16.0])
-    label(432.0, 109.0, 44.0, 'Ajuste')
+    # row 5 (y 128): neo-Riemannian arrows + transformation preview + region trace / autofit
+    control('Plr', 'obj-260', 'live.toggle', 'plr', [8.0, 128.0, 15.0, 15.0])
+    label(26.0, 128.0, 38.0, 'P/L/R')
+    control('XfPrev', 'obj-262', 'live.toggle', 'xfprev', [68.0, 128.0, 15.0, 15.0])
+    label(86.0, 128.0, 30.0, 'prev')
+    control('XfMode', 'obj-264', 'live.tab', 'xfmode', [118.0, 128.0, 112.0, 18.0])
+    label(236.0, 128.0, 30.0, 'trans')
+    control('Xpose', 'obj-266', 'live.numbox', 'xpose', [268.0, 128.0, 26.0, 18.0])
+    label(298.0, 128.0, 20.0, 'eje')
+    control('InvC', 'obj-268', 'live.numbox', 'invc', [320.0, 128.0, 26.0, 18.0])
+    control('RegTrace', 'obj-270', 'live.toggle', 'regtrace', [356.0, 128.0, 15.0, 15.0])
+    label(374.0, 128.0, 52.0, 'Regiones')
+    control('AutoFit', 'obj-272', 'live.toggle', 'autofit', [434.0, 128.0, 15.0, 15.0])
+    label(452.0, 128.0, 44.0, 'Ajuste')
 
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
-    # y must match BOX_TOP in tonnetz.js (five-row strip).
+    # y must match BOX_TOP in tonnetz.js (five 30px rows + margin).
     mkbox(bl, id='obj-100', maxclass='jsui', numinlets=1, numoutlets=1, outlettype=[''],
-          patching_rect=[8.0, 132.0, 1600.0, 1100.0], parameter_enable=0,
+          patching_rect=[8.0, 152.0, 1600.0, 1100.0], parameter_enable=0,
           filename=JS, varname='tzw_ui')
 
     # initial state -> jsui (hidden loadbang chain)
@@ -400,7 +399,7 @@ def build_subpatcher(appversion):
 
     return {
         'fileversion': 1, 'appversion': appversion, 'classnamespace': 'box',
-        'rect': [140.0, 110.0, 1040.0, 720.0], 'openrect': [0.0, 0.0, 1040.0, 720.0],
+        'rect': [140.0, 110.0, 1040.0, 770.0], 'openrect': [0.0, 0.0, 1040.0, 770.0],
         'openinpresentation': 0, 'default_fontsize': 10.0, 'default_fontname': 'Arial',
         'gridsize': [8.0, 8.0], 'toolbarvisible': 0, 'enablehscroll': 0, 'enablevscroll': 0,
         'title': 'Tonnetz',
@@ -527,7 +526,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v7: + region trace + compactness analyser)')
+    print('tonnetz.amxd  (v7b: tidied 5-row control strip, dials -> numboxes)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))

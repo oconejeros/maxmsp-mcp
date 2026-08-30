@@ -216,7 +216,7 @@ for (var i = 0; i < 128; i++) midiVoices[i] = 0;
 // The jsui box is left oversized; we draw only within the floating window's real size, read
 // from the subpatcher's Wind. Also try to match the box rect to it (harmless if read-only).
 var BOX_PAD_X = 8;     // must match the jsui box x in build_tonnetz.py
-var BOX_TOP   = 118;   // four-row control strip reserved at the top of the window
+var BOX_TOP   = 152;   // five-row control strip reserved at the top of the window (match build_tonnetz.py jsui y)
 
 function windSize() {
 	try {
