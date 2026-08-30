@@ -19,6 +19,14 @@
 // a guitar fretboard (every position of a sounding pitch class, or only the exact sounding
 // notes), with adjustable tuning/frets and a shared zoom + pan.
 //
+// v5: three overlays from Bigo et al. CMJ 2015. `faces` now also draws the chord's
+// 1-simplices (every lattice edge with both ends sounding) and fattens sounding nodes -- the
+// chord's full simplicial closure (Fig. 5b), not just the filled triangle. `plr` draws the
+// neo-Riemannian P/L/R arrows from a sounding major/minor triad to its three edge-neighbours
+// (Fig. 4a). `xfprev` previews a transformation (transpose by `xpose`, or invert about
+// `invc`) by drawing the resulting pitch classes as magenta ghost rings -- purely a drawing,
+// the MIDI is never touched (Fig. 11, eqs. 4/5).
+//
 // Messages:
 //   note <pitch> <vel>   MIDI note; vel 0 = note-off. Ref-counted (per pitch class AND per
 //                        MIDI note); a fresh pitch-class onset pushes the trace.
@@ -43,6 +51,11 @@
 //   colors <0|1>         per-pitch-class colours (1, default) vs uniform blue
 //   chordpoly <0|1>      join the sounding notes into a polygon on the circles (1, default)
 //   tracepath <0|1>      draw the trace as a chronological path on the circles (0, default)
+//   plr <0|1>            draw P/L/R arrows from a sounding maj/min triad (Tonnetz only)
+//   xfprev <0|1>         draw a transformation preview as ghost rings (does not touch MIDI)
+//   xfmode <0|1>         preview mode: 0 transpose by `xpose`, 1 invert about `invc`
+//   xpose <0..11>        semitones for the transpose preview
+//   invc <0..11>         inversion centre (pitch class) for the invert preview
 //   info <text ...>      set the footer analysis line (from pcsetinfo.js)
 //   refresh              force a resize check + redraw
 
@@ -100,6 +113,7 @@ var COL_FACE   = [0.594, 0.72, 0.928, 0.16];
 var COL_POLY   = [0.92, 0.92, 0.95, 0.9];
 var COL_POLY_F = [0.92, 0.92, 0.95, 0.08];
 var COL_INFO   = [0.62, 0.66, 0.72, 1];
+var COL_GHOST  = [0.87, 0.42, 0.92, 1];   // transformation-preview ghost (magenta)
 
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 var FIFTHS = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
@@ -148,6 +162,12 @@ var labelsOn = 1;
 var colorsOn = 1;
 var chordPolyOn = 1;
 var tracePathOn = 0;
+var plrOn = 0;           // neo-Riemannian P/L/R arrows on the Tonnetz
+var xfPrevOn = 0;        // transformation-preview ghost
+var xfMode = 0;          // 0 transpose by xposeN, 1 invert about invcN
+var xposeN = 0;
+var invcN = 0;
+var ghostSet = [];       // preview pitch classes (rebuilt each paint; empty when off)
 var infoText = "";
 var pianoMode = 0;       // 0 one octave, 1 full MIDI range
 var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes only
@@ -163,7 +183,7 @@ for (var i = 0; i < 128; i++) midiVoices[i] = 0;
 // The jsui box is left oversized; we draw only within the floating window's real size, read
 // from the subpatcher's Wind. Also try to match the box rect to it (harmless if read-only).
 var BOX_PAD_X = 8;     // must match the jsui box x in build_tonnetz.py
-var BOX_TOP   = 92;    // three-row control strip reserved at the top of the window
+var BOX_TOP   = 118;   // four-row control strip reserved at the top of the window
 
 function windSize() {
 	try {
@@ -282,7 +302,22 @@ function labels(v) { labelsOn = v ? 1 : 0; mgraphics.redraw(); }
 function colors(v) { colorsOn = v ? 1 : 0; mgraphics.redraw(); }
 function chordpoly(v) { chordPolyOn = v ? 1 : 0; mgraphics.redraw(); }
 function tracepath(v) { tracePathOn = v ? 1 : 0; mgraphics.redraw(); }
+function plr(v) { plrOn = v ? 1 : 0; mgraphics.redraw(); }
+function xfprev(v) { xfPrevOn = v ? 1 : 0; mgraphics.redraw(); }
+function xfmode(v) { xfMode = v ? 1 : 0; mgraphics.redraw(); }
+function xpose(v) { xposeN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
+function invc(v) { invcN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
 function info() { infoText = arrayfromargs(arguments).join(" "); mgraphics.redraw(); }
+
+// item G: pitch classes the preview would produce -- transpose (eq. 4) or invert (eq. 5).
+function computeGhost() {
+	ghostSet = [];
+	if (!xfPrevOn) return;
+	for (var i = 0; i < activeSet.length; i++) {
+		var g = xfMode ? mod12(invcN - activeSet[i]) : mod12(activeSet[i] + xposeN);
+		if (ghostSet.indexOf(g) < 0) ghostSet.push(g);
+	}
+}
 
 // ---- painting ---------------------------------------------------------------------
 function paint() {
@@ -290,6 +325,7 @@ function paint() {
 	var W = wh[0], H = wh[1];
 	var footer = 22;
 	var cH = H - footer;
+	computeGhost();
 
 	mgraphics.set_source_rgba(BG);
 	mgraphics.rectangle(0, 0, W, H);
@@ -399,6 +435,19 @@ function paintTonnetz(r) {
 			edge(p, q, p + 1, q); edge(p, q, p, q + 1); edge(p, q, p + 1, q - 1);
 		}
 
+	// item A: the chord's 1-simplices -- any lattice edge with both endpoints sounding
+	if (facesOn && activeSet.length >= 2) {
+		mgraphics.set_source_rgba(COL_POLY);
+		mgraphics.set_line_width(2.5);
+		for (p = -pMax; p <= pMax; p++)
+			for (q = -qMax; q <= qMax; q++) {
+				if (!inRect(sx(p, q), sy(p, q)) || !isActive(pcAt(p, q))) continue;
+				if (isActive(pcAt(p + 1, q)))     edge(p, q, p + 1, q);
+				if (isActive(pcAt(p, q + 1)))     edge(p, q, p, q + 1);
+				if (isActive(pcAt(p + 1, q - 1))) edge(p, q, p + 1, q - 1);
+			}
+	}
+
 	mgraphics.select_font_face("Arial Bold");
 	mgraphics.set_font_size(10);
 	var rad = Math.max(9, Math.min(15, S * 0.28));
@@ -408,6 +457,74 @@ function paintTonnetz(r) {
 			if (!inRect(x, y)) continue;
 			drawNode(x, y, rad, pcAt(p, q), harmSet.indexOf(pcAt(p, q)) >= 0);
 		}
+
+	if (plrOn) paintPLR(pMax, qMax);
+}
+
+// item B: neo-Riemannian P/L/R. From the sounding major or minor triad, draw an arrow to
+// each of the three lattice triangles that share an edge with it, labelled by which pair of
+// common tones the edge carries (root+fifth = P, third+fifth = L, root+third = R).
+function triadInfo(set) {
+	if (set.length !== 3) return null;
+	var s = set.slice().sort(function (a, b) { return a - b; });
+	for (var i = 0; i < 3; i++) {
+		var r = s[i], b = s[(i + 1) % 3], c = s[(i + 2) % 3];
+		var i1 = mod12(b - r), i2 = mod12(c - r);
+		if ((i1 === 3 && i2 === 7) || (i1 === 4 && i2 === 7)) return { root: r, third: b, fifth: c };
+	}
+	return null;
+}
+function plrLabel(shared, ti) {
+	function has(x) { return shared.indexOf(x) >= 0; }
+	if (has(ti.root) && has(ti.fifth)) return "P";
+	if (has(ti.third) && has(ti.fifth)) return "L";
+	if (has(ti.root) && has(ti.third)) return "R";
+	return "";
+}
+function paintPLR(pMax, qMax) {
+	var ti = triadInfo(activeSet);
+	if (!ti) return;
+	var want = [ti.root, ti.third, ti.fifth];
+	var tris = [[[0, 0], [1, 0], [0, 1]], [[1, 0], [0, 1], [1, 1]]];
+	var found = null, bestD = 1e18;
+	for (var p = -pMax; p <= pMax; p++)
+		for (var q = -qMax; q <= qMax; q++)
+			for (var t = 0; t < 2; t++) {
+				var V = tris[t];
+				var vx = [p + V[0][0], p + V[1][0], p + V[2][0]];
+				var vy = [q + V[0][1], q + V[1][1], q + V[2][1]];
+				if (want.indexOf(pcAt(vx[0], vy[0])) < 0 ||
+				    want.indexOf(pcAt(vx[1], vy[1])) < 0 ||
+				    want.indexOf(pcAt(vx[2], vy[2])) < 0) continue;
+				var cx = (sx(vx[0], vy[0]) + sx(vx[1], vy[1]) + sx(vx[2], vy[2])) / 3;
+				var cy = (sy(vx[0], vy[0]) + sy(vx[1], vy[1]) + sy(vx[2], vy[2])) / 3;
+				var d = (cx - G.cx) * (cx - G.cx) + (cy - G.cy) * (cy - G.cy);
+				if (d < bestD) { bestD = d; found = { vx: vx, vy: vy }; }
+			}
+	if (!found) return;
+	var vx = found.vx, vy = found.vy;
+	var scx = (sx(vx[0], vy[0]) + sx(vx[1], vy[1]) + sx(vx[2], vy[2])) / 3;
+	var scy = (sy(vx[0], vy[0]) + sy(vx[1], vy[1]) + sy(vx[2], vy[2])) / 3;
+
+	mgraphics.select_font_face("Arial Bold");
+	mgraphics.set_font_size(11);
+	for (var e = 0; e < 3; e++) {
+		var a = e, b = (e + 1) % 3, cc = (e + 2) % 3;
+		var nx = vx[a] + vx[b] - vx[cc], ny = vy[a] + vy[b] - vy[cc];   // reflect across edge
+		var ncx = (sx(vx[a], vy[a]) + sx(vx[b], vy[b]) + sx(nx, ny)) / 3;
+		var ncy = (sy(vx[a], vy[a]) + sy(vx[b], vy[b]) + sy(nx, ny)) / 3;
+		var lbl = plrLabel([pcAt(vx[a], vy[a]), pcAt(vx[b], vy[b])], ti);
+		mgraphics.set_source_rgba(COL_HARM);
+		mgraphics.set_line_width(1.5);
+		mgraphics.move_to(scx, scy);
+		mgraphics.line_to(ncx, ncy);
+		mgraphics.stroke();
+		mgraphics.ellipse(ncx - 2.5, ncy - 2.5, 5, 5);
+		mgraphics.fill();
+		mgraphics.set_source_rgba(1, 1, 1, 1);
+		mgraphics.move_to(ncx + 4, ncy - 4);
+		mgraphics.show_text(lbl);
+	}
 }
 
 // ---- chromatic / fifths circle -------------------------------------------------
@@ -441,6 +558,19 @@ function paintCircle(r, order, title) {
 		mgraphics.set_source_rgba(COL_POLY); mgraphics.stroke();
 	}
 
+	// transformation-preview ghost polygon
+	if (ghostSet.length >= 2) {
+		var gp = [];
+		for (var g = 0; g < ghostSet.length; g++) gp.push([order.indexOf(ghostSet[g]), ptOf(ghostSet[g])]);
+		gp.sort(function (u, v) { return u[0] - v[0]; });
+		mgraphics.set_line_width(1.5);
+		mgraphics.move_to(gp[0][1][0], gp[0][1][1]);
+		for (var gk = 1; gk < gp.length; gk++) mgraphics.line_to(gp[gk][1][0], gp[gk][1][1]);
+		mgraphics.close_path();
+		mgraphics.set_source_rgba(COL_GHOST[0], COL_GHOST[1], COL_GHOST[2], 0.5);
+		mgraphics.stroke();
+	}
+
 	// trace path: chronological, fading old -> new
 	if (tracePathOn && traceQ.length >= 2) {
 		mgraphics.set_line_width(2);
@@ -467,8 +597,9 @@ function paintCircle(r, order, title) {
 
 // one lattice / circle vertex, coloured by its state
 function drawNode(x, y, rad, pc, isHarm) {
+	var rr = isActive(pc) ? rad * 1.15 : rad;   // item A: sounding vertices sit a bit proud
 	mgraphics.set_line_width(1.5);
-	mgraphics.ellipse(x - rad, y - rad, rad * 2, rad * 2);
+	mgraphics.ellipse(x - rr, y - rr, rr * 2, rr * 2);
 
 	var textCol;
 	if (isActive(pc)) {
@@ -496,6 +627,14 @@ function drawNode(x, y, rad, pc, isHarm) {
 	mgraphics.set_source_rgba(textCol);
 	mgraphics.move_to(x - (s.length > 1 ? 8 : 4), y + 4);
 	mgraphics.show_text(s);
+
+	// item G: transformation-preview ghost ring
+	if (ghostSet.length && !isActive(pc) && ghostSet.indexOf(pc) >= 0) {
+		mgraphics.set_source_rgba(COL_GHOST);
+		mgraphics.set_line_width(2);
+		mgraphics.ellipse(x - rad - 3, y - rad - 3, (rad + 3) * 2, (rad + 3) * 2);
+		mgraphics.stroke();
+	}
 }
 
 // ---- piano keyboard ---------------------------------------------------------------

@@ -10,12 +10,12 @@ Same method as tools/build_midibounce.py: the maxmsp MCP server is not reachable
 dependency_cache. Copying the template's bytes keeps the binary AMPF/meta chunk that marks
 the file as a MIDI effect ('midf') and the whole `project` block.
 
-LAYOUT (v4). The Live device panel is nearly empty: a single "Tonnetz" button. The big
+LAYOUT (v5). The Live device panel is nearly empty: a single "Tonnetz" button. The big
 jsui, every control and the analyser live in an inline subpatcher `[p tonnetz_window]` that
 opens as its OWN floating window (outside the rack) via `[pcontrol]`; `live.thisdevice`
 opens it on load. The subpatcher opens in PATCHING view (not presentation) so tonnetz.js's
 fitToWindow() -- which sets its own box rect from `this.patcher.wind.size` -- actually
-resizes the canvas as the window is dragged. A 3-row control strip sits at the top; the
+resizes the canvas as the window is dragged. A 4-row control strip sits at the top; the
 jsui fills the rest and draws five views -- Tonnetz, chromatic circle, fifths circle, piano
 keyboard, guitar fretboard -- either one at a time or all at once ("Todo", stacked in rows).
 
@@ -36,12 +36,13 @@ keyboard, guitar fretboard -- either one at a time or all at once ("Todo", stack
       live.toggle Trace/Harmonize/Faces/Labels/ChordPoly/TracePath/Colors --> prepend <sel> --> jsui
       live.numbox TraceLen  --> prepend tracelen  --> jsui
       live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom + live.dial Pan --> prepend <sel> --> jsui
+      live.toggle Plr/XfPrev + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-21 parameters. The button is a top-level param (key "obj-20"); the 20 controls inside the
+26 parameters. The button is a top-level param (key "obj-20"); the 25 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Three Push banks (8 + 8 + 5).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Four Push banks (8 + 8 + 4 + 6).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -89,6 +90,11 @@ ANN = {
     'Frets': 'Numero de trastes de la guitarra (12-24).',
     'Zoom': 'Zoom horizontal del piano y la guitarra (1-8x).',
     'Pan': 'Desplazamiento horizontal del piano / guitarra cuando el zoom excede el panel (0-1).',
+    'Plr': 'Flechas P (paralela), L (tono de sensible) y R (relativa) desde la triada mayor/menor que suena a sus tres triangulos vecinos (solo Tonnetz).',
+    'XfPrev': 'Previsualiza una transformacion dibujando el acorde resultante como aros fantasma magenta. NO cambia el MIDI.',
+    'XfMode': 'Modo de la previsualizacion: Transponer (sube Xpose semitonos) o Invertir (refleja alrededor de la clase de altura InvC).',
+    'Xpose': 'Semitonos de transposicion para la previsualizacion (0-11).',
+    'InvC': 'Centro de inversion (clase de altura 0-11) para la previsualizacion.',
 }
 
 # (longname, shortname, innerid, maxclass, prepend-selector or None)
@@ -113,15 +119,23 @@ CTRL = [
     ('Frets',      'Frets',     'obj-246', 'live.numbox',  'frets'),
     ('Zoom',       'Zoom',      'obj-248', 'live.numbox',  'zoom'),
     ('Pan',        'Pan',       'obj-250', 'live.dial',    'pan'),
+    ('Plr',        'Plr',       'obj-260', 'live.toggle',  'plr'),
+    ('XfPrev',     'XfPrev',    'obj-262', 'live.toggle',  'xfprev'),
+    ('XfMode',     'XfMode',    'obj-264', 'live.tab',     'xfmode'),
+    ('Xpose',      'Xpose',     'obj-266', 'live.numbox',  'xpose'),
+    ('InvC',       'InvC',      'obj-268', 'live.numbox',  'invc'),
 ]
-TOGGLES = ['Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors']
+TOGGLES = ['Trace', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors',
+           'Plr', 'XfPrev']
 BANG_SAFE = ['obj-120', 'obj-130', 'obj-140', 'obj-141', 'obj-142', 'obj-150', 'obj-162',
-             'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250']
+             'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
+             'obj-264', 'obj-266', 'obj-268']
 
 BANKS = [
     ('Tonnetz',   ['Abrir', 'View', 'Preset', 'TonA', 'TonB', 'TonC', 'Radius', 'Trace']),
-    ('Tonnetz 2', ['TraceLen', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors', 'PianoMode']),
-    ('Piano/Guit', ['GuitarMode', 'Tuning', 'Frets', 'Zoom', 'Pan']),
+    ('Tonnetz 2', ['TraceLen', 'Harmonize', 'Faces', 'Labels', 'ChordPoly', 'TracePath', 'Colors', 'Plr']),
+    ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC']),
+    ('Piano/Guit', ['PianoMode', 'GuitarMode', 'Tuning', 'Frets', 'Zoom', 'Pan']),
 ]
 
 
@@ -169,6 +183,11 @@ VO = {
     'Frets':     num_vo('Frets', 'Frets', 12, 24, 22),
     'Zoom':      num_vo('Zoom', 'Zoom', 1, 8, 1),
     'Pan':       num_vo('Pan', 'Pan', 0, 1, 0.5),
+    'Plr':       toggle_vo('Plr', 0),
+    'XfPrev':    toggle_vo('XfPrev', 0),
+    'XfMode':    enum_vo('XfMode', 'XfMode', ['Transponer', 'Invertir'], 0),
+    'Xpose':     num_vo('Xpose', 'Xpose', 0, 11, 0),
+    'InvC':      num_vo('InvC', 'InvC', 0, 11, 0),
 }
 
 
@@ -284,10 +303,22 @@ def build_subpatcher(appversion):
     label(424.0, 58.0, 24.0, 'Pan')
     control('Pan', 'obj-250', 'live.dial', 'pan', [446.0, 64.0, 22.0, 22.0])
 
+    # row 4 (y 92): neo-Riemannian arrows + transformation preview
+    control('Plr', 'obj-260', 'live.toggle', 'plr', [8.0, 94.0, 16.0, 16.0])
+    label(26.0, 95.0, 40.0, 'P/L/R')
+    control('XfPrev', 'obj-262', 'live.toggle', 'xfprev', [70.0, 94.0, 16.0, 16.0])
+    label(88.0, 95.0, 34.0, 'Prev')
+    control('XfMode', 'obj-264', 'live.tab', 'xfmode', [126.0, 92.0, 130.0, 20.0])
+    label(262.0, 84.0, 16.0, 'T')
+    control('Xpose', 'obj-266', 'live.numbox', 'xpose', [262.0, 96.0, 30.0, 18.0])
+    label(298.0, 84.0, 24.0, 'eje')
+    control('InvC', 'obj-268', 'live.numbox', 'invc', [298.0, 96.0, 30.0, 18.0])
+
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
+    # y must match BOX_TOP in tonnetz.js (four-row strip).
     mkbox(bl, id='obj-100', maxclass='jsui', numinlets=1, numoutlets=1, outlettype=[''],
-          patching_rect=[8.0, 92.0, 1600.0, 1100.0], parameter_enable=0,
+          patching_rect=[8.0, 118.0, 1600.0, 1100.0], parameter_enable=0,
           filename=JS, varname='tzw_ui')
 
     # initial state -> jsui (hidden loadbang chain)
@@ -308,7 +339,7 @@ def build_subpatcher(appversion):
 
     return {
         'fileversion': 1, 'appversion': appversion, 'classnamespace': 'box',
-        'rect': [140.0, 110.0, 1040.0, 640.0], 'openrect': [0.0, 0.0, 1040.0, 640.0],
+        'rect': [140.0, 110.0, 1040.0, 690.0], 'openrect': [0.0, 0.0, 1040.0, 690.0],
         'openinpresentation': 0, 'default_fontsize': 10.0, 'default_fontname': 'Arial',
         'gridsize': [8.0, 8.0], 'toolbarvisible': 0, 'enablehscroll': 0, 'enablevscroll': 0,
         'title': 'Tonnetz',
@@ -433,7 +464,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v4: + piano & guitar views)')
+    print('tonnetz.amxd  (v5: + simplicial closure, P/L/R, transform preview)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))
