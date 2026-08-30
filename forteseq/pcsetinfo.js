@@ -21,8 +21,9 @@
 //                          2 inv. de quintas (M7 == a rotation) | 3 espejo de quintas
 //                          (M7 == the inversion). Composes with disssort.
 //     studymove <0|1>      what `tonic` does: 0 = transpose the whole figure (default),
-//                          1 = `tonic` picks which member is the root and pins it to pc 0
-//                          (node C); the figure re-spells around that fixed point.
+//                          1 = "Rota raiz": the lit shape stays put (prime necklace at pc 0)
+//                          and `tonic` only rotates the jsui's note names / colours so the
+//                          chosen root is drawn where C sits (`studyspell` carries the offset).
 //
 //   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
 //                                               with `diso <pct>% (<label>)` then any of the
@@ -31,6 +32,7 @@
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
 //                            `list <pc ...>`    (study mode only; the set to display)
 //                            `studyroot <pc>`   (study mode: pc to draw as the root, -1 = none)
+//                            `studyspell <n>`   (Rota raiz: rotate names/colours by n semitones)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
 //     name <sym> | modality <McKay name> | diso <pct 0..100, McKay> |
@@ -370,11 +372,13 @@ function activePcs() {
 
 var studyTag = "";     // "3-11B  12/19" while a study set is showing; cleared by any MIDI
 var studyRoot = -1;    // the pc drawn as the root marker in study mode; -1 = none
+var spellRot = 0;      // Rota raiz: semitones to rotate the jsui's note names / colours by
 
 function note(pitch, vel) {
 	explicit = null;
 	studyTag = "";
 	studyRoot = -1;
+	spellRot = 0;
 	var pc = mod12(Math.round(pitch));
 	if (vel > 0) voices[pc]++;
 	else if (voices[pc] > 0) voices[pc]--;
@@ -389,6 +393,7 @@ function clear() {
 	explicit = null;
 	studyTag = "";
 	studyRoot = -1;
+	spellRot = 0;
 	emit();
 }
 function bang() { emit(); }
@@ -464,9 +469,9 @@ var DISO_SORT = 0;
 function disssort(v) { DISO_SORT = v ? 1 : 0; }
 
 // StudyMove (menu): what StudyTonic does. 0 "Transpone" = slide the whole figure round the
-// chromatic circle (the original behaviour). 1 "Rota raiz" = StudyTonic picks which member
-// is the root and pins it to pc 0 (node C); the figure re-spells its intervals around that
-// fixed point, so the root marker stays put on C while the rest of the shape rotates.
+// chromatic circle (the original behaviour). 1 "Rota raiz" = the lit shape never moves (it
+// stays the prime necklace anchored at pc 0); StudyTonic only rotates the note names and
+// colours so the chosen root is spelled where C sits. `rot` still reshapes; `inv` still flips.
 var STUDY_MOVE = 0;
 function studymove(v) { STUDY_MOVE = v ? 1 : 0; }
 
@@ -502,9 +507,11 @@ function studyset(card, idx1, rot, tonic, inv) {
 	if (!total) {
 		studyTag = "(sin sets: " + FILTER_LABEL[STUDY_FILTER] + ", card " + card + ")";
 		studyRoot = -1;
+		spellRot = 0;
 		outlet(0, "info", "estudio " + studyTag);
 		outlet(0, "setclass", "");
 		outlet(0, "studyroot", -1);
+		outlet(0, "studyspell", 0);
 		return;
 	}
 	var pos = Math.max(0, Math.min(total - 1, Math.round(idx1) - 1));
@@ -515,24 +522,27 @@ function studyset(card, idx1, rot, tonic, inv) {
 	if (inv) base = normal0(invert(base));
 	var n = base.length;
 	var t = Math.round(tonic);
-	// Rota raiz: `tonic` folds into the rotation index instead of transposing -- it picks
-	// which member becomes the root, and that member is pinned to pc 0 (node C). Transpone:
-	// `tonic` is a plain transposition on top of the StudyRot necklace rotation.
-	var r = ((((Math.round(rot) + (STUDY_MOVE ? t : 0)) % n) + n) % n);
+	var r = (((Math.round(rot) % n) + n) % n);
 	var rel = [];                            // interval necklace rotated to start on member r
 	for (var i = 0; i < n; i++) rel.push(mod12(base[(i + r) % n] - base[r]));
 	var outPcs = [];
-	if (STUDY_MOVE) {                        // Rota raiz: necklace anchored at 0, root sits on C
+	if (STUDY_MOVE) {
+		// Rota raiz: the lit shape never moves -- it stays the prime-form necklace anchored
+		// at pc 0. `tonic` only spins the note names / colours around that fixed shape, so
+		// the chosen root ends up drawn where C sits. spellRot carries that to the jsui.
 		for (var j = 0; j < n; j++) outPcs.push(rel[j]);
-		studyRoot = 0;
-		studyTag += "  raiz en C";
-	} else {                                 // Transpone: slide the whole figure to the tonic
+		spellRot = mod12(t);
+		studyRoot = 0;                      // pc-0 slot, now spelled as the root
+		studyTag += "  raiz " + NOTE_NAMES[spellRot] + " (forma fija)";
+	} else {                                // Transpone: slide the whole figure to the tonic
 		var tn = mod12(t);
 		for (var k = 0; k < n; k++) outPcs.push(mod12(rel[k] + tn));
+		spellRot = 0;
 		studyRoot = tn;                     // rel[0] is 0, so the anchored note is the tonic
 	}
 	explicit = uniqSorted(outPcs);
 	outlet(0, ["list"].concat(explicit));   // -> jsui activeSet
+	outlet(0, "studyspell", spellRot);      // -> jsui label/colour rotation (Rota raiz)
 	emit();                                  // -> jsui footer (info / setclass) + studyroot
 }
 
@@ -569,12 +579,13 @@ function emit() {
 		outlet(0, "info", "-");
 		outlet(0, "setclass", "");
 		outlet(0, "studyroot", -1);
+		outlet(0, "studyspell", 0);
 		outlet(1, ["card", 0]);
 		return;
 	}
 
-	var names = [];
-	for (var i = 0; i < pcs.length; i++) names.push(NOTE_NAMES[pcs[i]]);
+	var names = [];   // in Rota raiz mode, spell the names the way the panels draw them
+	for (var i = 0; i < pcs.length; i++) names.push(NOTE_NAMES[mod12(pcs[i] + spellRot)]);
 	var iv = intervalVector(pcs);
 	var prime = primeForm(pcs);
 	var forte = forteName(pcs);

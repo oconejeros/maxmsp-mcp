@@ -67,6 +67,8 @@
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
 //   setclass <p ...>     current set-class prime form (from pcsetinfo.js; lights the vvoc node)
 //   studyroot <pc>       study mode: the pc to draw as the root (white, in COL_ROOT); -1 = none
+//   studyspell <n>       Rota raiz: rotate all node names/colours by n semitones (lit shape
+//                        stays put; the chosen root ends up spelled at C's position)
 //   pianomode <0|1>      piano: 0 one octave (pitch classes) | 1 full MIDI 0..127 (notes)
 //   guitarmode <0|1>     guitar: 0 all fretboard positions of sounding pcs | 1 only exact notes
 //   tuning <i>           guitar tuning index (see TUNINGS)
@@ -245,6 +247,7 @@ var ghostSet = [];       // preview pitch classes (rebuilt each paint; empty whe
 var infoText = "";
 var studyOn = 0;         // 1 = ignore MIDI, activeSet comes from the study set (pcsetinfo)
 var studyRootPc = -1;    // pc pcsetinfo flagged as the study root (-1 = none); drawn in COL_ROOT
+var studySpell = 0;      // Rota raiz: rotate every note name / colour by this many semitones
 var pianoMode = 0;       // 0 one octave, 1 full MIDI range
 var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes only
 var tuningIdx = 0;
@@ -296,7 +299,7 @@ function refresh() { fitToWindow(); mgraphics.redraw(); }
 function mod12(n) { return ((n % 12) + 12) % 12; }
 function isActive(pc) { return activeSet.indexOf(pc) >= 0; }
 function inTrace(pc)  { return traceOn && traceQ.indexOf(pc) >= 0; }
-function label(pc)    { return labelsOn ? NOTE_NAMES[pc] : String(pc); }
+function label(pc)    { return labelsOn ? NOTE_NAMES[sp(pc)] : String(sp(pc)); }
 
 function rebuildActive() {
 	activeSet = [];
@@ -405,6 +408,8 @@ function studymode(v) {
 		for (var i = 0; i < 12; i++) voices[i] = 0;
 		for (var j = 0; j < 128; j++) midiVoices[j] = 0;
 		activeSet = [];
+		studyRootPc = -1;
+		studySpell = 0;
 	}
 	mgraphics.redraw();
 }
@@ -470,6 +475,11 @@ function invc(v) { invcN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.r
 function info() { infoText = arrayfromargs(arguments).join(" "); mgraphics.redraw(); }
 function studyroot(v) { studyRootPc = Math.round(v); mgraphics.redraw(); }
 function isStudyRoot(pc) { return studyOn && studyRootPc >= 0 && pc === studyRootPc; }
+function studyspell(v) { studySpell = mod12(Math.round(v)); mgraphics.redraw(); }
+// display pitch class: in Rota raiz mode the lit geometry stays put and only the labels /
+// colours rotate, so everything drawn as text or hue goes through here (isActive / positions
+// stay on the real pc).
+function sp(pc) { return (studyOn && studySpell) ? mod12(pc + studySpell) : pc; }
 
 // item G: pitch classes the preview would produce -- transpose (eq. 4) or invert (eq. 5).
 function computeGhost() {
@@ -556,8 +566,8 @@ function panel(r, kind) {
 	mgraphics.stroke();
 }
 
-function nodeFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[pc].concat(1) : COL_ACTIVE); }
-function nodeText(pc) { return isStudyRoot(pc) ? COL_TEXT_ACTIVE : (colorsOn ? PC_TEXT[pc] : COL_TEXT_ACTIVE); }
+function nodeFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[sp(pc)].concat(1) : COL_ACTIVE); }
+function nodeText(pc) { return isStudyRoot(pc) ? COL_TEXT_ACTIVE : (colorsOn ? PC_TEXT[sp(pc)] : COL_TEXT_ACTIVE); }
 
 // ---- generalized Tonnetz ---------------------------------------------------------
 var G = { cx: 0, cy: 0, S: 46, r: null };
@@ -1090,17 +1100,17 @@ function drawNode(x, y, rad, pc, isHarm) {
 		}
 		textCol = nodeText(pc);
 	} else if (inTrace(pc)) {
-		if (colorsOn) { var c = PC_COLOR[pc]; mgraphics.set_source_rgba(c[0], c[1], c[2], 0.45); }
+		if (colorsOn) { var c = PC_COLOR[sp(pc)]; mgraphics.set_source_rgba(c[0], c[1], c[2], 0.45); }
 		else mgraphics.set_source_rgba(COL_TRACE);
 		mgraphics.fill();
-		textCol = colorsOn ? PC_TEXT[pc] : COL_TEXT_ACTIVE;
+		textCol = colorsOn ? PC_TEXT[sp(pc)] : COL_TEXT_ACTIVE;
 	} else if (isHarm) {
-		mgraphics.set_source_rgba(colorsOn ? PC_COLOR[pc].concat(1) : COL_HARM);
+		mgraphics.set_source_rgba(colorsOn ? PC_COLOR[sp(pc)].concat(1) : COL_HARM);
 		mgraphics.stroke();
-		textCol = colorsOn ? PC_COLOR[pc].concat(1) : COL_HARM;
+		textCol = colorsOn ? PC_COLOR[sp(pc)].concat(1) : COL_HARM;
 	} else {
 		if (colorsOn) {
-			var d = PC_COLOR[pc];
+			var d = PC_COLOR[sp(pc)];
 			mgraphics.set_source_rgba(d[0], d[1], d[2], 0.10); mgraphics.fill_preserve();
 		}
 		mgraphics.set_source_rgba(COL_IDLE); mgraphics.stroke();
