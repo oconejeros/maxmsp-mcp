@@ -203,3 +203,10 @@ forteseq/forteseqwf_presets.txt
 # proyecto y es demasiado pesado para el repo.
 forteseq/Harmonic-Processions-Dosia-McKay.pdf
 forteseq/*.amxd.before*
+
+# Paper de referencia (Bigo et al., Computer Music Journal 2015) -- material con derechos,
+# no codigo del proyecto.
+forteseq/Bigo_et_al_CMJ15.pdf
+
+# Archivos .rar generados localmente (snapshots), no fuente.
+*.rar
