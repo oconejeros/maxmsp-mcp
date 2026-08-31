@@ -99,6 +99,12 @@
 //   xpose <0..11>        semitones for the transpose preview
 //   invc <0..11>         inversion centre (pitch class) for the invert preview
 //   info <text ...>      set the footer analysis line (from pcsetinfo.js)
+//   chord <sym ...>      root-relative chord symbol for the footer, e.g. `C7/E` (pcsetinfo.js;
+//                        `-` or empty = none)
+//   keyauto <0|1>        1 = the diatonic panel follows pcsetinfo's key guess instead of the
+//                        Key / KeyMode params (which then go stale -- no writeback)
+//   keyguess <root> <minor> <conf>   Krumhansl-Schmuckler key estimate (pcsetinfo.js); used
+//                        only while keyauto is on and conf clears a small threshold
 //   refresh              force a resize check + redraw
 //
 // Outlet 0 (back into the patch, to keep the Preset menu and the a/b/c numboxes in sync):
@@ -248,11 +254,17 @@ var xposeN = 0;
 var invcN = 0;
 var ghostSet = [];       // preview pitch classes (rebuilt each paint; empty when off)
 var infoText = "";
+var chordText = "";     // root-relative chord symbol from pcsetinfo (Feature 1)
+var disoPct = -1;       // McKay dissonance %, parsed out of the info line to draw the meter
+var q5span = -1;        // circle-of-fifths occupied arc (0..11), parsed out of the info line
+var keyAuto = 0;        // 1 = diatonic panel follows pcsetinfo's key guess, not Key/KeyMode
+var keyGuessRoot = 0, keyGuessMinor = 0, keyGuessConf = 0;
+var KEY_AUTO_MIN_CONF = 0.35;   // below this the guess is too weak to move the panel
 var studyOn = 0;         // 1 = ignore MIDI, activeSet comes from the study set (pcsetinfo)
 var studyRootPc = -1;    // pc pcsetinfo flagged as the study root (-1 = none); drawn in COL_ROOT
 var studySpell = 0;      // Rota raiz: rotate every note name / colour by this many semitones
 var pianoMode = 0;       // 0 one octave, 1 full MIDI range
-var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes only
+var guitarMode = 0;      // 0 all positions of active pcs, 1 exact sounding notes, 2 scale + chord box
 var tuningIdx = 0;
 var fretCount = 22;
 var zoomF = 1;
@@ -322,11 +334,17 @@ function pushSeg() {
 	segs.push({ set: s, t: (new Date()).getTime() });
 	while (segs.length > traceLen) segs.shift();
 }
-// diatonic scale degree -> pitch class in the current key
+// diatonic scale degree -> pitch class in the current key (Key/KeyMode, or the auto guess)
 function scalePc(deg) {
-	var sc = keyMinor ? MIN_SCALE : MAJ_SCALE;
+	var sc = effKeyMinor() ? MIN_SCALE : MAJ_SCALE;
 	deg = ((deg % 7) + 7) % 7;
-	return mod12(keyRoot + sc[deg]);
+	return mod12(effKeyRoot() + sc[deg]);
+}
+// the 7 pitch classes of the current diatonic key -- used by the guitar "Escala" mode
+function scaleSet() {
+	var sc = effKeyMinor() ? MIN_SCALE : MAJ_SCALE, out = [];
+	for (var i = 0; i < 7; i++) out.push(mod12(effKeyRoot() + sc[i]));
+	return out;
 }
 // axes: chromatic uses curAbc (semitones); diatonic uses a fixed stack of diatonic thirds
 // (2 scale steps per x, 4 per y) so triangles are diatonic triads.
@@ -418,7 +436,7 @@ function studymode(v) {
 	mgraphics.redraw();
 }
 function pianomode(v) { pianoMode = v ? 1 : 0; mgraphics.redraw(); }
-function guitarmode(v) { guitarMode = v ? 1 : 0; mgraphics.redraw(); }
+function guitarmode(v) { guitarMode = Math.max(0, Math.min(2, Math.round(v))); mgraphics.redraw(); }
 function tuning(v) { tuningIdx = Math.max(0, Math.min(TUNINGS.length - 1, Math.round(v))); mgraphics.redraw(); }
 function frets(v) { fretCount = Math.max(12, Math.min(24, Math.round(v))); mgraphics.redraw(); }
 function zoom(v) { zoomF = Math.max(1, Math.min(8, v)); mgraphics.redraw(); }
@@ -476,7 +494,30 @@ function xfprev(v) { xfPrevOn = v ? 1 : 0; mgraphics.redraw(); }
 function xfmode(v) { xfMode = v ? 1 : 0; mgraphics.redraw(); }
 function xpose(v) { xposeN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
 function invc(v) { invcN = Math.max(0, Math.min(11, Math.round(v))); mgraphics.redraw(); }
-function info() { infoText = arrayfromargs(arguments).join(" "); mgraphics.redraw(); }
+function info() {
+	infoText = arrayfromargs(arguments).join(" ");
+	var m = infoText.match(/diso ([0-9.]+)%/);
+	disoPct = m ? parseFloat(m[1]) : -1;
+	var q = infoText.match(/q5span ([0-9]+)/);
+	q5span = q ? parseInt(q[1], 10) : -1;
+	mgraphics.redraw();
+}
+function chord() {
+	var t = arrayfromargs(arguments).join(" ");
+	chordText = (t === "-" || t === "") ? "" : t;
+	mgraphics.redraw();
+}
+function keyauto(v) { keyAuto = v ? 1 : 0; mgraphics.redraw(); }
+function keyguess(root, minor, conf) {
+	keyGuessRoot = mod12(Math.round(root));
+	keyGuessMinor = minor ? 1 : 0;
+	keyGuessConf = conf;
+	if (keyAuto) mgraphics.redraw();
+}
+// diatonic panel key source: the manual params, or pcsetinfo's guess when KeyAuto is on and
+// the guess is strong enough. No writeback to the Key/KeyMode controls (would feed back).
+function effKeyRoot()  { return (keyAuto && keyGuessConf >= KEY_AUTO_MIN_CONF) ? keyGuessRoot : keyRoot; }
+function effKeyMinor() { return (keyAuto && keyGuessConf >= KEY_AUTO_MIN_CONF) ? keyGuessMinor : keyMinor; }
 function studyroot(v) { studyRootPc = Math.round(v); mgraphics.redraw(); }
 function isStudyRoot(pc) {
 	if (!studyOn || studyRootPc < 0) return false;
@@ -511,7 +552,7 @@ function paint() {
 	spellHere = 0;
 	var wh = viewportWH();
 	var W = wh[0], H = wh[1];
-	var footer = 22;
+	var footer = 38;   // row 1: chord symbol + dissonance meter; row 2: the analysis line
 	var cH = H - footer;
 	computeGhost();
 
@@ -547,17 +588,63 @@ function paint() {
 		}
 	}
 
-	// footer: set-class info
+	// footer -- row 1: chord symbol (bold) at the left, dissonance meter at the right;
+	// row 2: the full set-class analysis line.
 	mgraphics.set_source_rgba(PANEL_BG);
 	mgraphics.rectangle(0, cH, W, footer);
 	mgraphics.fill();
+
+	if (chordText.length) {
+		mgraphics.set_source_rgba(COL_ACTIVE);
+		mgraphics.select_font_face("Arial Bold");
+		mgraphics.set_font_size(15);
+		mgraphics.move_to(8, cH + 17);
+		mgraphics.show_text(chordText);
+	}
+	if (disoPct >= 0) paintDisoMeter(W, cH);
+
 	if (infoText.length) {
 		mgraphics.set_source_rgba(COL_INFO);
 		mgraphics.select_font_face("Arial");
-		mgraphics.set_font_size(11);
-		mgraphics.move_to(8, cH + 15);
+		mgraphics.set_font_size(10);
+		mgraphics.move_to(8, cH + 32);
 		mgraphics.show_text(infoText);
 	}
+}
+
+// dissonance meter (Feature 3): the McKay % already computed by pcsetinfo, as a slim bar in
+// the top-right of the footer strip, banded by disoLabel; the circle-of-fifths spread rides
+// alongside as a small "5tas N/11".
+var DISO_BANDS = [
+	[4,  [0.38, 0.72, 0.46], "muy consonante"],
+	[10, [0.52, 0.74, 0.40], "consonante"],
+	[20, [0.86, 0.80, 0.32], "medio"],
+	[40, [0.90, 0.55, 0.28], "disonante"],
+	[101,[0.88, 0.34, 0.34], "muy disonante"]
+];
+function disoBand(pct) {
+	for (var i = 0; i < DISO_BANDS.length; i++) if (pct < DISO_BANDS[i][0]) return DISO_BANDS[i];
+	return DISO_BANDS[DISO_BANDS.length - 1];
+}
+function paintDisoMeter(W, cH) {
+	var mw = 140, mh = 8;
+	var mx = W - mw - 10, my = cH + 8;
+	var band = disoBand(disoPct);
+	mgraphics.set_source_rgba(0.10, 0.10, 0.11, 1);
+	mgraphics.rectangle(mx, my, mw, mh); mgraphics.fill();
+	var frac = Math.max(0, Math.min(1, disoPct / 100));
+	mgraphics.set_source_rgba(band[1][0], band[1][1], band[1][2], 1);
+	mgraphics.rectangle(mx, my, mw * frac, mh); mgraphics.fill();
+	mgraphics.set_source_rgba(FRAME);
+	mgraphics.set_line_width(1);
+	mgraphics.rectangle(mx + 0.5, my + 0.5, mw - 1, mh - 1); mgraphics.stroke();
+	mgraphics.set_source_rgba(COL_INFO);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(9);
+	mgraphics.move_to(mx - 84, my + 8);
+	mgraphics.show_text("diso " + disoPct.toFixed(0) + "%");
+	mgraphics.move_to(mx, my + 19);
+	mgraphics.show_text(band[2] + (q5span >= 0 ? "   5tas " + q5span + "/11" : ""));
 }
 
 // one framed panel, dispatched by kind string (see VIEW_KIND). The lattice panels bound their
@@ -683,7 +770,9 @@ function paintTonnetz(r, diatonic) {
 	mgraphics.set_font_size(10);
 	mgraphics.move_to(r.x + 8, r.y + 15);
 	mgraphics.show_text(tzDiat
-		? ("Diatonico  " + NOTE_NAMES[keyRoot] + (keyMinor ? " menor" : " mayor"))
+		? ("Diatonico  " + NOTE_NAMES[effKeyRoot()] + (effKeyMinor() ? " menor" : " mayor")
+			+ (keyAuto ? (keyGuessConf >= KEY_AUTO_MIN_CONF
+				? "  (auto " + keyGuessConf.toFixed(2) + ")" : "  (auto: sin lectura)") : ""))
 		: "Tonnetz");
 	if (fitAbc && !tzDiat) {
 		mgraphics.set_source_rgba(COL_INFO);
@@ -1255,7 +1344,8 @@ function paintGuitar(r) {
 	mgraphics.select_font_face("Arial");
 	mgraphics.set_font_size(10);
 	mgraphics.move_to(r.x + 8, r.y + 14);
-	mgraphics.show_text(guitarMode ? "Guitarra  (suena)" : "Guitarra  (repetidas)");
+	mgraphics.show_text(guitarMode === 2 ? "Guitarra  (escala)"
+		: guitarMode === 1 ? "Guitarra  (suena)" : "Guitarra  (repetidas)");
 
 	var open = TUNINGS[tuningIdx] || TUNINGS[0];
 	var nS = open.length;
@@ -1316,15 +1406,57 @@ function paintGuitar(r) {
 		mgraphics.show_text(String(f));
 	}
 
-	// notes
 	var dr = Math.max(4, Math.min(11, Math.min(fretW, gap) * 0.34));
+
+	// "Escala" mode (Feature 4): faint dot on every fret whose pitch class is in the current
+	// diatonic key, and -- when a chord is sounding -- a box around the lowest 4-fret window
+	// that can finger every chord tone (like Guitar Scale Monitor, one window not a browser).
+	if (guitarMode === 2) {
+		var scl = scaleSet();
+		for (var ss = 0; ss < nS; ss++)
+			for (var ff = 0; ff <= N; ff++) {
+				if (scl.indexOf(mod12(open[ss] + ff)) < 0) continue;
+				var sxp = fretX(ff), syp = stringY(ss);
+				if (sxp < L - dr || sxp > R + dr) continue;
+				mgraphics.set_source_rgba(0.55, 0.58, 0.64, 0.16);
+				mgraphics.ellipse(sxp - dr * 0.5, syp - dr * 0.5, dr, dr); mgraphics.fill();
+			}
+		var need = activeSet.slice();
+		if (need.length >= 2 && need.length <= 6) {
+			var w0 = -1;
+			for (var ws = 0; ws <= Math.max(0, N - 3) && w0 < 0; ws++) {
+				var covered = 0;
+				for (var ni = 0; ni < need.length; ni++) {
+					var got = false;
+					for (var st = 0; st < nS && !got; st++)
+						for (var fr = 0; fr <= N; fr++) {
+							if ((fr === 0 || (fr >= ws && fr <= ws + 3)) && mod12(open[st] + fr) === need[ni]) { got = true; break; }
+						}
+					if (got) covered++;
+				}
+				if (covered === need.length) w0 = ws;
+			}
+			if (w0 >= 0) {
+				var bx0 = Math.max(L, wireX(w0 - 1) + 1), bx1 = Math.min(R, wireX(w0 + 3) - 1);
+				if (bx1 > bx0) {
+					mgraphics.set_source_rgba(COL_ACTIVE[0], COL_ACTIVE[1], COL_ACTIVE[2], 0.10);
+					mgraphics.rectangle(bx0, y0 - 3, bx1 - bx0, h + 6); mgraphics.fill();
+					mgraphics.set_source_rgba(COL_ACTIVE[0], COL_ACTIVE[1], COL_ACTIVE[2], 0.55);
+					mgraphics.set_line_width(1.5);
+					mgraphics.rectangle(bx0, y0 - 3, bx1 - bx0, h + 6); mgraphics.stroke();
+				}
+			}
+		}
+	}
+
+	// notes
 	mgraphics.select_font_face("Arial Bold");
 	for (var s = 0; s < nS; s++) {
 		for (var f = 0; f <= N; f++) {
 			var pitch = open[s] + f;
 			var pc = mod12(pitch);
 			var on, traced = false;
-			if (guitarMode && !studyOn) on = an.indexOf(pitch) >= 0;   // "Suena" needs real MIDI notes; study mode has none
+			if (guitarMode === 1 && !studyOn) on = an.indexOf(pitch) >= 0;   // "Suena" needs real MIDI notes; study mode has none
 			else { on = isActiveX(pc); traced = !on && inTrace(pc); }
 			if (!on && !traced) continue;
 			var gx = fretX(f), gy = stringY(s);

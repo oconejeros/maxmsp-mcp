@@ -31,12 +31,15 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
 
     inside [p tonnetz_window]:
       inlet --> prepend note --> jsui tonnetz.js
-                             |--> js pcsetinfo.js  --0--> jsui  (`info` / `setclass`)
+                             |--> js pcsetinfo.js  --0--> jsui  (`info` / `setclass` / `chord`
+                             |                              / `keyguess`)
                              |                     --1--> send ---tonnetzinfo
                              \--> js tonnetzfit.js --0--> jsui  (`bestfit <a b c>`)
                                                    --1--> send ---tonnetzfit
       live.toggle Vw* (8)  --> prepend v{ton,chr,fif,voc,pno,gtr,dia,tet} --> jsui  (panel on/off)
-      live.menu "Key" + live.tab "KeyMode" --> prepend keyroot/keymode --> jsui  (diatonic panel)
+      live.menu "Key" + live.tab "KeyMode" + live.toggle "KeyAuto" --> prepend
+                               keyroot/keymode/keyauto --> jsui  (diatonic panel; KeyAuto makes
+                               it follow pcsetinfo's `keyguess` instead of Key/KeyMode)
       live.menu "Preset" / "TetPreset" --> prepend preset / tetpreset --> jsui
       live.numbox A/B/C    <-> pak 3 4 5 / prepend abc <-> jsui   (Preset <-> a/b/c stay in sync
                                via jsui outlet 0: `abc a b c` -> numboxes, `presetsel i` -> menu)
@@ -54,10 +57,10 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
                                      (order / filter / re-map the walk), \-> bang the study pak
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-47 parameters. The button is a top-level param (key "obj-20"); the 46 controls inside the
+48 parameters. The button is a top-level param (key "obj-20"); the 47 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 3 + 8).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 4 + 8).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -113,7 +116,8 @@ ANN = {
     'Conex': 'Conexiones sobre los circulos (cromatico + quintas): Off, Poligono (une las notas en orden), Todas (cada diada, color por clase de intervalo), o solo m2/M2/m3/M3/4-5/TT.',
     'TracePath': 'Dibuja el rastro como un camino cronologico con desvanecido sobre los circulos.',
     'PianoMode': 'Piano: Octava = una sola octava por clase de altura. Completo = todo el rango MIDI 0-127, nota por nota.',
-    'GuitarMode': 'Guitarra: Repetidas = todas las posiciones del mastil de cada nota que suena. Suena = solo la altura exacta.',
+    'GuitarMode': 'Guitarra: Repetidas = todas las posiciones del mastil de cada nota que suena. Suena = solo la altura exacta. Escala = puntos tenues en cada traste de la tonalidad diatonica actual (Key/KeyMode o KeyAuto) y, si suena un acorde, un recuadro sobre la ventana de 4 trastes mas grave que lo digita entero.',
+    'KeyAuto': 'El panel diatonico sigue la estimacion de tonalidad de pcsetinfo (Krumhansl-Schmuckler sobre una ventana de acordes recientes) en vez de Key / KeyMode, que quedan sin efecto mientras esta encendido. El pie muestra la lectura y su confianza.',
     'Tuning': 'Afinacion de la guitarra (cuerdas al aire).',
     'Frets': 'Numero de trastes de la guitarra (12-24).',
     'Zoom': 'Zoom horizontal del piano y la guitarra (1-8x).',
@@ -154,6 +158,7 @@ CTRL = [
     ('TonB',       'TonB',      'obj-141', 'live.numbox',  None),
     ('TonC',       'TonC',      'obj-142', 'live.numbox',  None),
     ('Radius',     'Radius',    'obj-150', 'live.numbox',  'radius'),
+    ('KeyAuto',    'KeyAuto',   'obj-155', 'live.toggle',  'keyauto'),
     ('Trace',      'Trace',     'obj-160', 'live.toggle',  'trace'),
     ('TraceLen',   'TraceLen',  'obj-162', 'live.numbox',  'tracelen'),
     ('Harmonize',  'Harmonize', 'obj-170', 'live.toggle',  'harm'),
@@ -186,7 +191,7 @@ CTRL = [
     ('StudyMove',  'StudyMove', 'obj-308', 'live.menu',    None),   # -> prepend studymove -> pcsetinfo
 ]
 TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar', 'VwDiat', 'VwTet',
-           'Trace', 'Harmonize', 'Faces', 'Labels', 'TracePath', 'Colors',
+           'KeyAuto', 'Trace', 'Harmonize', 'Faces', 'Labels', 'TracePath', 'Colors',
            'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv', 'DissSort']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
              'obj-162', 'obj-210', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
@@ -198,7 +203,7 @@ BANKS = [
     ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'Conex', 'TracePath', 'Colors']),
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
-    ('Mas',       ['Abrir', 'TetPreset', 'StudyMove']),
+    ('Mas',       ['Abrir', 'TetPreset', 'StudyMove', 'KeyAuto']),
     ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort', 'StudyTrav']),
 ]
 
@@ -244,6 +249,7 @@ VO = {
     'TonB':      num_vo('TonB', 'TonB', 1, 11, 4),
     'TonC':      num_vo('TonC', 'TonC', 1, 11, 5),
     'Radius':    num_vo('Radius', 'Radius', 24, 120, 46),
+    'KeyAuto':   toggle_vo('KeyAuto', 0),
     'Trace':     toggle_vo('Trace', 1),
     'TraceLen':  num_vo('TraceLen', 'TraceLen', 1, 24, 8),
     'Harmonize': toggle_vo('Harmonize', 1),
@@ -254,7 +260,7 @@ VO = {
     'TracePath': toggle_vo('TracePath', 0),
     'Colors':    toggle_vo('Colors', 1),
     'PianoMode': enum_vo('PianoMode', 'PianoMode', ['Octava', 'Completo'], 0),
-    'GuitarMode':enum_vo('GuitarMode', 'GuitarMd', ['Repetidas', 'Suena'], 0),
+    'GuitarMode':enum_vo('GuitarMode', 'GuitarMd', ['Repetidas', 'Suena', 'Escala'], 0),
     'Tuning':    enum_vo('Tuning', 'Tuning', GUITAR_TUNINGS, 0),
     'Frets':     num_vo('Frets', 'Frets', 12, 24, 22),
     'Zoom':      num_vo('Zoom', 'Zoom', 1, 8, 1),
@@ -369,6 +375,8 @@ def build_subpatcher(appversion):
         vx += 40.0
     control('Key',     'obj-128', 'live.menu', 'keyroot', [330.0, 6.0, 54.0, 20.0])
     control('KeyMode', 'obj-129', 'live.tab',  'keymode', [390.0, 6.0, 84.0, 20.0])
+    control('KeyAuto', 'obj-155', 'live.toggle', 'keyauto', [480.0, 8.0, 14.0, 14.0])
+    label(497.0, 8.0, 34.0, 'Auto')
 
     # row 2 (y 38): Tonnetz shape -- preset, a/b/c vector, spacing, trace length
     control('Preset', 'obj-130', 'live.menu', 'preset', [8.0, 37.0, 140.0, 20.0])
@@ -670,7 +678,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v11: StudyMove root-walk + white root marker + McKay modality names)')
+    print('tonnetz.amxd  (v12: chord names + KS key auto-detect + dissonance meter + guitar scale/chord mode)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))

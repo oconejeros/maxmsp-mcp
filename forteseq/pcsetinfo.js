@@ -26,17 +26,24 @@
 //                          chromatic Tonnetz + circles (shape looks pinned) while piano /
 //                          guitar shift the lit notes by that amount (still real pitches).
 //
-//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; ends
-//                                               with `diso <pct>% (<label>)` then any of the
+//   outlet 0 -> tonnetz.js : `info <text>`      (one compact line for the jsui footer; starts
+//                                               with the chord symbol, ends with `diso <pct>%
+//                                               (<label>)`, `q5span <n>`, then any of the
 //                                               invariance tags `sim` / `q5` / `q5esp`; also
 //                                               carries `mod <McKay modality name>`)
 //                            `setclass <p ...>` (prime form; lights the voice-leading node)
+//                            `chord <sym>`      (root-relative chord symbol, e.g. `C7/E`; `-`
+//                                               = none, `""` = empty set)
+//                            `keyguess <root> <minor> <conf>`  (Krumhansl-Schmuckler key
+//                                               estimate over a rolling window; suppressed in
+//                                               study mode. root 0-11, minor 0|1, conf ~0..1)
 //                            `list <pc ...>`    (study mode only; the set to display)
 //                            `studyroot <pc>`   (study mode: pc to draw as the root, -1 = none)
 //                            `studyspell <n>`   (Rota raiz: rotate names/colours by n semitones)
 //   outlet 1 -> future display : tagged lists, one per field:
-//     card <n> | notes <name...> | forte <sym> | iv <a b c d e f> | prime <p...> |
-//     name <sym> | modality <McKay name> | diso <pct 0..100, McKay> |
+//     card <n> | notes <name...> | chord <sym> | chords <alt...> | forte <sym> |
+//     iv <a b c d e f> | prime <p...> | name <sym> | modality <McKay name> |
+//     diso <pct 0..100, McKay> | q5span <n 0..11> | keyguess <root> <minor> <conf> |
 //     inv <sym> <fifthSame> <fifthMirror> | tn <index> <351>
 //
 // Forte data (cardinalities 3-9) embedded from Wikipedia "List of set classes". Prime form
@@ -359,10 +366,189 @@ function ivString(v) {
 	return v.join("");
 }
 
+// ---- root-relative chord naming (ai.chord-monitor / pychord idea) ------------------
+// A chord SYMBOL, unlike a set class, has a chosen root. For every sounding pc we try it as
+// the root, read the intervals above it, and look the shape up in CHORD_QUALITIES (key =
+// the sorted interval set, "0" always first). Candidates are ranked so the bass note wins
+// when it explains the chord, then completeness, then a natural-spelled root.
+var SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+var FLAT_NAMES  = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+// pc -> the tidier of the two spellings (naturals first, then whichever is shorter)
+function noteName(pc) {
+	pc = mod12(pc);
+	var a = SHARP_NAMES[pc], b = FLAT_NAMES[pc];
+	if (a.length === 1) return a;
+	return b.length <= a.length ? b : a;
+}
+function accidentals(pc) { return noteName(pc).length - 1; }
+
+// key = interval set above the root; value = quality suffix ("" = bare major triad).
+var CHORD_QUALITIES = {
+	"0,4,7": "", "0,3,7": "m", "0,3,6": "dim", "0,4,8": "aug",
+	"0,2,7": "sus2", "0,5,7": "sus4",
+	"0,4,7,9": "6", "0,3,7,9": "m6", "0,4,7,10": "7", "0,4,7,11": "maj7",
+	"0,3,7,10": "m7", "0,3,6,10": "m7b5", "0,3,6,9": "dim7", "0,3,7,11": "mMaj7",
+	"0,4,8,10": "aug7", "0,4,8,11": "augMaj7", "0,4,7,10,14": "9", "0,4,7,11,14": "maj9",
+	"0,3,7,10,14": "m9", "0,4,7,10,13": "7b9", "0,2,4,7": "add9", "0,2,3,7": "m(add9)",
+	"0,4,7,9,14": "6/9", "0,5,10": "quartal", "0,4,7,10,17": "11", "0,4,7,10,21": "13",
+	"0,4,6,10": "7b5", "0,4,8,10,14": "9#5", "0,1,4,7": "sus(b9)"
+};
+// partial fallbacks: a 4-note shape missing its fifth still reads as the seventh chord
+var CHORD_QUALITIES_PARTIAL = {
+	"0,4,10": "7 (no5)", "0,3,10": "m7 (no5)", "0,4,11": "maj7 (no5)", "0,4,9": "6 (no5)"
+};
+// prior on naming when two roots both fit (Am7 == C6, Bm7b5 == Dm6): a tertian stack
+// beats a chord with an added 2nd/6th. Higher = the name we'd rather print.
+function qualityRank(q) {
+	if (q === "" || q === "m") return 6;                                  // plain triads
+	if (q === "7" || q === "maj7" || q === "m7" || q === "m7b5" ||
+	    q === "dim7" || q === "mMaj7") return 5;                          // core sevenths
+	if (q === "dim" || q === "aug" || q === "sus2" || q === "sus4") return 4;
+	if (/^(9|maj9|m9|11|13|7b9|7b5|9#5|augMaj7|aug7)$/.test(q)) return 3; // extensions
+	if (/no5/.test(q)) return 1;
+	return 2;                                                             // 6, m6, add9, 6/9, quartal, ...
+}
+
+// -> { sym: "C7", full: "C7/E", alts: ["Am add..","..."] }  (or the single note name)
+function nameChord(pcs, bass) {
+	var s = uniqSorted(pcs);
+	if (s.length === 0) return { sym: "", full: "", alts: [] };
+	if (s.length === 1) { var n1 = noteName(s[0]); return { sym: n1, full: n1, alts: [] }; }
+	var cands = [];
+	for (var i = 0; i < s.length; i++) {
+		var root = s[i], ivs = [];
+		for (var j = 0; j < s.length; j++) ivs.push(mod12(s[j] - root));
+		ivs.sort(function (a, b) { return a - b; });
+		var key = ivs.join(",");
+		var q = CHORD_QUALITIES[key], partial = false;
+		if (q === undefined && CHORD_QUALITIES_PARTIAL[key] !== undefined) { q = CHORD_QUALITIES_PARTIAL[key]; partial = true; }
+		if (q === undefined) continue;
+		var score = 40 + qualityRank(q) * 3;
+		if (bass >= 0 && mod12(bass) === root) score += 100;
+		if (partial) score -= 15;
+		score -= accidentals(root);
+		score -= root === s[0] ? 0 : 1;   // tiny nudge toward the lowest pc as root
+		cands.push({ root: root, sym: noteName(root) + q, score: score });
+	}
+	if (cands.length === 0) {
+		// nothing matched: fall back to the Forte familiar-name, anchored at the prime form
+		var fb = NAMES[forteName(s)] || "";
+		var anchor = noteName(s[0]);
+		return { sym: fb ? anchor + " " + fb : anchor + "?", full: fb ? anchor + " " + fb : anchor + "?", alts: [] };
+	}
+	cands.sort(function (a, b) { return b.score - a.score; });
+	var best = cands[0];
+	var full = best.sym;
+	if (bass >= 0 && mod12(bass) !== best.root && s.indexOf(mod12(bass)) >= 0)
+		full = best.sym + "/" + noteName(bass);
+	var alts = [];
+	for (var k = 1; k < cands.length && alts.length < 2; k++)
+		if (cands[k].sym !== best.sym) alts.push(cands[k].sym);
+	return { sym: best.sym, full: full, alts: alts };
+}
+
+// ---- Krumhansl-Schmuckler key finding (ai.scale-monitor idea) ---------------------
+// Correlate a pitch-class histogram against the 24 major/minor tone profiles. We have no
+// note durations, so the histogram is summed membership over a rolling window of recent
+// pc-sets (same trick as tonnetzfit.js). Returns {root, minor, conf}; conf is the winning
+// Pearson r (roughly 0..1), plus the margin over the runner-up folded in.
+var KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+var KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+function pearson(a, b) {
+	var n = a.length, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+	for (var i = 0; i < n; i++) { sa += a[i]; sb += b[i]; saa += a[i] * a[i]; sbb += b[i] * b[i]; sab += a[i] * b[i]; }
+	var num = n * sab - sa * sb;
+	var den = Math.sqrt((n * saa - sa * sa) * (n * sbb - sb * sb));
+	return den === 0 ? 0 : num / den;
+}
+function detectKey(hist) {
+	var total = 0;
+	for (var i = 0; i < 12; i++) total += hist[i];
+	if (total === 0) return { root: 0, minor: 0, conf: 0 };
+	var best = null, second = -2;
+	for (var root = 0; root < 12; root++) {
+		var rot = [];
+		for (var k = 0; k < 12; k++) rot.push(hist[mod12(root + k)]);
+		var rMaj = pearson(rot, KS_MAJOR), rMin = pearson(rot, KS_MINOR);
+		var pick = rMaj >= rMin ? { root: root, minor: 0, r: rMaj } : { root: root, minor: 1, r: rMin };
+		if (!best || pick.r > best.r) { second = best ? best.r : second; best = pick; }
+		else if (pick.r > second) second = pick.r;
+	}
+	var conf = Math.max(0, best.r) * (0.6 + 0.4 * Math.max(0, Math.min(1, (best.r - second) * 4)));
+	return { root: best.root, minor: best.minor, conf: conf };
+}
+
+// widest empty arc on the circle of fifths, in fifth-steps (0 = one pc, 12 = whole circle).
+// Small = the set packs tightly in fifths (consonant, diatonic); large = scattered. This is
+// the spread zb.noteConsonance reads off the same circle.
+function fifthSpan(pcs) {
+	var s = uniqSorted(pcs);
+	if (s.length < 2) return 0;
+	var f = [];
+	for (var i = 0; i < s.length; i++) f.push(mod12(s[i] * 7));
+	f.sort(function (a, b) { return a - b; });
+	var span = 12 - (f[f.length - 1] - f[0]);   // gap that wraps around
+	for (var k = 1; k < f.length; k++) span = Math.max(span, f[k] - f[k - 1]);
+	return 12 - span;   // report the OCCUPIED arc: 0 tight .. 11 scattered
+}
+
 // ---- state + handlers -------------------------------------------------------------
 var voices = [];
 for (var _i = 0; _i < 12; _i++) voices[_i] = 0;
 var explicit = null;   // non-null when set by `list` instead of note ref-counting
+
+// per-MIDI-note ref-count, so the chord namer knows the actual bass (list/study sets have
+// no octave -> bassMidi() returns -1 there and the ranking falls back to completeness).
+var midiHeld = [];
+for (var _m = 0; _m < 128; _m++) midiHeld[_m] = 0;
+function bassMidi() {
+	if (explicit) return -1;
+	for (var n = 0; n < 128; n++) if (midiHeld[n] > 0) return n;
+	return -1;
+}
+
+// rolling window of recent pc-sets for Krumhansl-Schmuckler key finding (see detectKey).
+// each entry keeps the set's bass pc (-1 if unknown) so the histogram can lean on it -- the
+// bass carries most of the tonal weight and is what separates a key from its relative.
+var keyWin = [];
+var KEY_WIN_MAX = 16;
+function pushKeyWin(pcs, bassPc) {
+	if (!pcs.length) return;
+	var arr = pcs.slice().sort(function (a, b) { return a - b; });
+	var s = arr.join(","), bp = (bassPc == null ? -1 : bassPc);
+	var e = s + "@" + bp;
+	if (keyWin.length) {
+		var prev = keyWin[keyWin.length - 1].split("@");
+		var pArr = prev[0].split(",");
+		// same bass and the new set only adds notes -> a chord still being built up; replace
+		// the in-progress entry instead of stacking fragments of one sonority
+		if (parseInt(prev[1], 10) === bp && pArr.every(function (x) { return arr.indexOf(parseInt(x, 10)) >= 0; })) {
+			keyWin[keyWin.length - 1] = e;
+			return;
+		}
+		if (keyWin[keyWin.length - 1] === e) return;
+	}
+	keyWin.push(e);
+	while (keyWin.length > KEY_WIN_MAX) keyWin.shift();
+}
+function keyHistogram() {
+	var h = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+	var n = keyWin.length;
+	for (var i = 0; i < n; i++) {
+		if (!keyWin[i]) continue;
+		var at = keyWin[i].split("@");
+		var parts = at[0].split(","), bp = parseInt(at[1], 10);
+		// recent sets weigh much more -- a cadence resolves, and the goal chord names the key
+		var w = Math.pow((i + 1) / n, 1.6);
+		for (var k = 0; k < parts.length; k++) h[mod12(parseInt(parts[k], 10))] += w;
+		if (bp >= 0) h[mod12(bp)] += w * 1.5;   // tonal centre of gravity
+	}
+	return h;
+}
+function lowestHeldPc() {
+	for (var n = 0; n < 128; n++) if (midiHeld[n] > 0) return mod12(n);
+	return -1;
+}
 
 function activePcs() {
 	if (explicit) return explicit.slice();
@@ -380,17 +566,29 @@ function note(pitch, vel) {
 	studyTag = "";
 	studyRoot = -1;
 	spellRot = 0;
-	var pc = mod12(Math.round(pitch));
-	if (vel > 0) voices[pc]++;
-	else if (voices[pc] > 0) voices[pc]--;
+	var n = Math.round(pitch);
+	var pc = mod12(n);
+	if (vel > 0) {
+		voices[pc]++;
+		if (n >= 0 && n < 128) midiHeld[n]++;
+		// only a note-ON is a musical event for key finding; releasing a chord one finger at
+		// a time would otherwise flood the window with shrinking fragments and a drifting bass
+		pushKeyWin(activePcs(), lowestHeldPc());
+	} else {
+		if (voices[pc] > 0) voices[pc]--;
+		if (n >= 0 && n < 128 && midiHeld[n] > 0) midiHeld[n]--;
+	}
 	emit();
 }
 function list() {
 	explicit = uniqSorted(arrayfromargs(arguments));
+	pushKeyWin(explicit, explicit.length ? explicit[0] : -1);
 	emit();
 }
 function clear() {
 	for (var i = 0; i < 12; i++) voices[i] = 0;
+	for (var m = 0; m < 128; m++) midiHeld[m] = 0;
+	keyWin = [];
 	explicit = null;
 	studyTag = "";
 	studyRoot = -1;
@@ -581,14 +779,21 @@ function emit() {
 	if (card === 0) {
 		outlet(0, "info", "-");
 		outlet(0, "setclass", "");
+		outlet(0, "chord", "");
 		outlet(0, "studyroot", -1);
 		outlet(0, "studyspell", 0);
 		outlet(1, ["card", 0]);
 		return;
 	}
 
-	var names = [];   // in Rota raiz mode, spell the names the way the panels draw them
-	for (var i = 0; i < pcs.length; i++) names.push(NOTE_NAMES[mod12(pcs[i] + spellRot)]);
+	// pcs spelled the way the panels draw them (Rota raiz rotates every name by spellRot)
+	var npcs = [];
+	for (var i = 0; i < pcs.length; i++) npcs.push(mod12(pcs[i] + spellRot));
+	var names = [];
+	for (i = 0; i < npcs.length; i++) names.push(NOTE_NAMES[npcs[i]]);
+
+	var chordInfo = nameChord(npcs, spellRot ? -1 : bassMidi());
+	var fsp = fifthSpan(pcs);
 	var iv = intervalVector(pcs);
 	var prime = primeForm(pcs);
 	var forte = forteName(pcs);
@@ -604,6 +809,7 @@ function emit() {
 	if (q5e) invTags.push("q5esp");
 
 	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
+		+ (chordInfo.full ? chordInfo.full + "  |  " : "")
 		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
 	if (forte) line += "  |  " + forte;
 	line += "  |  IV " + ivString(iv);
@@ -611,21 +817,31 @@ function emit() {
 	if (nm) line += "  |  " + nm;
 	if (modal) line += "  |  mod " + modal;
 	if (card >= 2) line += "  |  diso " + dpct.toFixed(1) + "% (" + disoLabel(dpct) + ")";
+	if (card >= 2) line += "  |  q5span " + fsp;
 	if (card >= 2 && invTags.length) line += "  |  " + invTags.join(" ");
 	if (tn) line += "  |  Tn " + tn + "/351";
 
 	outlet(0, "info", line);
 	outlet(0, "setclass", prime.join(" "));
+	outlet(0, "chord", chordInfo.full || "-");
+	if (!studyTag) {
+		var kg = detectKey(keyHistogram());
+		outlet(0, "keyguess", kg.root, kg.minor, Math.round(kg.conf * 100) / 100);
+		outlet(1, ["keyguess", kg.root, kg.minor, Math.round(kg.conf * 100) / 100]);
+	}
 	outlet(0, "studyroot", studyTag ? studyRoot : -1);
 
 	outlet(1, ["card", card]);
 	outlet(1, ["notes"].concat(names));
+	outlet(1, ["chord", chordInfo.sym || "-"]);
+	if (chordInfo.alts.length) outlet(1, ["chords"].concat(chordInfo.alts));
 	outlet(1, ["forte", forte || "-"]);
 	outlet(1, ["iv"].concat(iv));
 	outlet(1, ["prime"].concat(prime));
 	outlet(1, ["name", nm || "-"]);
 	outlet(1, ["modality", modal || "-"]);               // McKay modality name
 	outlet(1, ["diso", Math.round(dpct * 100) / 100]);   // McKay dissonance, % of chromatic
+	outlet(1, ["q5span", fsp]);                          // occupied arc on the circle of fifths
 	outlet(1, ["inv", sym ? 1 : 0, q5 ? 1 : 0, q5e ? 1 : 0]);   // symmetric | fifth-same | fifth-mirror
 	outlet(1, ["tn", tn, 351]);
 }
