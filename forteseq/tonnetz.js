@@ -363,7 +363,7 @@ function list() {
 		var pc = mod12(Math.round(a[i]));
 		if (activeSet.indexOf(pc) < 0) activeSet.push(pc);
 	}
-	pushSeg();
+	if (!studyOn) pushSeg();   // a study set is static -- no trajectory to trace
 	mgraphics.redraw();
 }
 function msg_int(v) { list(v); }
@@ -407,6 +407,7 @@ function setclass() {
 }
 function studymode(v) {
 	studyOn = v ? 1 : 0;
+	traceQ = []; segs = [];             // trajectory tools are meaningless on a static study set
 	if (!studyOn) {                      // back to MIDI: wipe whatever the study set left lit
 		for (var i = 0; i < 12; i++) voices[i] = 0;
 		for (var j = 0; j < 128; j++) midiVoices[j] = 0;
@@ -1222,7 +1223,7 @@ function paintPiano(r) {
 	var off = hOffset(wW * nW, w);
 	var bW = wW * 0.62, bH = h * 0.62;
 	var an = activeNotes();
-	function onNote(m) { return an.indexOf(m) >= 0; }
+	function onNote(m) { return studyOn ? isActiveX(mod12(m)) : an.indexOf(m) >= 0; }
 
 	var wi = 0;
 	for (var n = 0; n < 128; n++) {
@@ -1323,7 +1324,7 @@ function paintGuitar(r) {
 			var pitch = open[s] + f;
 			var pc = mod12(pitch);
 			var on, traced = false;
-			if (guitarMode) on = an.indexOf(pitch) >= 0;
+			if (guitarMode && !studyOn) on = an.indexOf(pitch) >= 0;   // "Suena" needs real MIDI notes; study mode has none
 			else { on = isActiveX(pc); traced = !on && inTrace(pc); }
 			if (!on && !traced) continue;
 			var gx = fretX(f), gy = stringY(s);
