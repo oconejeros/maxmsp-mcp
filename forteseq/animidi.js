@@ -42,6 +42,8 @@
 //   rangelo / rangehi <0..127>  fixed y-axis bounds (used when rangemode == 1).
 //   grid <0|1>                  octave lines + beat/bar lines.
 //   piano <0|1>                 Barras: piano keyboard gutter down the left edge.
+//   vellane <0|1>               Barras: velocity line-graph lane along the bottom.
+//   notetags <0|1>              Barras: note-name label on each sounding note at the now-line.
 //   viewmode <0|1|2|3>          0 Barras | 1 Espiral | 2 Dodecaedro | 3 Práctica (falling
 //                               MIDI roll onto a keyboard at the bottom; both time models).
 //   fps <n>                     redraw rate, 15..60 (default 30).
@@ -115,9 +117,11 @@ var PLAYED_SHADE = [0.55, 0.62, 0.85, 0.07]; // Lookahead: the "already swept" b
 
 var KEYBOARD_W = 46;    // left piano gutter width in Barras
 var KB_H       = 66;    // bottom keyboard height in Práctica
+var VEL_H      = 58;    // velocity lane height in Barras (when VelLane is on)
 
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 function isBlackPc(pc) { return [1, 3, 6, 8, 10].indexOf(((pc % 12) + 12) % 12) >= 0; }
+function noteLabel(p) { p = Math.round(p); return NOTE_NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1); }
 
 // ---- state -----------------------------------------------------------------------------
 var events = [];         // {pitch, vel, voice, tOn, tOff}  -- voice = Live track idx (or MIDI chan outside Live)
@@ -136,6 +140,8 @@ var rangeLo   = 36, rangeHi = 96;
 var gridOn    = 1;
 var fpsRate   = 30;
 var pianoOn   = 1;       // Barras: show the piano keyboard gutter down the left edge
+var velLane   = 0;       // Barras: show a velocity line-graph lane along the bottom
+var noteTags  = 0;       // Barras: label sounding notes with their name at the now-line
 
 // view selector + voice grouping + spiral/dodeca controls (phase 2 of the device)
 var viewMode  = 0;       // 0 Barras | 1 Espiral | 2 Dodecaedro | 3 Práctica (falling roll -> keyboard)
@@ -346,6 +352,8 @@ function rangelo(v) { rangeLo = Math.max(0, Math.min(127, Math.round(v))); mgrap
 function rangehi(v) { rangeHi = Math.max(0, Math.min(127, Math.round(v))); mgraphics.redraw(); }
 function grid(v) { gridOn = v ? 1 : 0; mgraphics.redraw(); }
 function piano(v) { pianoOn = v ? 1 : 0; mgraphics.redraw(); }
+function vellane(v) { velLane = v ? 1 : 0; mgraphics.redraw(); }
+function notetags(v) { noteTags = v ? 1 : 0; mgraphics.redraw(); }
 function viewmode(v) { viewMode = Math.max(0, Math.min(3, Math.round(v))); mgraphics.redraw(); }
 function voicemode(v) { voiceMode = Math.max(0, Math.min(2, Math.round(v))); mgraphics.redraw(); }
 function tracelen(v) {
@@ -611,16 +619,20 @@ function paintBarras(W, H) {
 	var yr = yRange();
 	var loP = yr[0], hiP = yr[1];
 	var rows = hiP - loP;
-	var rowH = H / rows;
-	NOTE_THICK = Math.max(3, Math.min(14, rowH * 0.8));   // slim bars, never fatter than 14px
 
 	// lanes: one horizontal band per voice (track) seen -- works in real-time AND lookahead
 	var lanes = (voiceMode === 2) ? voicesSeen() : null;
+	// the velocity lane (toggle) eats VEL_H off the bottom -- the note plot ends at plotBot,
+	// which is what paintGrid / paintRealtime / paintLookahead / drawLeftPiano get as "H".
+	var plotBot = velLane ? Math.max(120, H - VEL_H) : H;
+	var rowH = plotBot / rows;
+	NOTE_THICK = Math.max(3, Math.min(14, rowH * 0.8));   // slim bars, never fatter than 14px
+
 	function yFor(pitch, voice) {
 		var frac = (pitch - loP + 0.5) / (hiP - loP);
-		if (!lanes) return H - frac * H;
+		if (!lanes) return plotBot - frac * plotBot;
 		var li = lanes.indexOf(voice); if (li < 0) li = 0;
-		var bandH = H / lanes.length, top = li * bandH;
+		var bandH = plotBot / lanes.length, top = li * bandH;
 		return top + bandH * (0.96 - frac * 0.92);
 	}
 
@@ -629,16 +641,111 @@ function paintBarras(W, H) {
 	// Lookahead pins "ahora" to the piano edge on the LEFT so the whole width is the runway
 	// of upcoming notes; Tiempo real keeps it near the right so the trailing history shows.
 	var nowX = Math.round(plotL + (W - plotL) * (timeMode === 1 ? 0.0 : 0.80)) + 0.5;
-	if (gridOn) paintGrid(W, H, loP, hiP, rowH, nowX, lanes, plotL);
+	if (gridOn) paintGrid(W, plotBot, loP, hiP, rowH, nowX, lanes, plotL);
 
-	if (timeMode === 1) paintLookahead(W, H, nowX, loP, hiP, yFor, plotL);
-	else                paintRealtime(W, H, nowX, loP, hiP, yFor, plotL);
+	if (timeMode === 1) paintLookahead(W, plotBot, nowX, loP, hiP, yFor, plotL);
+	else                paintRealtime(W, plotBot, nowX, loP, hiP, yFor, plotL);
 
 	mgraphics.set_source_rgba(NOWLINE);
 	mgraphics.set_line_width(1.5);
-	mgraphics.move_to(nowX, 0); mgraphics.line_to(nowX, H); mgraphics.stroke();
+	mgraphics.move_to(nowX, 0); mgraphics.line_to(nowX, plotBot); mgraphics.stroke();
 
-	if (plotL > 0) drawLeftPiano(H, loP, hiP);
+	if (plotL > 0) drawLeftPiano(plotBot, loP, hiP);
+	if (velLane) paintVelLane(W, H, nowX, loP, hiP, plotL, plotBot);
+}
+
+// velocity line-graph lane along the bottom VEL_H px (like an Ableton clip's velocity
+// editor, but as a connected line): a faint stem + a dot per visible note at its velocity
+// height, a polyline through the dots in time order, and reference lines at 0/32/64/96/127.
+function paintVelLane(W, H, nowX, loP, hiP, plotL, plotBot) {
+	var top = plotBot, laneH = H - plotBot;
+	if (laneH < 16) return;
+	mgraphics.set_source_rgba(0.08, 0.08, 0.09, 1);
+	mgraphics.rectangle(plotL, top, W - plotL, laneH); mgraphics.fill();
+	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 1);
+	mgraphics.set_line_width(1);
+	mgraphics.move_to(plotL, top + 0.5); mgraphics.line_to(W, top + 0.5); mgraphics.stroke();
+
+	function velY(vv) { return top + laneH - 3 - (Math.max(0, Math.min(127, vv)) / 127) * (laneH - 6); }
+
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(7);
+	var marks = [0, 32, 64, 96, 127], m;
+	for (m = 0; m < marks.length; m++) {
+		var gy = velY(marks[m]);
+		mgraphics.set_source_rgba(GRID_BEAT[0], GRID_BEAT[1], GRID_BEAT[2], 1);
+		mgraphics.set_line_width(1);
+		mgraphics.move_to(plotL, gy); mgraphics.line_to(W, gy); mgraphics.stroke();
+		mgraphics.set_source_rgba(COL_TEXT[0], COL_TEXT[1], COL_TEXT[2], 0.75);
+		mgraphics.move_to(plotL + 2, gy - 1); mgraphics.show_text("" + marks[m]);
+	}
+
+	// collect (x, vel, colour) for every visible note onset, using the same x math the
+	// note views use
+	var pts = [], i;
+	if (timeMode === 1) {
+		if (clipNotes.length) {
+			var beatPx = pxPerSec * 60 / Math.max(1, tempoBpm);
+			var loopLen = Math.max(0.01, clipLoopEnd - clipLoopStart);
+			var posInLoop = clipLoopStart + (((lookaheadBeats() - clipLoopStart) % loopLen) + loopLen) % loopLen;
+			var leftBeats = nowX / beatPx, rightBeats = (W - nowX) / beatPx;
+			var repEnd = Math.min(64, Math.ceil((rightBeats + leftBeats) / loopLen) + 1);
+			for (var rep = -1; rep <= repEnd; rep++) {
+				for (i = 0; i < clipNotes.length; i++) {
+					var cn = clipNotes[i];
+					var x = nowX + ((cn.start - posInLoop) + rep * loopLen) * beatPx;
+					if (x < plotL || x > W) continue;
+					pts.push({ x: x, v: cn.vel, c: colorFor(cn.pitch, (cn.voice === undefined ? 0 : cn.voice)) });
+				}
+			}
+		}
+	} else {
+		for (i = 0; i < events.length; i++) {
+			var ev = events[i];
+			var ex = nowX - (scrollMs - ev.tOn) * pxPerSec / 1000;
+			if (ex < plotL || ex > W) continue;
+			pts.push({ x: ex, v: ev.vel, c: colorFor(ev.pitch, ev.voice) });
+		}
+	}
+	pts.sort(function (a, b) { return a.x - b.x; });
+
+	var k, p;
+	for (k = 0; k < pts.length; k++) {              // stems + dots
+		p = pts[k];
+		var vy = velY(p.v);
+		mgraphics.set_source_rgba(p.c[0], p.c[1], p.c[2], 0.45);
+		mgraphics.set_line_width(1);
+		mgraphics.move_to(p.x, top + laneH - 3); mgraphics.line_to(p.x, vy); mgraphics.stroke();
+		mgraphics.set_source_rgba(p.c[0], p.c[1], p.c[2], 1);
+		mgraphics.ellipse(p.x - 2, vy - 2, 4, 4); mgraphics.fill();
+	}
+	if (pts.length >= 2) {                          // the line graph through the dots
+		mgraphics.set_source_rgba(COL_TEXT[0], COL_TEXT[1], COL_TEXT[2], 0.6);
+		mgraphics.set_line_width(1.3);
+		mgraphics.move_to(pts[0].x, velY(pts[0].v));
+		for (k = 1; k < pts.length; k++) mgraphics.line_to(pts[k].x, velY(pts[k].v));
+		mgraphics.stroke();
+	}
+
+	mgraphics.set_source_rgba(NOWLINE);
+	mgraphics.set_line_width(1.5);
+	mgraphics.move_to(nowX, top); mgraphics.line_to(nowX, H); mgraphics.stroke();
+}
+
+// note-name label for a note sounding at the now-line (notetags toggle). A small dark pill
+// just past the now-line, flipped to the left near the right edge.
+function drawNowTag(nowX, yc, pitch, W) {
+	var lbl = noteLabel(pitch);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(9);
+	var tw = lbl.length * 6.2 + 6;
+	var x = nowX + 3;
+	if (x + tw > W) x = nowX - 3 - tw;
+	mgraphics.set_source_rgba(0, 0, 0, 0.62);
+	mgraphics.rectangle(x, yc - 7, tw, 13); mgraphics.fill();
+	mgraphics.set_source_rgba(1, 1, 1, 0.96);
+	mgraphics.move_to(x + 3, yc + 3);
+	mgraphics.show_text(lbl);
 }
 
 // vertical piano keyboard down the left KEYBOARD_W px of Barras: one row per semitone of
@@ -678,7 +785,7 @@ function drawLeftPiano(H, loP, hiP) {
 function paintLegend(W, H) {
 	var sw = 16, x0 = 8, gap = 2;
 	var panelW = 12 * (sw + gap) + 8, panelH = sw + 8;
-	var px = 4, py = H - panelH - 4;
+	var px = 4, py = H - panelH - 4 - ((velLane && viewMode === 0) ? VEL_H : 0);
 	mgraphics.set_source_rgba(0.06, 0.06, 0.07, 0.86);
 	mgraphics.rectangle(px, py, panelW, panelH); mgraphics.fill();
 	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.8);
@@ -706,7 +813,7 @@ function paintVoiceLegend(W, H) {
 	var vs = voicesSeen();
 	var sw = 16, x0 = 8, cell = 58;
 	var panelW = Math.max(1, vs.length) * cell + 8, panelH = sw + 8;
-	var px = 4, py = H - panelH - 4;
+	var px = 4, py = H - panelH - 4 - ((velLane && viewMode === 0) ? VEL_H : 0);
 	mgraphics.set_source_rgba(0.06, 0.06, 0.07, 0.86);
 	mgraphics.rectangle(px, py, panelW, panelH); mgraphics.fill();
 	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.8);
@@ -1017,6 +1124,7 @@ function paintRealtime(W, H, nowX, loP, hiP, yFor, plotL) {
 			mgraphics.rectangle(Math.max(plotL, xEnd - 2), y, 2, barH);
 			mgraphics.fill();
 		}
+		if (noteTags && isHeld) drawNowTag(nowX, yFor(ev.pitch, ev.voice), ev.pitch, W);
 	}
 }
 
@@ -1069,6 +1177,7 @@ function paintLookahead(W, H, nowX, loP, hiP, yFor, plotL) {
 				mgraphics.rectangle(xs, y, Math.min(x2, W) - xs, barH);
 				mgraphics.fill();
 			}
+			if (noteTags && x1 <= nowX && x2 >= nowX) drawNowTag(nowX, y + barH / 2, cn.pitch, W);
 		}
 	}
 }

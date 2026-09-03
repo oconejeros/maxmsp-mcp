@@ -39,10 +39,10 @@ BOTH by a JS Task in animidi.js AND by `metro 33 -> jsui bang()`, belt and suspe
       control strip (10 live.* controls) --> prepend <sel> --> jsui
       loadbang --> re-emit the bang-safe controls; outputvalue the Grid toggle (a bang inverts it)
 
-21 parameters (Abrir + 20). The button is a top-level param (key "obj-20"); the controls
+23 parameters (Abrir + 22). The button is a top-level param (key "obj-20"); the controls
 inside the subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in
 the subpatcher's own local `parameters` block -- the nesting scheme tonnetz.amxd /
-fs2voice use. Three Push banks (8 + 6 + 7).
+fs2voice use. Four Push banks (8 + 6 + 7 + 2).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -82,6 +82,11 @@ ANN = {
     'Piano':     ('Barras: muestra un teclado de piano en el borde izquierdo; las teclas se '
                  'encienden con las notas que suenan. (En Practica el teclado va abajo y '
                  'siempre esta; en Carriles se oculta.)'),
+    'VelLane':   ('Barras: agrega abajo un carril de velocidad tipo clip MIDI de Live, como '
+                 'grafico de lineas: un tallo + un punto por nota a la altura de su velocity, '
+                 'una linea que une los puntos, y guias en 0/32/64/96/127.'),
+    'NoteTags':  ('Barras: escribe el nombre de cada nota que esta sonando (ej. Do4) junto a '
+                 'la linea "ahora" amarilla, como ayuda de lectura / practica.'),
     'Fps':       'Cuadros por segundo del redibujado (15-60).',
     'ReadClip':  'Lookahead: vuelve a leer las notas del clip seleccionado en la vista de clip de Live. Tambien se relee solo al arrancar el transporte.',
     'Clear':     'Borra todos los eventos dibujados y las notas de clip en cache.',
@@ -123,6 +128,8 @@ CTRL = [
     ('SpinMode',  'SpinMode',  'obj-138', 'live.menu',    'spinmode',  'ctl'),
     ('RingGap',   'RingGap',   'obj-137', 'live.numbox',  'ringgap',   'ctl'),
     ('Piano',     'Piano',     'obj-139', 'live.toggle',  'piano',     'ctl'),
+    ('VelLane',   'VelLane',   'obj-140', 'live.toggle',  'vellane',   'ctl'),
+    ('NoteTags',  'NoteTags',  'obj-141', 'live.toggle',  'notetags',  'ctl'),
     ('ReadClip',  'ReadClip',  'obj-128', 'live.text',    'readclip',  'btn'),
     ('Clear',     'Clear',     'obj-129', 'live.text',    'clear',     'btn'),
 ]
@@ -136,6 +143,7 @@ BANKS = [
     ('Vista',    ['TimeMode', 'Scale', 'ColorMode', 'RangeMode', 'RangeLo', 'RangeHi', 'Grid', 'Fps']),
     ('Paleta',   ['HueC', 'PalSat', 'PalLum', 'ReadClip', 'Clear', 'Abrir']),
     ('Vistas 2', ['ViewMode', 'VoiceMode', 'Piano', 'TraceLen', 'Spin', 'SpinMode', 'RingGap']),
+    ('Vistas 3', ['VelLane', 'NoteTags']),
 ]
 
 
@@ -182,6 +190,8 @@ VO = {
     'SpinMode':  enum_vo('SpinMode', 'SpinMode', SPIN_MODES, 0),
     'RingGap':   num_vo('RingGap', 'RingGap', 8, 60, 24),
     'Piano':     toggle_vo('Piano', 1),
+    'VelLane':   toggle_vo('VelLane', 0),
+    'NoteTags':  toggle_vo('NoteTags', 0),
     'ReadClip':  enum_vo('ReadClip', 'ReadClip', ['off', 'on'], 0),
     'Clear':     enum_vo('Clear', 'Clear', ['off', 'on'], 0),
 }
@@ -294,6 +304,10 @@ def build_subpatcher(appversion):
     control('SpinMode', 'obj-138', 'live.menu', 'spinmode', 'ctl', [626.0, 70.0, 104.0, 20.0])
     label(740.0, 72.0, 34.0, 'piano')
     control('Piano', 'obj-139', 'live.toggle', 'piano', 'ctl', [776.0, 71.0, 16.0, 16.0])
+    label(800.0, 72.0, 20.0, 'vel')
+    control('VelLane', 'obj-140', 'live.toggle', 'vellane', 'ctl', [822.0, 71.0, 16.0, 16.0])
+    label(846.0, 72.0, 34.0, 'notas')
+    control('NoteTags', 'obj-141', 'live.toggle', 'notetags', 'ctl', [882.0, 71.0, 16.0, 16.0])
 
     # the canvas -- initial size only; animidi.js then stretches its box.rect to fill the
     # floating window every ~300 ms (presentation view keeps the popup locked even with the
@@ -303,8 +317,8 @@ def build_subpatcher(appversion):
           patching_rect=CANVAS, presentation=1, presentation_rect=CANVAS,
           parameter_enable=0, filename=JS, varname='aw_ui')
 
-    # initial state -> jsui (hidden loadbang chain). Bang-safe controls re-emit; the Grid /
-    # Piano toggles need `outputvalue` (a bare bang would invert them).
+    # initial state -> jsui (hidden loadbang chain). Bang-safe controls re-emit; the toggles
+    # (Grid / Piano / VelLane / NoteTags) need `outputvalue` (a bare bang would invert them).
     plumb('obj-199', 'loadbang', 8.0, PLUMB_Y + 320, 62.0, 'aw_init', outlettype=['bang'])
     for dst in BANG_SAFE:
         hline('obj-199', 0, dst, 0)
@@ -312,8 +326,8 @@ def build_subpatcher(appversion):
           patching_rect=[90.0, PLUMB_Y + 350, 74.0, 22.0], text='outputvalue',
           varname='aw_ov_tgl', **HID)
     hline('obj-199', 0, 'obj-198', 0)
-    hline('obj-198', 0, 'obj-123', 0)   # Grid
-    hline('obj-198', 0, 'obj-139', 0)   # Piano
+    for dst in ('obj-123', 'obj-139', 'obj-140', 'obj-141'):   # Grid / Piano / VelLane / NoteTags
+        hline('obj-198', 0, dst, 0)
 
     local_params = {cid: [ln, sn, i] for i, (ln, sn, cid, _mc, _s, _k) in enumerate(CTRL)}
     local_params['inherited_shortname'] = 1
