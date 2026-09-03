@@ -57,12 +57,15 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
       live.toggle DissSort / live.menu StudyTrav / live.menu StudyMove --> t b i -->
                                      prepend disssort / studytrav / studymove --> pcsetinfo
                                      (order / filter / re-map the walk), \-> bang the study pak
+      live.numbox AnWin --> prepend anwin --> pcsetinfo  (analysis window, seconds; 0 = now)
+                       \-> expr $f1 > 0. --> metro 200 --> bang pcsetinfo  (window decays live)
+      live.text Reset --> sel 1 --> `anreset` --> pcsetinfo  (clear window + key history)
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-51 parameters. The button is a top-level param (key "obj-20"); the 50 controls inside the
+53 parameters. The button is a top-level param (key "obj-20"); the 52 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Eight Push banks (8 + 8 + 8 + 8 + 4 + 4 + 8 + 6).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Eight Push banks (8 + 8 + 8 + 8 + 4 + 6 + 8 + 6).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -123,6 +126,8 @@ ANN = {
     'HueC': 'Tono (matiz, 0-359 grados) que se le da a la nota Do. Toda la rueda de color por clase de altura rota con el: cada nota conserva su distancia relativa (una quinta = 30 grados). Do azul ~= 220. Solo aplica con Color encendido.',
     'PalSat': 'Saturacion de toda la paleta por clase de altura (0-100). Default 62. Solo con Color encendido.',
     'PalLum': 'Luminosidad de toda la paleta por clase de altura (0-100). Default 55. Solo con Color encendido.',
+    'AnWin': 'Ventana de analisis en segundos (0-30). 0 = instantaneo: Forte, vector interv., forma prima, disonancia McKay, dispersion en 5tas, nombre de acorde y tonalidad se calculan solo de lo que suena ahora. >0: ademas suma toda clase de altura tocada en los ultimos N segundos (union simple) para que un arpegio o una linea se lea como un set. Solo afecta la linea del pie y la tonalidad; los paneles siguen mostrando lo que suena. El pie marca "an Ns".',
+    'Reset': 'Vacia la ventana de analisis y el historial de deteccion de tonalidad al instante (empezar limpio en un cambio de seccion).',
     'Tuning': 'Afinacion de la guitarra (cuerdas al aire).',
     'Frets': 'Numero de trastes de la guitarra (12-24).',
     'Zoom': 'Zoom horizontal del piano y la guitarra (1-8x).',
@@ -167,6 +172,8 @@ CTRL = [
     ('HueC',       'HueC',      'obj-156', 'live.numbox',  'huec'),
     ('PalSat',     'PalSat',    'obj-157', 'live.numbox',  'palsat'),
     ('PalLum',     'PalLum',    'obj-158', 'live.numbox',  'pallum'),
+    ('AnWin',      'AnWin',     'obj-159', 'live.numbox',  None),   # -> prepend anwin -> pcsetinfo + metro gate
+    ('Reset',      'Reset',     'obj-336', 'live.text',    None),   # -> sel 1 -> anreset -> pcsetinfo
     ('Trace',      'Trace',     'obj-160', 'live.toggle',  'trace'),
     ('TraceLen',   'TraceLen',  'obj-162', 'live.numbox',  'tracelen'),
     ('Harmonize',  'Harmonize', 'obj-170', 'live.toggle',  'harm'),
@@ -202,7 +209,7 @@ TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar',
            'KeyAuto', 'Trace', 'Harmonize', 'Faces', 'Labels', 'TracePath', 'Colors',
            'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv', 'DissSort']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
-             'obj-156', 'obj-157', 'obj-158',
+             'obj-156', 'obj-157', 'obj-158', 'obj-159',
              'obj-162', 'obj-210', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268', 'obj-307', 'obj-308']
 
@@ -212,7 +219,7 @@ BANKS = [
     ('Rastro',    ['Trace', 'TraceLen', 'RegTrace', 'Faces', 'Labels', 'Conex', 'TracePath', 'Colors']),
     ('Transform', ['XfPrev', 'XfMode', 'Xpose', 'InvC', 'Plr', 'AutoFit', 'PianoMode', 'GuitarMode']),
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
-    ('Mas',       ['Abrir', 'TetPreset', 'StudyMove', 'KeyAuto']),
+    ('Mas',       ['Abrir', 'TetPreset', 'StudyMove', 'KeyAuto', 'AnWin', 'Reset']),
     ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort', 'StudyTrav']),
     ('Paleta',    ['HueC', 'PalSat', 'PalLum', 'Colors', 'Labels', 'Abrir']),
 ]
@@ -263,6 +270,8 @@ VO = {
     'HueC':      num_vo('HueC', 'HueC', 0, 359, 0),
     'PalSat':    num_vo('PalSat', 'PalSat', 0, 100, 62),
     'PalLum':    num_vo('PalLum', 'PalLum', 0, 100, 55),
+    'AnWin':     num_vo('AnWin', 'AnWin', 0, 30, 0),
+    'Reset':     enum_vo('Reset', 'Reset', ['off', 'on'], 0),
     'Trace':     toggle_vo('Trace', 1),
     'TraceLen':  num_vo('TraceLen', 'TraceLen', 1, 24, 8),
     'Harmonize': toggle_vo('Harmonize', 1),
@@ -356,12 +365,15 @@ def build_subpatcher(appversion):
 
     def control(longname, innerid, maxcls, sel, strip_rect):
         r = [float(x) for x in strip_rect]
-        mkbox(bl, id=innerid, maxclass=maxcls, numinlets=1,
-              numoutlets=(2 if maxcls == 'live.numbox' else 1),
-              outlettype=(['', 'float'] if maxcls == 'live.numbox' else ['']),
-              parameter_enable=1, patching_rect=r, presentation=1, presentation_rect=r,
-              varname='tzw_' + longname.lower(), annotation=ANN[longname],
-              saved_attribute_attributes={'valueof': VO[longname]})
+        kw = dict(id=innerid, maxclass=maxcls, numinlets=1,
+                  numoutlets=(2 if maxcls == 'live.numbox' else 1),
+                  outlettype=(['', 'float'] if maxcls == 'live.numbox' else ['']),
+                  parameter_enable=1, patching_rect=r, presentation=1, presentation_rect=r,
+                  varname='tzw_' + longname.lower(), annotation=ANN[longname],
+                  saved_attribute_attributes={'valueof': VO[longname]})
+        if maxcls == 'live.text':
+            kw.update(mode=1, text=longname, texton=longname)
+        mkbox(bl, **kw)
         if sel:
             pid = innerid + 'p'
             plumb(pid, 'prepend ' + sel, 16.0, prep_y[0], 120.0, 'tzw_pp_' + sel)
@@ -444,6 +456,10 @@ def build_subpatcher(appversion):
     control('PalSat', 'obj-157', 'live.numbox', 'palsat', [620.0, 70.0, 32.0, 18.0])
     label(658.0, 70.0, 20.0, 'lum')
     control('PalLum', 'obj-158', 'live.numbox', 'pallum', [680.0, 70.0, 32.0, 18.0])
+    # analysis window (seconds) + reset -- how far back the footer readout + tonalidad look
+    label(726.0, 70.0, 36.0, 'AnWin')
+    control('AnWin', 'obj-159', 'live.numbox', None, [764.0, 70.0, 34.0, 18.0])
+    control('Reset', 'obj-336', 'live.text', None, [804.0, 68.0, 52.0, 20.0])
 
     # row 4 (y 98): piano / guitar controls
     control('PianoMode',  'obj-240', 'live.tab',  'pianomode',  [8.0, 98.0, 88.0, 20.0])
@@ -546,6 +562,27 @@ def build_subpatcher(appversion):
     hline('obj-324', 1, 'obj-325', 0)      # i (fires first): studymove flag -> pcsetinfo
     hline('obj-325', 0, 'obj-105', 0)
     hline('obj-324', 0, 'obj-310', 0)      # b: re-emit the study pak (recompute)
+
+    # AnWin (seconds) -> pcsetinfo `anwin`; the same value gates a metro that bangs pcsetinfo
+    # so the windowed set expires in real time (pcsetinfo's bang handler no-ops when nothing
+    # dropped out). Reset button -> `anreset`.
+    plumb('obj-330', 'prepend anwin', 372.0, PLUMB_Y + 730, 110.0, 'tzw_pp_anwin')
+    plumb('obj-331', 'expr $f1 > 0.', 500.0, PLUMB_Y + 730, 90.0, 'tzw_anwin_gate')
+    plumb('obj-332', 'metro 200', 500.0, PLUMB_Y + 756, 70.0, 'tzw_anwin_metro',
+          outlettype=['bang'])
+    hline('obj-159', 0, 'obj-330', 0)
+    hline('obj-330', 0, 'obj-105', 0)      # anwin <sec> -> pcsetinfo
+    hline('obj-159', 0, 'obj-331', 0)
+    hline('obj-331', 0, 'obj-332', 0)      # >0 -> metro on / 0 -> metro off
+    hline('obj-332', 0, 'obj-105', 0)      # bang -> pcsetinfo re-emit (windowed set decays)
+    plumb('obj-333', 'sel 1', 16.0, PLUMB_Y + 730, 50.0, 'tzw_reset_sel',
+          numinlets=2, numoutlets=2, outlettype=['bang', ''])
+    mkbox(bl, id='obj-334', maxclass='message', numinlets=2, numoutlets=1, outlettype=[''],
+          patching_rect=[16.0, PLUMB_Y + 756, 90.0, 22.0], text='anreset',
+          varname='tzw_msg_anreset', hidden=1)
+    hline('obj-336', 0, 'obj-333', 0)
+    hline('obj-333', 0, 'obj-334', 0)      # sel's `1` bang -> anreset message
+    hline('obj-334', 0, 'obj-105', 0)
 
     # the canvas -- oversized; tonnetz.js draws only within the real window size and keeps
     # its own box rect matched to it. Added last so it sits on top in patching view.
@@ -699,7 +736,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v13: rotatable-by-C palette -- HueC / PalSat / PalLum + swatch legend + Paleta bank)')
+    print('tonnetz.amxd  (v14: AnWin analysis window (seconds) + Reset -- accumulate the set the footer/key readouts use)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))

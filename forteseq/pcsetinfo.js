@@ -7,6 +7,11 @@
 //     list <pc> ...        set the active pitch-class set outright
 //     clear                empty it
 //     bang                 re-emit the current analysis
+//     anwin <seconds>      analysis window, 0..30 (0 = instantaneous, the default). > 0 folds
+//                          every pitch class struck in the last N seconds into the set every
+//                          readout is computed from (footer line + keyguess only; the jsui
+//                          panels stay live). The patch metro-bangs while this is > 0.
+//     anreset              clear the analysis window + the key-finding history now
 //
 //   inlet 0 (study mode -- shapes without MIDI):
 //     studyset <card> <idx1> <rot> <tonic> <inv>
@@ -511,7 +516,9 @@ function bassMidi() {
 // each entry keeps the set's bass pc (-1 if unknown) so the histogram can lean on it -- the
 // bass carries most of the tonal weight and is what separates a key from its relative.
 var keyWin = [];
+var keyWinT = [];         // parallel wall-clock stamp per keyWin entry, for the AnWin time cap
 var KEY_WIN_MAX = 16;
+function nowMs() { return (new Date()).getTime(); }
 function pushKeyWin(pcs, bassPc) {
 	if (!pcs.length) return;
 	var arr = pcs.slice().sort(function (a, b) { return a - b; });
@@ -523,19 +530,21 @@ function pushKeyWin(pcs, bassPc) {
 		// same bass and the new set only adds notes -> a chord still being built up; replace
 		// the in-progress entry instead of stacking fragments of one sonority
 		if (parseInt(prev[1], 10) === bp && pArr.every(function (x) { return arr.indexOf(parseInt(x, 10)) >= 0; })) {
-			keyWin[keyWin.length - 1] = e;
+			keyWin[keyWin.length - 1] = e; keyWinT[keyWinT.length - 1] = nowMs();
 			return;
 		}
-		if (keyWin[keyWin.length - 1] === e) return;
+		if (keyWin[keyWin.length - 1] === e) { keyWinT[keyWinT.length - 1] = nowMs(); return; }
 	}
-	keyWin.push(e);
-	while (keyWin.length > KEY_WIN_MAX) keyWin.shift();
+	keyWin.push(e); keyWinT.push(nowMs());
+	while (keyWin.length > KEY_WIN_MAX) { keyWin.shift(); keyWinT.shift(); }
 }
 function keyHistogram() {
 	var h = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 	var n = keyWin.length;
+	var cut = anWinSec > 0 ? nowMs() - anWinSec * 1000 : -1;
 	for (var i = 0; i < n; i++) {
 		if (!keyWin[i]) continue;
+		if (cut >= 0 && keyWinT[i] < cut) continue;   // older than the analysis window
 		var at = keyWin[i].split("@");
 		var parts = at[0].split(","), bp = parseInt(at[1], 10);
 		// recent sets weigh much more -- a cadence resolves, and the goal chord names the key
@@ -549,6 +558,32 @@ function lowestHeldPc() {
 	for (var n = 0; n < 128; n++) if (midiHeld[n] > 0) return mod12(n);
 	return -1;
 }
+
+// ---- analysis window (AnWin, seconds) --------------------------------------------------
+// 0 = instantaneous: every readout (Forte, IV, prime, McKay dissonance, q5span, chord name,
+// key) is computed from exactly what sounds now. > 0: also fold in every pitch class struck
+// within the last anWinSec seconds -- a simple equal-weight union -- so a melodic line or
+// arpeggio reads as one set. Only the footer line + keyguess follow this; the jsui panels
+// keep drawing the live sounding notes on their own.
+var anWinSec = 0;
+var anEvents = [];        // { pc, t } note-on log, pruned by age
+function pruneAn() {
+	if (anWinSec <= 0) { if (anEvents.length) anEvents = []; return; }
+	var cut = nowMs() - anWinSec * 1000;
+	while (anEvents.length && anEvents[0].t < cut) anEvents.shift();
+}
+function analysisPcs() {
+	var live = activePcs();
+	if (anWinSec <= 0) return live;
+	pruneAn();
+	var set = live.slice();
+	for (var i = 0; i < anEvents.length; i++)
+		if (set.indexOf(anEvents[i].pc) < 0) set.push(anEvents[i].pc);
+	return uniqSorted(set);
+}
+function anwin(v) { anWinSec = Math.max(0, Math.min(30, +v || 0)); pruneAn(); lastBangSig = "!"; emit(); }
+function anreset() { anEvents = []; keyWin = []; keyWinT = []; lastBangSig = "!"; emit(); }
+var lastBangSig = "";     // guards the metro bang from re-emitting an unchanged windowed set
 
 function activePcs() {
 	if (explicit) return explicit.slice();
@@ -574,10 +609,13 @@ function note(pitch, vel) {
 		// only a note-ON is a musical event for key finding; releasing a chord one finger at
 		// a time would otherwise flood the window with shrinking fragments and a drifting bass
 		pushKeyWin(activePcs(), lowestHeldPc());
+		anEvents.push({ pc: pc, t: nowMs() });
+		if (anEvents.length > 512) anEvents.shift();
 	} else {
 		if (voices[pc] > 0) voices[pc]--;
 		if (n >= 0 && n < 128 && midiHeld[n] > 0) midiHeld[n]--;
 	}
+	lastBangSig = "!";
 	emit();
 }
 function list() {
@@ -588,14 +626,25 @@ function list() {
 function clear() {
 	for (var i = 0; i < 12; i++) voices[i] = 0;
 	for (var m = 0; m < 128; m++) midiHeld[m] = 0;
-	keyWin = [];
+	keyWin = []; keyWinT = []; anEvents = [];
 	explicit = null;
 	studyTag = "";
 	studyRoot = -1;
 	spellRot = 0;
+	lastBangSig = "!";
 	emit();
 }
-function bang() { emit(); }
+// the patch bangs this from a metro while AnWin > 0, so the windowed set expires in real
+// time; skip the re-emit when nothing has actually dropped out since the last tick.
+function bang() {
+	if (anWinSec > 0) {
+		pruneAn();
+		var sig = analysisPcs().join(",");
+		if (sig === lastBangSig) return;
+		lastBangSig = sig;
+	}
+	emit();
+}
 
 // ---- study mode: a set from a Forte class, no MIDI ---------------------------------
 // BY_CARD[n] = every card-n Forte catalog entry as {pcs (prime form, starts at 0), forte},
@@ -773,8 +822,10 @@ function tnIndex(pcs) {
 }
 
 function emit() {
-	var pcs = activePcs();
+	pruneAn();
+	var pcs = analysisPcs();
 	var card = pcs.length;
+	lastBangSig = anWinSec > 0 ? pcs.join(",") : "";
 
 	if (card === 0) {
 		outlet(0, "info", "-");
@@ -810,6 +861,7 @@ function emit() {
 
 	var line = (studyTag ? "estudio " + studyTag + "  |  " : "")
 		+ (chordInfo.full ? chordInfo.full + "  |  " : "")
+		+ (anWinSec > 0 && !studyTag ? "an " + anWinSec + "s  |  " : "")
 		+ card + (card === 1 ? " nota" : " notas") + "  " + names.join(" ");
 	if (forte) line += "  |  " + forte;
 	line += "  |  IV " + ivString(iv);

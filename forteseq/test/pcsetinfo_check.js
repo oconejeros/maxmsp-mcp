@@ -109,5 +109,25 @@ play(0, [0, 7, 2]);          eq('C-G-D packs tight in fifths', q5(), 2);
 play(0, [0, 4, 7]);          eq('C major triad spans a M3 = 4 fifths', q5(), 4);
 play(0, [0, 1, 2]);          eq('chromatic cluster is scattered', q5(), 7);
 
+// ---- AnWin: windowed analysis set -----------------------------------------------------
+sandbox.anwin(0);
+sandbox.clear(); OUT = [];
+[48, 52, 55].forEach(n => sandbox.note(n, 100));
+[48, 52, 55].forEach(n => sandbox.note(n, 0));
+eq('AnWin 0: released set clears', chord(), '');
+
+sandbox.anwin(5);
+sandbox.clear(); OUT = [];
+[48, 52, 55].forEach(n => { sandbox.note(n, 100); sandbox.note(n, 0); });  // C E G, one at a time
+eq('AnWin 5: arpeggio reads as one chord', chord(), 'C');
+eq('AnWin 5: forte of the windowed set', (msg1('forte') || [])[0], '3-11B');
+sandbox.bang();
+eq('AnWin 5: metro bang keeps the windowed set', chord(), 'C');
+eq('AnWin 5: info line marks the window', /\ban 5s\b/.test((msg0('info') || [''])[0]), true);
+
+sandbox.anreset();
+eq('anreset clears the window', chord(), '');
+sandbox.anwin(0);
+
 console.log(fails ? ('\n' + fails + ' FAILED') : '\nall green');
 process.exit(fails ? 1 : 0);
