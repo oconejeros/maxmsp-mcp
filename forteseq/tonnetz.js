@@ -90,6 +90,9 @@
 //   faces <0|1>          fill a Tonnetz triangle when all three of its pitch classes sound
 //   labels <0|1>         note names (1, default) vs pitch-class numbers (0)
 //   colors <0|1>         per-pitch-class colours (1, default) vs uniform blue
+//   huec <0..359>        hue given to C -- rotates the whole circle-of-fifths palette
+//   palsat <0..100>      saturation of the pitch-class palette (default 62)
+//   pallum <0..100>      luminosity of the pitch-class palette (default 55)
 //   conex <0..8>         circle connections: 0 off, 1 chord polygon (default), 2 every dyad,
 //                        3..8 = only interval class 1..6 (m2 M2 m3 M3 P4/P5 TT), coloured
 //   tracepath <0|1>      draw the trace as a chronological path on the circles (0, default)
@@ -123,8 +126,11 @@ var SELF = this;   // captured so helper functions can reach .patcher / .box rel
 
 // ---- palette -------------------------------------------------------------------------
 // sidebrain.net/relative-keys colours a circle of fifths as an HSL wheel: hue advances one
-// step per fifth. k = fifth index of the pitch class = (pc*7) mod 12; hue = k*30 deg.
-// Tune PC_SAT / PC_LUM to taste; the table is rebuilt from them at load.
+// step per fifth. k = fifth index of the pitch class = (pc*7) mod 12; hue = baseHue + k*30.
+// baseHue is the hue GIVEN TO C (pc 0) -- the HueC control rotates the whole wheel with it
+// and every note keeps its relative offset (a fifth = 30 deg; blue C ~= 220). PC_SAT / PC_LUM
+// (the sat / lum controls) scale the set. All three apply only when `colors` is on.
+var baseHue = 0;         // hue for C, degrees 0..359 (HueC control)
 var PC_SAT = 0.62, PC_LUM = 0.55;
 var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1
 var PC_TEXT  = [];       // readable text colour for a filled node of that pc
@@ -142,13 +148,16 @@ function hsl2rgb(h, s, l) {
 	}
 	return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
 }
-for (var _pc = 0; _pc < 12; _pc++) {
-	var _k = (_pc * 7) % 12;
-	var _c = hsl2rgb(_k * 30, PC_SAT, PC_LUM);
-	PC_COLOR[_pc] = _c;
-	PC_TEXT[_pc] = (0.299 * _c[0] + 0.587 * _c[1] + 0.114 * _c[2]) > 0.62
-		? [0.1, 0.1, 0.1, 1] : [1, 1, 1, 1];
+function rebuildPalette() {
+	for (var pc = 0; pc < 12; pc++) {
+		var k = (pc * 7) % 12;
+		var c = hsl2rgb(baseHue + k * 30, PC_SAT, PC_LUM);
+		PC_COLOR[pc] = c;
+		PC_TEXT[pc] = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) > 0.62
+			? [0.1, 0.1, 0.1, 1] : [1, 1, 1, 1];
+	}
 }
+rebuildPalette();
 
 // fixed-look palette (used when colors == 0, and for chrome)
 var BG        = [0.14, 0.14, 0.14, 1];
@@ -476,6 +485,9 @@ function harm(v) { harmOn = v ? 1 : 0; mgraphics.redraw(); }
 function faces(v) { facesOn = v ? 1 : 0; mgraphics.redraw(); }
 function labels(v) { labelsOn = v ? 1 : 0; mgraphics.redraw(); }
 function colors(v) { colorsOn = v ? 1 : 0; mgraphics.redraw(); }
+function huec(v)   { baseHue = ((Math.round(v) % 360) + 360) % 360; rebuildPalette(); mgraphics.redraw(); }
+function palsat(v) { PC_SAT = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
+function pallum(v) { PC_LUM = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
 function conex(v) { conexMode = Math.max(0, Math.min(8, Math.round(v))); mgraphics.redraw(); }
 function tracepath(v) { tracePathOn = v ? 1 : 0; mgraphics.redraw(); }
 function regtrace(v) { regTraceOn = v ? 1 : 0; mgraphics.redraw(); }
@@ -588,6 +600,10 @@ function paint() {
 		}
 	}
 
+	// palette legend: 12 swatches (chromatic order, C first) bottom-left of the canvas, so a
+	// rotated HueC wheel stays readable. Only meaningful while per-pitch-class colours are on.
+	if (colorsOn && active.length) paintLegend(W, cH);
+
 	// footer -- row 1: chord symbol (bold) at the left, dissonance meter at the right;
 	// row 2: the full set-class analysis line.
 	mgraphics.set_source_rgba(PANEL_BG);
@@ -645,6 +661,30 @@ function paintDisoMeter(W, cH) {
 	mgraphics.show_text("diso " + disoPct.toFixed(0) + "%");
 	mgraphics.move_to(mx, my + 19);
 	mgraphics.show_text(band[2] + (q5span >= 0 ? "   5tas " + q5span + "/11" : ""));
+}
+
+// palette legend -- 12 swatches in chromatic order (C first) with note names, drawn over the
+// bottom-left of the canvas on a faint backing. Shows how the HueC / sat / lum rotation came
+// out. Names are the plain chromatic names (not spellRot-rotated -- this is a colour key).
+function paintLegend(W, cH) {
+	var sw = 13, gap = 2, x0 = 8;
+	var tot = 12 * (sw + gap) + 6;
+	if (tot > W - 12) return;
+	var y0 = cH - sw - 6;
+	mgraphics.set_source_rgba(BG[0], BG[1], BG[2], 0.82);
+	mgraphics.rectangle(x0 - 3, y0 - 3, tot, sw + 12);
+	mgraphics.fill();
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(7);
+	for (var pc = 0; pc < 12; pc++) {
+		var x = x0 + pc * (sw + gap);
+		var c = PC_COLOR[pc];
+		mgraphics.set_source_rgba(c[0], c[1], c[2], 1);
+		mgraphics.rectangle(x, y0, sw, sw); mgraphics.fill();
+		mgraphics.set_source_rgba(PC_TEXT[pc]);
+		mgraphics.move_to(x + (NOTE_NAMES[pc].length > 1 ? 1 : 3), y0 + sw - 4);
+		mgraphics.show_text(NOTE_NAMES[pc]);
+	}
 }
 
 // one framed panel, dispatched by kind string (see VIEW_KIND). The lattice panels bound their

@@ -45,6 +45,8 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
                                via jsui outlet 0: `abc a b c` -> numboxes, `presetsel i` -> menu)
       live.numbox Radius/TraceLen --> prepend radius / tracelen --> jsui
       live.toggle Trace/Harmonize/Faces/Labels/TracePath/Colors/RegTrace + live.menu Conex --> prepend <sel> --> jsui
+      live.numbox HueC/PalSat/PalLum --> prepend huec/palsat/pallum --> jsui  (rotate/scale the
+                               circle-of-fifths pitch-class palette; HueC = hue given to C)
       live.tab PianoMode/GuitarMode + live.menu Tuning + live.numbox Frets/Zoom/Pan --> prepend <sel> --> jsui
       live.toggle Plr/XfPrev/AutoFit + live.tab XfMode + live.numbox Xpose/InvC --> prepend <sel> --> jsui
       live.toggle Study --> t b i i --> prepend studymode --> jsui  (freeze MIDI)
@@ -57,10 +59,10 @@ rotation + tonic and the set is shown on every panel with the MIDI frozen out.
                                      (order / filter / re-map the walk), \-> bang the study pak
       loadbang --> bang the bang-safe controls; outputvalue the toggles (a bang inverts them)
 
-48 parameters. The button is a top-level param (key "obj-20"); the 47 controls inside the
+51 parameters. The button is a top-level param (key "obj-20"); the 50 controls inside the
 subpatcher are registered on the TOP patcher with "obj-10::<innerid>" keys AND in the
 subpatcher's own local `parameters` block -- the nesting scheme FORTESEQ2 uses for its
-fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Seven Push banks (8 + 8 + 8 + 8 + 4 + 4 + 8).
+fs2voice/fs2pages bpatchers. See the amxd-parameter-registries note. Eight Push banks (8 + 8 + 8 + 8 + 4 + 4 + 8 + 6).
 
 Close the device in BOTH Max and Live before running with --apply.
 """
@@ -118,6 +120,9 @@ ANN = {
     'PianoMode': 'Piano: Octava = una sola octava por clase de altura. Completo = todo el rango MIDI 0-127, nota por nota.',
     'GuitarMode': 'Guitarra: Repetidas = todas las posiciones del mastil de cada nota que suena. Suena = solo la altura exacta. Escala = puntos tenues en cada traste de la tonalidad diatonica actual (Key/KeyMode o KeyAuto) y, si suena un acorde, un recuadro sobre la ventana de 4 trastes mas grave que lo digita entero.',
     'KeyAuto': 'El panel diatonico sigue la estimacion de tonalidad de pcsetinfo (Krumhansl-Schmuckler sobre una ventana de acordes recientes) en vez de Key / KeyMode, que quedan sin efecto mientras esta encendido. El pie muestra la lectura y su confianza.',
+    'HueC': 'Tono (matiz, 0-359 grados) que se le da a la nota Do. Toda la rueda de color por clase de altura rota con el: cada nota conserva su distancia relativa (una quinta = 30 grados). Do azul ~= 220. Solo aplica con Color encendido.',
+    'PalSat': 'Saturacion de toda la paleta por clase de altura (0-100). Default 62. Solo con Color encendido.',
+    'PalLum': 'Luminosidad de toda la paleta por clase de altura (0-100). Default 55. Solo con Color encendido.',
     'Tuning': 'Afinacion de la guitarra (cuerdas al aire).',
     'Frets': 'Numero de trastes de la guitarra (12-24).',
     'Zoom': 'Zoom horizontal del piano y la guitarra (1-8x).',
@@ -159,6 +164,9 @@ CTRL = [
     ('TonC',       'TonC',      'obj-142', 'live.numbox',  None),
     ('Radius',     'Radius',    'obj-150', 'live.numbox',  'radius'),
     ('KeyAuto',    'KeyAuto',   'obj-155', 'live.toggle',  'keyauto'),
+    ('HueC',       'HueC',      'obj-156', 'live.numbox',  'huec'),
+    ('PalSat',     'PalSat',    'obj-157', 'live.numbox',  'palsat'),
+    ('PalLum',     'PalLum',    'obj-158', 'live.numbox',  'pallum'),
     ('Trace',      'Trace',     'obj-160', 'live.toggle',  'trace'),
     ('TraceLen',   'TraceLen',  'obj-162', 'live.numbox',  'tracelen'),
     ('Harmonize',  'Harmonize', 'obj-170', 'live.toggle',  'harm'),
@@ -194,6 +202,7 @@ TOGGLES = ['VwTonnetz', 'VwChrom', 'VwFifths', 'VwVoice', 'VwPiano', 'VwGuitar',
            'KeyAuto', 'Trace', 'Harmonize', 'Faces', 'Labels', 'TracePath', 'Colors',
            'Plr', 'XfPrev', 'RegTrace', 'AutoFit', 'Study', 'StudyInv', 'DissSort']
 BANG_SAFE = ['obj-128', 'obj-129', 'obj-130', 'obj-131', 'obj-140', 'obj-141', 'obj-142', 'obj-150',
+             'obj-156', 'obj-157', 'obj-158',
              'obj-162', 'obj-210', 'obj-240', 'obj-242', 'obj-244', 'obj-246', 'obj-248', 'obj-250',
              'obj-264', 'obj-266', 'obj-268', 'obj-307', 'obj-308']
 
@@ -205,6 +214,7 @@ BANKS = [
     ('Piano/Guit', ['Tuning', 'Frets', 'Zoom', 'Pan']),
     ('Mas',       ['Abrir', 'TetPreset', 'StudyMove', 'KeyAuto']),
     ('Estudio',   ['Study', 'StudyCard', 'StudyIdx', 'StudyRot', 'StudyTonic', 'StudyInv', 'DissSort', 'StudyTrav']),
+    ('Paleta',    ['HueC', 'PalSat', 'PalLum', 'Colors', 'Labels', 'Abrir']),
 ]
 
 
@@ -250,6 +260,9 @@ VO = {
     'TonC':      num_vo('TonC', 'TonC', 1, 11, 5),
     'Radius':    num_vo('Radius', 'Radius', 24, 120, 46),
     'KeyAuto':   toggle_vo('KeyAuto', 0),
+    'HueC':      num_vo('HueC', 'HueC', 0, 359, 0),
+    'PalSat':    num_vo('PalSat', 'PalSat', 0, 100, 62),
+    'PalLum':    num_vo('PalLum', 'PalLum', 0, 100, 55),
     'Trace':     toggle_vo('Trace', 1),
     'TraceLen':  num_vo('TraceLen', 'TraceLen', 1, 24, 8),
     'Harmonize': toggle_vo('Harmonize', 1),
@@ -423,6 +436,14 @@ def build_subpatcher(appversion):
         label(tx + 18, 68.0, 52.0, word)
         tx += 70.0
     control('Conex', 'obj-210', 'live.menu', 'conex', [438.0, 68.0, 72.0, 20.0])
+    # palette: hue of C (rotates the whole circle-of-fifths wheel) + sat + lum, in the free
+    # right half of row 3 next to the Color toggle. Only bite when Color is on.
+    label(520.0, 70.0, 30.0, 'DoHue')
+    control('HueC',   'obj-156', 'live.numbox', 'huec',   [554.0, 70.0, 38.0, 18.0])
+    label(598.0, 70.0, 20.0, 'sat')
+    control('PalSat', 'obj-157', 'live.numbox', 'palsat', [620.0, 70.0, 32.0, 18.0])
+    label(658.0, 70.0, 20.0, 'lum')
+    control('PalLum', 'obj-158', 'live.numbox', 'pallum', [680.0, 70.0, 32.0, 18.0])
 
     # row 4 (y 98): piano / guitar controls
     control('PianoMode',  'obj-240', 'live.tab',  'pianomode',  [8.0, 98.0, 88.0, 20.0])
@@ -678,7 +699,7 @@ def main():
     assert sub_local == {c[0] for c in CTRL}, sub_local
     n_top, n_sub = len(P['boxes']), len(subbox['patcher']['boxes'])
 
-    print('tonnetz.amxd  (v12: chord names + KS key auto-detect + dissonance meter + guitar scale/chord mode)')
+    print('tonnetz.amxd  (v13: rotatable-by-C palette -- HueC / PalSat / PalLum + swatch legend + Paleta bank)')
     print('  top boxes    : %d   sub boxes: %d' % (n_top, n_sub))
     print('  top lines    : %d   sub lines: %d' % (len(P['lines']), len(subbox['patcher']['lines'])))
     print('  params (%d)   : %s' % (len(all_names), ', '.join(all_names)))
