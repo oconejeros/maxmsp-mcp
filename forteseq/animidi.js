@@ -37,12 +37,29 @@
 //   songpos <beats>             Live song position in beats (stored only; not used to scroll).
 //   timemode <0|1>              0 real-time trailing | 1 clip lookahead.
 //   pxpersec <f>                horizontal scale, px per second (20..400).
-//   colormode <0|1|2>           0 pitch-class wheel | 1 per-MIDI-channel | 2 fixed accent.
+//   colormode <0..4>            0 pitch-class wheel | 1 per-MIDI-channel | 2 fixed accent |
+//                               3 acorde mezclado (OKLab blend of the held+AnWin chord) | 4
+//                               disonancia (McKay % of that same chord, bucketed into threshold
+//                               bands). Both 3 and 4 use the AnWin window (see `anwin` below),
+//                               same idea as tonnetz/pcsetinfo, so a melodic line reads as one
+//                               aggregated chord instead of whatever single note is held right now.
 //   rangemode <0|1>             y-axis: 0 auto-fit to the music | 1 fixed rangelo..rangehi.
 //   rangelo / rangehi <0..127>  fixed y-axis bounds (used when rangemode == 1).
 //   grid <0|1>                  octave lines + beat/bar lines.
 //   piano <0|1>                 Barras: piano keyboard gutter down the left edge.
 //   vellane <0|1>               Barras: velocity line-graph lane along the bottom.
+//   harmlane <0|1>              Barras: harmony-colour spectrum lane along the bottom (a strip
+//                               of contiguous colour blocks, the OKLab blend of whatever's
+//                               sounding within AnWin -- same colour as tonnetz's "Col" panel,
+//                               not the McKay dissonance band -- independent of ColorMode, like
+//                               VelLane).
+//   anwin <seconds>             analysis window shared by ColorMode 3/4 and HarmLane, 0..10
+//                               (default 1.2): a pc counts toward the chord while held AND for
+//                               this many seconds after its onset, so a melodic run reads as one
+//                               chord instead of single notes (which are never dissonant alone).
+//                               Same idea as tonnetz/pcsetinfo's AnWin; 0 = instantaneous
+//                               (concurrent notes only). Set it to the same value as tonnetz's
+//                               AnWin to get comparable colours from both devices on one track.
 //   notetags <0|1>              Barras: note-name label on each sounding note at the now-line.
 //   viewmode <0|1|2|3>          0 Barras | 1 Espiral | 2 Dodecaedro | 3 Práctica (falling
 //                               MIDI roll onto a keyboard at the bottom; both time models).
@@ -71,27 +88,20 @@ var SELF = this;   // captured so helper functions can reach .patcher / .box rel
 // (e.g. HueC = 220 -> C is blue and every other note keeps its relative offset). baseSat /
 // baseLum (the Sat / Lum controls) scale the whole set. colormode 1 (per channel) and 2
 // (fixed) ignore all three.
+// hue/mix/dissonance math lives in pccolor.js (shared with tonnetz.js, invertedprism.js,
+// multichord.js) so the wheel formula and the OKLab/threshold machinery are defined once.
+include('pccolor.js');
+
 var baseHue = 0;         // hue for C, degrees 0..359
 var baseSat = 0.62;      // 0..1
 var baseLum = 0.55;      // 0..1
 var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1
 
-function hsl2rgb(h, s, l) {
-	h = ((h % 360) + 360) % 360 / 360;
-	var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-	var p = 2 * l - q;
-	function hue(t) {
-		if (t < 0) t += 1; if (t > 1) t -= 1;
-		if (t < 1 / 6) return p + (q - p) * 6 * t;
-		if (t < 1 / 2) return q;
-		if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-		return p;
-	}
-	return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
-}
 function rebuildPalette() {
-	for (var pc = 0; pc < 12; pc++)
-		PC_COLOR[pc] = hsl2rgb(baseHue + ((pc * 7) % 12) * 30, baseSat, baseLum);
+	for (var pc = 0; pc < 12; pc++) {
+		var c = pcToColor(pc, { baseHue: baseHue, sat: baseSat, lum: baseLum });
+		PC_COLOR[pc] = [c.r, c.g, c.b];
+	}
 }
 rebuildPalette();
 
@@ -99,8 +109,10 @@ rebuildPalette();
 // 24 well-separated hues, indexed voice % 24.  Used by colormode 1 and by VoiceMode.
 var VOICE_N = 24;
 var VOICE_COLOR = [];
-for (var _v = 0; _v < VOICE_N; _v++)
-	VOICE_COLOR[_v] = hsl2rgb((_v * 137.5) % 360, 0.58, 0.56);   // golden-angle spread
+for (var _v = 0; _v < VOICE_N; _v++) {
+	var _vc = hslToRgb((_v * 137.5) % 360, 0.58, 0.56);   // golden-angle spread
+	VOICE_COLOR[_v] = [_vc.r, _vc.g, _vc.b];
+}
 
 var BG        = [0.11, 0.11, 0.12, 1];
 var FRAME     = [0.30, 0.30, 0.32, 1];
@@ -118,6 +130,7 @@ var PLAYED_SHADE = [0.55, 0.62, 0.85, 0.07]; // Lookahead: the "already swept" b
 var KEYBOARD_W = 46;    // left piano gutter width in Barras
 var KB_H       = 66;    // bottom keyboard height in Práctica
 var VEL_H      = 58;    // velocity lane height in Barras (when VelLane is on)
+var HARM_H     = 34;    // harmony-colour spectrum lane height in Barras (when HarmLane is on)
 
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 function isBlackPc(pc) { return [1, 3, 6, 8, 10].indexOf(((pc % 12) + 12) % 12) >= 0; }
@@ -141,6 +154,11 @@ var gridOn    = 1;
 var fpsRate   = 30;
 var pianoOn   = 1;       // Barras: show the piano keyboard gutter down the left edge
 var velLane   = 0;       // Barras: show a velocity line-graph lane along the bottom
+var harmLane  = 0;       // Barras: show the harmony-colour spectrum lane along the bottom
+var anWinSec  = 1.2;     // harmlane analysis window, seconds (0 = instantaneous); see doc header
+var currentChordCol = null;   // colorMode 3 cache: OKLab blend of the currently-held chord
+var currentDissCol  = null;   // colorMode 4 cache: dissonance-band colour of the same chord
+var NEUTRAL_COL = [0.42, 0.42, 0.42];   // colorMode 3/4 fallback when nothing is held
 var noteTags  = 0;       // Barras: label sounding notes with their name at the now-line
 
 // view selector + voice grouping + spiral/dodeca controls (phase 2 of the device)
@@ -254,6 +272,7 @@ function tick() {
 			spinPhase += spinVel * sk;
 		}
 		pruneEvents();
+		if (colorMode === 3 || colorMode === 4) recomputeChordColors();   // let the AnWin window age out on its own
 		mgraphics.redraw();
 	} catch (e) {
 		if (String(e) !== _lastTickErr) { _lastTickErr = String(e); post("animidi tick error: " + e + "\n"); }
@@ -281,6 +300,48 @@ function pruneEvents() {
 	}
 }
 
+// AnWin onset log for heldPcs() -- same idea as pcsetinfo.js's anEvents/analysisPcs (which is
+// what feeds tonnetz's swatches): a pc counts toward the chord for anWinSec seconds after its
+// onset, not just while literally held, so a melodic line aggregates into one set instead of
+// always reading as whatever single note is down right now. Timestamped in scrollMs (this
+// device's own real-time clock) rather than Date.now() so it matches tOn/tOff already do.
+var anEvents = [];   // { pc, t } note-on log, pruned by age
+function pruneAnEvents() {
+	if (anWinSec <= 0) { if (anEvents.length) anEvents = []; return; }
+	var cut = scrollMs - anWinSec * 1000;
+	var k = 0;
+	while (k < anEvents.length && anEvents[k].t < cut) k++;
+	if (k > 0) anEvents.splice(0, k);
+}
+// distinct pitch classes among the notes currently held PLUS any pc whose onset fell within
+// the last anWinSec seconds -- the chord ColorMode 3/4 colour from. Order doesn't matter:
+// dissonanceBand/harmonyToColor are set functions.
+function heldPcs() {
+	pruneAnEvents();
+	var pcs = [], seen = {};
+	for (var p = 0; p < 128; p++) {
+		if (held[p] >= 0 && events[held[p]]) {
+			var pc = p % 12;
+			if (!seen[pc]) { seen[pc] = 1; pcs.push(pc); }
+		}
+	}
+	for (var i = 0; i < anEvents.length; i++) {
+		if (!seen[anEvents[i].pc]) { seen[anEvents[i].pc] = 1; pcs.push(anEvents[i].pc); }
+	}
+	return pcs;
+}
+// recomputes the colorMode 3 (acorde mezclado) / 4 (disonancia) caches from the held chord.
+// Called whenever `held` changes so colorFor() stays a cheap lookup during painting.
+function recomputeChordColors() {
+	var pcs = heldPcs();
+	if (!pcs.length) { currentChordCol = NEUTRAL_COL; currentDissCol = NEUTRAL_COL; return; }
+	var blend = harmonyToColor(pcs, { baseHue: baseHue, sat: baseSat }, 'oklab');
+	currentChordCol = [blend.r, blend.g, blend.b];
+	var db = dissonanceBand(pcs);
+	var bc = bandColor(db.band, db.nBands);
+	currentDissCol = [bc.r, bc.g, bc.b];
+}
+
 // ---- message handlers ---------------------------------------------------------------
 // shared: push a note on/off event tagged with a voice id (a Live track index, or a MIDI
 // channel outside Live). vel 0 = note-off.
@@ -293,6 +354,8 @@ function pushNoteEvent(pitch, vel, voice) {
 		events.push({ pitch: n, vel: vel, voice: vv, tOn: scrollMs, tOff: -1 });
 		held[n] = events.length - 1;
 		pushOnset({ pc: n % 12, pitch: n, vel: vel, voice: vv, t: scrollMs });
+		anEvents.push({ pc: n % 12, t: scrollMs });
+		if (anEvents.length > 512) anEvents.shift();
 		if (spinMode === 1 && spinAmt > 0) {           // kick the note-driven spin along the contour
 			var dir = (lastOnsetPitch < 0 || n === lastOnsetPitch) ? 1 : (n > lastOnsetPitch ? 1 : -1);
 			spinVel += dir * (spinAmt / 100) * 3.2 * (0.45 + vel / 127);
@@ -303,6 +366,7 @@ function pushNoteEvent(pitch, vel, voice) {
 		if (held[n] >= 0 && events[held[n]]) events[held[n]].tOff = scrollMs;
 		held[n] = -1;
 	}
+	recomputeChordColors();
 	mgraphics.redraw();
 }
 // this device's OWN track MIDI (notein -> pack 0 0 0 -> prepend note). Normally tagged with
@@ -346,13 +410,15 @@ function timemode(v) {
 	mgraphics.redraw();
 }
 function pxpersec(v) { pxPerSec = Math.max(10, Math.min(600, v)); mgraphics.redraw(); }
-function colormode(v) { colorMode = Math.max(0, Math.min(2, Math.round(v))); mgraphics.redraw(); }
+function colormode(v) { colorMode = Math.max(0, Math.min(4, Math.round(v))); mgraphics.redraw(); }
 function rangemode(v) { rangeMode = v ? 1 : 0; mgraphics.redraw(); }
 function rangelo(v) { rangeLo = Math.max(0, Math.min(127, Math.round(v))); mgraphics.redraw(); }
 function rangehi(v) { rangeHi = Math.max(0, Math.min(127, Math.round(v))); mgraphics.redraw(); }
 function grid(v) { gridOn = v ? 1 : 0; mgraphics.redraw(); }
 function piano(v) { pianoOn = v ? 1 : 0; mgraphics.redraw(); }
 function vellane(v) { velLane = v ? 1 : 0; mgraphics.redraw(); }
+function harmlane(v) { harmLane = v ? 1 : 0; mgraphics.redraw(); }
+function anwin(v) { anWinSec = Math.max(0, Math.min(10, +v || 0)); mgraphics.redraw(); }
 function notetags(v) { noteTags = v ? 1 : 0; mgraphics.redraw(); }
 function viewmode(v) { viewMode = Math.max(0, Math.min(3, Math.round(v))); mgraphics.redraw(); }
 function voicemode(v) { voiceMode = Math.max(0, Math.min(2, Math.round(v))); mgraphics.redraw(); }
@@ -378,6 +444,8 @@ function clear() {
 	for (var p = 0; p < 128; p++) held[p] = -1;
 	clipNotes = [];
 	onsetQ = [];
+	anEvents = [];
+	currentChordCol = null; currentDissCol = null;
 	spinVel = 0; spinPhase = 0; lastOnsetPitch = -1;
 	previewMs = 0;
 	_chanSeen = {}; _chanCount = 0; _multiChan = 0;
@@ -493,8 +561,12 @@ function yRange() {
 }
 
 // colour source, chosen by ColorMode: 0 = por Nota (circle-of-fifths pc wheel),
-// 1 = por Voz (per-track hue), 2 = Fijo (one accent colour).
+// 1 = por Voz (per-track hue), 2 = Fijo (one accent colour), 3 = Acorde (OKLab blend of the
+// held chord), 4 = Disonancia (McKay % of the held chord, bucketed by threshold). 3/4 colour
+// every currently-sounding note the SAME -- they describe the chord, not the individual pitch.
 function colorFor(pc, voice) {
+	if (colorMode === 4) return (currentDissCol || NEUTRAL_COL).concat(1);
+	if (colorMode === 3) return (currentChordCol || NEUTRAL_COL).concat(1);
 	if (colorMode === 2) return COL_ACCENT;
 	if (colorMode === 1) return VOICE_COLOR[((voice % VOICE_N) + VOICE_N) % VOICE_N].concat(1);
 	return PC_COLOR[((pc % 12) + 12) % 12].concat(1);
@@ -622,9 +694,11 @@ function paintBarras(W, H) {
 
 	// lanes: one horizontal band per voice (track) seen -- works in real-time AND lookahead
 	var lanes = (voiceMode === 2) ? voicesSeen() : null;
-	// the velocity lane (toggle) eats VEL_H off the bottom -- the note plot ends at plotBot,
-	// which is what paintGrid / paintRealtime / paintLookahead / drawLeftPiano get as "H".
-	var plotBot = velLane ? Math.max(120, H - VEL_H) : H;
+	// the velocity + harmony lanes (toggles) eat VEL_H/HARM_H off the bottom, stacked -- the
+	// note plot ends at plotBot, which is what paintGrid / paintRealtime / paintLookahead /
+	// drawLeftPiano get as "H".
+	var lanesH = (velLane ? VEL_H : 0) + (harmLane ? HARM_H : 0);
+	var plotBot = lanesH ? Math.max(120, H - lanesH) : H;
 	var rowH = plotBot / rows;
 	NOTE_THICK = Math.max(3, Math.min(14, rowH * 0.8));   // slim bars, never fatter than 14px
 
@@ -651,7 +725,92 @@ function paintBarras(W, H) {
 	mgraphics.move_to(nowX, 0); mgraphics.line_to(nowX, plotBot); mgraphics.stroke();
 
 	if (plotL > 0) drawLeftPiano(plotBot, loP, hiP);
-	if (velLane) paintVelLane(W, H, nowX, loP, hiP, plotL, plotBot);
+	// stack the lanes: harmony spectrum first (closest to the note plot), then velocity below.
+	var laneY = plotBot;
+	if (harmLane) { paintHarmLane(W, laneY + HARM_H, nowX, loP, hiP, plotL, laneY); laneY += HARM_H; }
+	if (velLane)  { paintVelLane(W, laneY + VEL_H, nowX, loP, hiP, plotL, laneY); laneY += VEL_H; }
+}
+
+// harmony-colour spectrum lane along the bottom HARM_H px: a strip of contiguous colour
+// blocks, one per stretch of unchanging harmony, coloured by dissonanceBand/bandColor of
+// whichever pitch classes are concurrently sounding -- independent of ColorMode (like VelLane
+// is independent of it, this always reads via the threshold/disonancia mapping). Built
+// entirely in screen-space from the note spans Barras/Lookahead already compute (their x math,
+// mirrored here) plus the SAME events/clipNotes buffers -- no separate history buffer.
+function paintHarmLane(W, H, nowX, loP, hiP, plotL, plotBot) {
+	var top = plotBot, laneH = H - plotBot;
+	if (laneH < 6) return;
+	mgraphics.set_source_rgba(0.08, 0.08, 0.09, 1);
+	mgraphics.rectangle(plotL, top, W - plotL, laneH); mgraphics.fill();
+
+	// gather every visible note as a screen-space [x0, x1] span tagged with its pitch class.
+	// AnWin (anWinSec): a pc keeps counting toward the lane's colour for winPx past its OWN
+	// onset even after it's released -- a melodic run reads as one aggregated set instead of
+	// single, never-dissonant-alone notes -- so x1 is widened to at least x0 + winPx. winPx is
+	// the same in both time models: beatPx * (anWinSec*tempo/60) reduces to anWinSec*pxPerSec.
+	var spans = [], i, winPx = anWinSec * pxPerSec;
+	if (timeMode === 1) {
+		if (clipNotes.length) {
+			var beatPx = pxPerSec * 60 / Math.max(1, tempoBpm);
+			var loopLen = Math.max(0.01, clipLoopEnd - clipLoopStart);
+			var posInLoop = clipLoopStart + (((lookaheadBeats() - clipLoopStart) % loopLen) + loopLen) % loopLen;
+			var leftBeats = nowX / beatPx, rightBeats = (W - nowX) / beatPx;
+			var repEnd = Math.min(64, Math.ceil((rightBeats + leftBeats) / loopLen) + 1);
+			for (var rep = -1; rep <= repEnd; rep++) {
+				for (i = 0; i < clipNotes.length; i++) {
+					var cn = clipNotes[i];
+					var xOn = nowX + ((cn.start - posInLoop) + rep * loopLen) * beatPx;
+					var xOff = Math.max(xOn + cn.dur * beatPx, xOn + winPx);
+					if (xOff < plotL || xOn > W) continue;
+					spans.push({ x0: Math.max(plotL, xOn), x1: Math.min(W, xOff), pc: ((cn.pitch % 12) + 12) % 12 });
+				}
+			}
+		}
+	} else {
+		for (i = 0; i < events.length; i++) {
+			var ev = events[i];
+			var exOn = nowX - (scrollMs - ev.tOn) * pxPerSec / 1000;
+			var exOffRaw = ev.tOff < 0 ? nowX : nowX - (scrollMs - ev.tOff) * pxPerSec / 1000;
+			var exOff = Math.max(exOffRaw, exOn + winPx);
+			if (exOff < plotL || exOn > W) continue;
+			spans.push({ x0: Math.max(plotL, exOn), x1: Math.min(W, exOff), pc: ((ev.pitch % 12) + 12) % 12 });
+		}
+	}
+
+	// sweep-line: cut the lane at every span boundary, colour each resulting slice by the OKLab
+	// blend of the pcs active at its midpoint (a chord change only happens at a boundary, so
+	// this is exact) -- same colour tonnetz's "Col" panel shows, not the McKay dissonance band.
+	var bounds = [plotL, W], s;
+	for (i = 0; i < spans.length; i++) {
+		s = spans[i];
+		if (s.x0 > plotL && s.x0 < W) bounds.push(s.x0);
+		if (s.x1 > plotL && s.x1 < W) bounds.push(s.x1);
+	}
+	bounds.sort(function (a, b) { return a - b; });
+
+	for (i = 0; i < bounds.length - 1; i++) {
+		var xa = bounds[i], xb = bounds[i + 1];
+		if (xb - xa < 0.25) continue;
+		var mid = (xa + xb) / 2, pcs = [], seen = {};
+		for (var k = 0; k < spans.length; k++) {
+			s = spans[k];
+			if (mid >= s.x0 && mid <= s.x1 && !seen[s.pc]) { seen[s.pc] = 1; pcs.push(s.pc); }
+		}
+		var col;
+		if (pcs.length) {
+			var blend = harmonyToColor(pcs, { baseHue: baseHue, sat: baseSat }, 'oklab');
+			col = [blend.r, blend.g, blend.b];
+		} else col = [0.16, 0.16, 0.18];
+		mgraphics.set_source_rgba(col[0], col[1], col[2], 1);
+		mgraphics.rectangle(xa, top, xb - xa, laneH); mgraphics.fill();
+	}
+
+	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 1);
+	mgraphics.set_line_width(1);
+	mgraphics.move_to(plotL, top + 0.5); mgraphics.line_to(W, top + 0.5); mgraphics.stroke();
+	mgraphics.set_source_rgba(NOWLINE);
+	mgraphics.set_line_width(1.5);
+	mgraphics.move_to(nowX, top); mgraphics.line_to(nowX, H); mgraphics.stroke();
 }
 
 // velocity line-graph lane along the bottom VEL_H px (like an Ableton clip's velocity
@@ -785,7 +944,7 @@ function drawLeftPiano(H, loP, hiP) {
 function paintLegend(W, H) {
 	var sw = 16, x0 = 8, gap = 2;
 	var panelW = 12 * (sw + gap) + 8, panelH = sw + 8;
-	var px = 4, py = H - panelH - 4 - ((velLane && viewMode === 0) ? VEL_H : 0);
+	var px = 4, py = H - panelH - 4 - (viewMode === 0 ? (velLane ? VEL_H : 0) + (harmLane ? HARM_H : 0) : 0);
 	mgraphics.set_source_rgba(0.06, 0.06, 0.07, 0.86);
 	mgraphics.rectangle(px, py, panelW, panelH); mgraphics.fill();
 	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.8);
@@ -813,7 +972,7 @@ function paintVoiceLegend(W, H) {
 	var vs = voicesSeen();
 	var sw = 16, x0 = 8, cell = 58;
 	var panelW = Math.max(1, vs.length) * cell + 8, panelH = sw + 8;
-	var px = 4, py = H - panelH - 4 - ((velLane && viewMode === 0) ? VEL_H : 0);
+	var px = 4, py = H - panelH - 4 - (viewMode === 0 ? (velLane ? VEL_H : 0) + (harmLane ? HARM_H : 0) : 0);
 	mgraphics.set_source_rgba(0.06, 0.06, 0.07, 0.86);
 	mgraphics.rectangle(px, py, panelW, panelH); mgraphics.fill();
 	mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.8);

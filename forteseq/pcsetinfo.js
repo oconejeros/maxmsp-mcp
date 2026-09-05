@@ -45,6 +45,10 @@
 //                            `list <pc ...>`    (study mode only; the set to display)
 //                            `studyroot <pc>`   (study mode: pc to draw as the root, -1 = none)
 //                            `studyspell <n>`   (Rota raiz: rotate names/colours by n semitones)
+//                            `anwinset <n> <pc...>`  (the AnWin-windowed pc set itself, i.e.
+//                                               analysisPcs() -- tonnetz.js's vcol panel blends
+//                                               these pcs' own hues; distinct from `info`'s
+//                                               McKay diso% band)
 //   outlet 1 -> future display : tagged lists, one per field:
 //     card <n> | notes <name...> | chord <sym> | chords <alt...> | forte <sym> |
 //     iv <a b c d e f> | prime <p...> | name <sym> | modality <McKay name> |
@@ -833,6 +837,7 @@ function emit() {
 		outlet(0, "chord", "");
 		outlet(0, "studyroot", -1);
 		outlet(0, "studyspell", 0);
+		outlet(0, "anwinset", 0);
 		outlet(1, ["card", 0]);
 		return;
 	}
@@ -882,6 +887,9 @@ function emit() {
 		outlet(1, ["keyguess", kg.root, kg.minor, Math.round(kg.conf * 100) / 100]);
 	}
 	outlet(0, "studyroot", studyTag ? studyRoot : -1);
+	// the AnWin-windowed set itself (distinct from `info`'s McKay diso%/label): tonnetz.js's
+	// vcol panel blends these pcs' own hues (OKLab), not a dissonance-band colour.
+	outlet.apply(this, [0, "anwinset", pcs.length].concat(pcs));
 
 	outlet(1, ["card", card]);
 	outlet(1, ["notes"].concat(names));

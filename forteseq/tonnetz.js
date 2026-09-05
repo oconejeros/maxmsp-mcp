@@ -60,8 +60,16 @@
 //                        is how the study set arrives (from pcsetinfo.js)
 //   studymode <0|1>      1 = ignore MIDI, show the study set instead; 0 = back to MIDI (clears)
 //   clear                drop all active notes and the trace
-//   vton/vchr/vfif/vvoc/vpno/vgtr/vdia/vtet <0|1>   show/hide each panel (Tonnetz, chromatic,
-//                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz, 3-D Tonnetz)
+//   vton/vchr/vfif/vvoc/vpno/vgtr/vdia/vtet/vcol <0|1>   show/hide each panel (Tonnetz, chromatic,
+//                        fifths, voice-leading space, piano, guitar, diatonic Tonnetz, 3-D Tonnetz,
+//                        AnWin colour swatch)
+//   anwinset <n> <pc...> the AnWin-windowed pitch-class set (from pcsetinfo.js's analysisPcs());
+//                        feeds the vcol panel only -- an OKLab blend of these pcs' own hues
+//                        (pcToColor/mixColors, the same math invertedprism/multichord use), NOT
+//                        the McKay dissonance band the "diso NN%" meter / HarmMode swatch use.
+//                        Those two colours answer different questions and can disagree on
+//                        purpose: this one is "what do these notes look like blended together",
+//                        HarmMode is "how consonant is this".
 //   tetpreset <i>        3-D Tonnetz: pick the 4-note chord class from TET_PRESETS[i]
 //   keyroot <0..11>      diatonic panel: tonic pitch class
 //   keymode <0|1>        diatonic panel: 0 major scale | 1 natural minor
@@ -93,6 +101,10 @@
 //   huec <0..359>        hue given to C -- rotates the whole circle-of-fifths palette
 //   palsat <0..100>      saturation of the pitch-class palette (default 62)
 //   pallum <0..100>      luminosity of the pitch-class palette (default 55)
+//   harmmode <0|1>       0 (default) off | 1 adds a colour-swatch strip in the footer showing
+//                        the AnWin-windowed McKay dissonance band (disoBand, the meter's own
+//                        colours/thresholds) as a solid colour. Doesn't touch node colours --
+//                        every panel keeps its normal per-pitch-class rainbow either way.
 //   conex <0..8>         circle connections: 0 off, 1 chord polygon (default), 2 every dyad,
 //                        3..8 = only interval class 1..6 (m2 M2 m3 M3 P4/P5 TT), coloured
 //   tracepath <0|1>      draw the trace as a chronological path on the circles (0, default)
@@ -130,30 +142,20 @@ var SELF = this;   // captured so helper functions can reach .patcher / .box rel
 // baseHue is the hue GIVEN TO C (pc 0) -- the HueC control rotates the whole wheel with it
 // and every note keeps its relative offset (a fifth = 30 deg; blue C ~= 220). PC_SAT / PC_LUM
 // (the sat / lum controls) scale the set. All three apply only when `colors` is on.
+// hue/mix math lives in pccolor.js (shared with animidi.js, invertedprism.js, multichord.js)
+// so the wheel formula is defined once; this file just consumes pcToColor.
+include('pccolor.js');
+
 var baseHue = 0;         // hue for C, degrees 0..359 (HueC control)
 var PC_SAT = 0.62, PC_LUM = 0.55;
 var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1
 var PC_TEXT  = [];       // readable text colour for a filled node of that pc
 
-function hsl2rgb(h, s, l) {
-	h = ((h % 360) + 360) % 360 / 360;
-	var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-	var p = 2 * l - q;
-	function hue(t) {
-		if (t < 0) t += 1; if (t > 1) t -= 1;
-		if (t < 1 / 6) return p + (q - p) * 6 * t;
-		if (t < 1 / 2) return q;
-		if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-		return p;
-	}
-	return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
-}
 function rebuildPalette() {
 	for (var pc = 0; pc < 12; pc++) {
-		var k = (pc * 7) % 12;
-		var c = hsl2rgb(baseHue + k * 30, PC_SAT, PC_LUM);
-		PC_COLOR[pc] = c;
-		PC_TEXT[pc] = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) > 0.62
+		var c = pcToColor(pc, { baseHue: baseHue, sat: PC_SAT, lum: PC_LUM });
+		PC_COLOR[pc] = [c.r, c.g, c.b];
+		PC_TEXT[pc] = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.62
 			? [0.1, 0.1, 0.1, 1] : [1, 1, 1, 1];
 	}
 }
@@ -220,8 +222,9 @@ var traceQ = [];
 
 // eight independent panel flags: Tonnetz, chromatic, fifths, voice-leading, piano, guitar,
 // diatonic Tonnetz, 3-D (Gollin) Tonnetz. Whatever is on is packed into an auto-grid by paint().
-var viewOn   = [1, 1, 1, 0, 0, 0, 0, 0];
-var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat', 'tet'];
+var viewOn   = [1, 1, 1, 0, 0, 0, 0, 0, 0];
+var VIEW_KIND = ['tonnetz', 'chrom', 'fifths', 'vl', 'piano', 'guitar', 'diat', 'tet', 'anwincolor'];
+var anwinPcs = [];   // the AnWin-windowed pc set, from pcsetinfo.js's `anwinset` message
 
 // item E: Gollin's 3-D Tonnetz K[a,b,c,d]. Each preset is a 4-note chord's cyclic interval
 // structure (sums to 12); the three lattice axes are its cumulative sums a, a+b, a+b+c.
@@ -266,6 +269,12 @@ var infoText = "";
 var chordText = "";     // root-relative chord symbol from pcsetinfo (Feature 1)
 var disoPct = -1;       // McKay dissonance %, parsed out of the info line to draw the meter
 var q5span = -1;        // circle-of-fifths occupied arc (0..11), parsed out of the info line
+// HarmMode: a dedicated colour-swatch strip in the footer showing the AnWin-windowed McKay
+// dissonance band (the disoBand() already driving the "diso NN%" meter) as a solid colour --
+// "what does this harmony look like right now". Doesn't touch node colours anywhere: Tonnetz/
+// Cromatico/Quintas/Piano/Guitar/Diatonico/3D/Estudio all keep their normal per-pc rainbow.
+var harmMode = 0;
+var HARM_SWATCH_H = 46;   // extra footer height for the swatch strip, when HarmMode is on
 var keyAuto = 0;        // 1 = diatonic panel follows pcsetinfo's key guess, not Key/KeyMode
 var keyGuessRoot = 0, keyGuessMinor = 0, keyGuessConf = 0;
 var KEY_AUTO_MIN_CONF = 0.35;   // below this the guess is too weak to move the panel
@@ -410,6 +419,17 @@ function vpno(v) { setViewFlag(4, v); }
 function vgtr(v) { setViewFlag(5, v); }
 function vdia(v) { setViewFlag(6, v); }
 function vtet(v) { setViewFlag(7, v); }
+function vcol(v) { setViewFlag(8, v); }
+function anwinset() {
+	var a = arrayfromargs(arguments);
+	var n = Math.round(a[0] || 0);
+	anwinPcs = [];
+	for (var i = 0; i < n && (1 + i) < a.length; i++) {
+		var pc = mod12(Math.round(a[1 + i]));
+		if (anwinPcs.indexOf(pc) < 0) anwinPcs.push(pc);
+	}
+	mgraphics.redraw();
+}
 function tetpreset(i) {
 	i = Math.round(i);
 	if (i >= 0 && i < TET_PRESETS.length) { tetAbc = TET_PRESETS[i].slice(); mgraphics.redraw(); }
@@ -485,6 +505,7 @@ function harm(v) { harmOn = v ? 1 : 0; mgraphics.redraw(); }
 function faces(v) { facesOn = v ? 1 : 0; mgraphics.redraw(); }
 function labels(v) { labelsOn = v ? 1 : 0; mgraphics.redraw(); }
 function colors(v) { colorsOn = v ? 1 : 0; mgraphics.redraw(); }
+function harmmode(v) { harmMode = v ? 1 : 0; mgraphics.redraw(); }
 function huec(v)   { baseHue = ((Math.round(v) % 360) + 360) % 360; rebuildPalette(); mgraphics.redraw(); }
 function palsat(v) { PC_SAT = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
 function pallum(v) { PC_LUM = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
@@ -564,8 +585,8 @@ function paint() {
 	spellHere = 0;
 	var wh = viewportWH();
 	var W = wh[0], H = wh[1];
-	var footer = 38;   // row 1: chord symbol + dissonance meter; row 2: the analysis line
-	var cH = H - footer;
+	var footer = 38 + (harmMode ? HARM_SWATCH_H : 0);   // row 1: chord + diso meter; row 2: analysis;
+	var cH = H - footer;                                // row 3 (HarmMode only): the colour swatch
 	computeGhost();
 
 	mgraphics.set_source_rgba(BG);
@@ -619,6 +640,8 @@ function paint() {
 	}
 	if (disoPct >= 0) paintDisoMeter(W, cH);
 
+	if (harmMode) paintHarmSwatch(W, cH, footer);
+
 	if (infoText.length) {
 		mgraphics.set_source_rgba(COL_INFO);
 		mgraphics.select_font_face("Arial");
@@ -663,6 +686,35 @@ function paintDisoMeter(W, cH) {
 	mgraphics.show_text(band[2] + (q5span >= 0 ? "   5tas " + q5span + "/11" : ""));
 }
 
+// HarmMode swatch strip: a solid band of colour across the full width, filled with whatever
+// disoBand(disoPct) says right now -- the same reading the "diso NN%" meter already gives as a
+// bar + number, just big enough to read as a colour at a glance instead of a percentage.
+function paintHarmSwatch(W, cH, footer) {
+	var top = cH + 38, h = footer - 38;
+	if (h < 8) return;
+	if (disoPct >= 0) {
+		var band = disoBand(disoPct);
+		mgraphics.set_source_rgba(band[1][0], band[1][1], band[1][2], 1);
+		mgraphics.rectangle(0, top, W, h);
+		mgraphics.fill();
+		var lum = 0.299 * band[1][0] + 0.587 * band[1][1] + 0.114 * band[1][2];
+		mgraphics.set_source_rgba(lum > 0.62 ? 0.08 : 0.96, lum > 0.62 ? 0.08 : 0.96, lum > 0.62 ? 0.08 : 0.96, 1);
+		mgraphics.select_font_face("Arial Bold");
+		mgraphics.set_font_size(11);
+		mgraphics.move_to(8, top + h / 2 + 4);
+		mgraphics.show_text("Color de armonia (AnWin): " + band[2] + "  diso " + disoPct.toFixed(0) + "%");
+	} else {
+		mgraphics.set_source_rgba(0.10, 0.10, 0.11, 1);
+		mgraphics.rectangle(0, top, W, h);
+		mgraphics.fill();
+		mgraphics.set_source_rgba(COL_TEXT_IDLE);
+		mgraphics.select_font_face("Arial");
+		mgraphics.set_font_size(10);
+		mgraphics.move_to(8, top + h / 2 + 3);
+		mgraphics.show_text("Color de armonia (AnWin): sin datos todavia");
+	}
+}
+
 // palette legend -- 12 swatches in chromatic order (C first) with note names, drawn over the
 // bottom-left of the canvas on a faint backing. Shows how the HueC / sat / lum rotation came
 // out. Names are the plain chromatic names (not spellRot-rotated -- this is a colour key).
@@ -701,12 +753,52 @@ function panel(r, kind) {
 	else if (kind === 'vl') paintVL(r);
 	else if (kind === 'tet') paintTet(r);
 	else if (kind === 'fifths') paintCircle(r, FIFTHS, "Quintas");
+	else if (kind === 'anwincolor') paintAnwinColor(r);
 	else paintCircle(r, CHROM, "Cromatico");
 
 	mgraphics.set_source_rgba(FRAME);
 	mgraphics.set_line_width(1);
 	mgraphics.rectangle(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 	mgraphics.stroke();
+}
+
+// AnWin colour panel: an OKLab blend of the pitch classes AnWin is currently considering (see
+// `anwinset`) -- the note-blend colour (pcToColor + mixColors, same math invertedprism/
+// multichord use), as opposed to HarmMode's dissonance-band colour. Deliberately a different
+// number for the same window: this answers "what do these notes look like", not "how
+// consonant is this".
+function paintAnwinColor(r) {
+	mgraphics.set_source_rgba(COL_INFO);
+	mgraphics.select_font_face("Arial Bold");
+	mgraphics.set_font_size(12);
+	mgraphics.move_to(r.x + 8, r.y + 16);
+	mgraphics.show_text("Color (AnWin)");
+	var pad = 22, sx0 = r.x + 6, sy0 = r.y + pad, sw = r.w - 12, sh = r.h - pad - 6;
+	if (!anwinPcs.length) {
+		mgraphics.set_source_rgba(0.16, 0.16, 0.18, 1);
+		mgraphics.rectangle(sx0, sy0, sw, sh);
+		mgraphics.fill();
+		mgraphics.set_source_rgba(COL_TEXT_IDLE);
+		mgraphics.select_font_face("Arial");
+		mgraphics.set_font_size(10);
+		mgraphics.move_to(sx0 + 4, sy0 + 16);
+		mgraphics.show_text("sin notas");
+		return;
+	}
+	var cols = [];
+	for (var i = 0; i < anwinPcs.length; i++) cols.push(pcToColor(anwinPcs[i], { baseHue: baseHue, sat: PC_SAT, lum: PC_LUM }));
+	var blend = mixColors(cols, 'oklab');
+	mgraphics.set_source_rgba(blend.r, blend.g, blend.b, 1);
+	mgraphics.rectangle(sx0, sy0, sw, sh);
+	mgraphics.fill();
+	var lum = 0.299 * blend.r + 0.587 * blend.g + 0.114 * blend.b;
+	mgraphics.set_source_rgba(lum > 0.62 ? 0.08 : 0.95, lum > 0.62 ? 0.08 : 0.95, lum > 0.62 ? 0.08 : 0.95, 1);
+	mgraphics.select_font_face("Arial");
+	mgraphics.set_font_size(10);
+	var names = [];
+	for (i = 0; i < anwinPcs.length; i++) names.push(NOTE_NAMES[anwinPcs[i]]);
+	mgraphics.move_to(sx0 + 6, sy0 + 16);
+	mgraphics.show_text(names.join(" "));
 }
 
 function nodeFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[sp(pc)].concat(1) : COL_ACTIVE); }
