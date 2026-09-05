@@ -198,6 +198,8 @@ forteseq/forteseq2_favs.txt
 # Los ocho slots de preset, por la misma razon: son tus configuraciones, no el device.
 forteseq/forteseq2_presets.txt
 forteseq/forteseqwf_presets.txt
+forteseq/midirouter_presets.txt
+forteseq/harmonograph_presets.txt
 
 # Libro escaneado (57MB, material de referencia con derechos de autor) -- no es codigo del
 # proyecto y es demasiado pesado para el repo.
@@ -210,3 +212,8 @@ forteseq/Bigo_et_al_CMJ15.pdf
 
 # Archivos .rar generados localmente (snapshots), no fuente.
 *.rar
+
+# Artefactos de release para Payhip: los .amxd/.js/.zip empaquetados los regenera
+# tools/package_release.py y tools/make_lite.py desde forteseq/. Los scripts sí se
+# versionan; el output no. (La landing va en landing/, NO en site/, que ya se ignora arriba.)
+release/
