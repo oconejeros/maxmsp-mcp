@@ -1724,10 +1724,10 @@ var MOD_SINE = 0, MOD_TRI = 1, MOD_SAW = 2, MOD_SQ = 3, MOD_SH = 4, MOD_WALK = 5
 // and they are deliberately musical rather than the parameter's whole range: an octave control
 // swinging over its full six octaves is not modulation, it is noise.
 var MOD_DEST_NAMES = ["-", "Raiz", "Octava", "Vel", "Largo", "Silencio", "Swing", "Rasgueo",
-	"Ratchet", "Grado"];
-var MOD_SPAN = [0, 12, 3, 63, 100, 100, 25, 8, 100, 7];
+	"Ratchet", "Grado", "Human", "Caida"];
+var MOD_SPAN = [0, 12, 3, 63, 100, 100, 25, 8, 100, 7, 50, 50];
 var D_ROOT = 1, D_OCT = 2, D_VEL = 3, D_DUR = 4, D_SIL = 5, D_SWING = 6, D_STRUM = 7,
-	D_RATCHET = 8, D_DEG = 9;
+	D_RATCHET = 8, D_DEG = 9, D_HUMAN = 10, D_DECAY = 11;
 
 var modShape = filled(MOD_N, 0);
 var modCycle = filled(MOD_N, 8);      // steps per cycle, and the hold time for the two random shapes
@@ -1922,8 +1922,10 @@ function sethumanize(p) {
 // independence is most of what makes it read as players rather than as a shifted grid. Never
 // negative on the way out: schedule() clamps at 0, and a note cannot sound before its own step.
 function humanizeOffset() {
-	if (humanizePct <= 0 || subDiv < 2) return 0;
-	var span = subDiv * humanizePct / 200;
+	var h = humanizePct + modAt(D_HUMAN);
+	if (h < 0) h = 0; else if (h > 100) h = 100;
+	if (h <= 0 || subDiv < 2) return 0;
+	var span = subDiv * h / 200;
 	return Math.round((Math.random() * 2 - 1) * span);
 }
 
@@ -2002,8 +2004,10 @@ function scheduleBurst(voiceIdx, art, dur, pitch, off) {
 	if (gap < 1) gap = 1;
 	var sub = Math.round(dur / n);
 	if (sub < 1) sub = 1;
+	var dk = ratchetDecay + modAt(D_DECAY);
+	if (dk < 0) dk = 0; else if (dk > 100) dk = 100;
 	for (var r = 0; r < n; r++) {
-		var vel = Math.round(art.vel * (1 - (ratchetDecay / 100) * (r / (n - 1))));
+		var vel = Math.round(art.vel * (1 - (dk / 100) * (r / (n - 1))));
 		if (vel < 1) vel = 1;
 		if (vel > 127) vel = 127;
 		schedule(off + r * gap, [busId, voiceIdx + 1, vel, sub, pitch]);

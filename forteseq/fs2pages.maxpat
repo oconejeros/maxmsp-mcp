@@ -174,29 +174,6 @@
    },
    {
     "box": {
-     "id": "obj-8",
-     "maxclass": "comment",
-     "numinlets": 1,
-     "numoutlets": 0,
-     "patching_rect": [
-      20.0,
-      350.0,
-      34.0,
-      18.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      0.0,
-      0.0,
-      34.0,
-      18.0
-     ],
-     "text": "Indep",
-     "varname": "fs2_lbl_indep"
-    }
-   },
-   {
-    "box": {
      "id": "obj-9",
      "maxclass": "comment",
      "numinlets": 1,
@@ -216,50 +193,6 @@
      ],
      "text": "Set",
      "varname": "fs2_lbl_set"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Voces independientes. Apagado: todas las voces reciben la misma nota y solo cambian de octava y registro. Encendido: cada voz lee el set con su propio cursor, su Grado y su Div.",
-     "id": "obj-10",
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      20.0,
-      369.0,
-      15.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      0.0,
-      19.0,
-      15.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "Voces Indep",
-       "parameter_mmax": 1,
-       "parameter_modmode": 0,
-       "parameter_shortname": "Indep",
-       "parameter_type": 2
-      }
-     },
-     "varname": "fs2_indep"
     }
    },
    {
@@ -405,29 +338,6 @@
    },
    {
     "box": {
-     "id": "obj-15",
-     "maxclass": "comment",
-     "numinlets": 1,
-     "numoutlets": 0,
-     "patching_rect": [
-      72.0,
-      391.0,
-      32.0,
-      18.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      52.0,
-      41.0,
-      32.0,
-      18.0
-     ],
-     "text": "Lock",
-     "varname": "fs2_lbl_lock"
-    }
-   },
-   {
-    "box": {
      "id": "obj-16",
      "maxclass": "comment",
      "numinlets": 1,
@@ -490,50 +400,6 @@
       }
      },
      "varname": "fs2_moct"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Fija el set elegido. Apagado, el motor va avanzando por el catalogo solo.",
-     "id": "obj-18",
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      74.0,
-      409.0,
-      15.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      54.0,
-      59.0,
-      15.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "Lock",
-       "parameter_mmax": 1,
-       "parameter_modmode": 0,
-       "parameter_shortname": "Lock",
-       "parameter_type": 2
-      }
-     },
-     "varname": "fs2_lock"
     }
    },
    {
@@ -798,73 +664,6 @@
    },
    {
     "box": {
-     "annotation": "Enciende el filtro del catalogo: cardinalidad y mascara. Apagado, se recorren los 351 sets.",
-     "id": "obj-27",
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      234.0,
-      369.0,
-      15.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      214.0,
-      19.0,
-      15.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_mmax": 1,
-       "parameter_modmode": 0,
-       "parameter_type": 2,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "Filtro",
-       "parameter_shortname": "Filtro"
-      }
-     },
-     "varname": "fs2_filtro"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-28",
-     "maxclass": "comment",
-     "numinlets": 1,
-     "numoutlets": 0,
-     "patching_rect": [
-      234.0,
-      350.0,
-      38.0,
-      18.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      214.0,
-      0.0,
-      38.0,
-      18.0
-     ],
-     "text": "Filtro",
-     "varname": "fs2_lbl_filtro"
-    }
-   },
-   {
-    "box": {
      "id": "obj-29",
      "maxclass": "comment",
      "numinlets": 1,
@@ -924,10 +723,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      256.0,
-      0.0,
-      38.0,
-      18.0
+      14.0,
+      170.0,
+      34.0,
+      12.0
      ],
      "text": "n min",
      "varname": "fs2_lbl_nmin"
@@ -953,9 +752,9 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      256.0,
-      19.0,
-      38.0,
+      14.0,
+      184.0,
+      34.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -1056,10 +855,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      298.0,
-      0.0,
-      38.0,
-      18.0
+      52.0,
+      170.0,
+      34.0,
+      12.0
      ],
      "text": "n max",
      "varname": "fs2_lbl_nmax"
@@ -1085,9 +884,9 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      298.0,
-      19.0,
-      38.0,
+      52.0,
+      184.0,
+      34.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -1125,25 +924,6 @@
      ],
      "text": "prepend setlockindex",
      "varname": "fs2_set_prep"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-38",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      692.0,
-      660.0,
-      92.0,
-      22.0
-     ],
-     "text": "prepend setfilter",
-     "varname": "fs2_filtro_prep"
     }
    },
    {
@@ -1281,25 +1061,6 @@
    },
    {
     "box": {
-     "id": "obj-46",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      692.0,
-      700.0,
-      92.0,
-      22.0
-     ],
-     "text": "prepend setvoiceindep",
-     "varname": "fs2_indep_prep"
-    }
-   },
-   {
-    "box": {
      "id": "obj-47",
      "maxclass": "newobj",
      "numinlets": 1,
@@ -1334,25 +1095,6 @@
      ],
      "text": "prepend setorder",
      "varname": "fs2_orden_prep"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-49",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      212.0,
-      740.0,
-      92.0,
-      22.0
-     ],
-     "text": "prepend setlock",
-     "varname": "fs2_lock_prep"
     }
    },
    {
@@ -4309,9 +4051,9 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      509.0,
-      140.0,
+      220.0,
+      19.0,
+      90.0,
       18.0
      ],
      "saved_attribute_attributes": {
@@ -4353,10 +4095,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      491.0,
-      50.0,
-      18.0
+      220.0,
+      3.0,
+      40.0,
+      12.0
      ],
      "text": "Voicing",
      "varname": "fs2_lbl_voic"
@@ -4376,10 +4118,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      450.0,
+      220.0,
+      473.0,
       30.0,
-      18.0
+      12.0
      ],
      "text": "Drum",
      "varname": "fs2_lbl_drum"
@@ -4399,10 +4141,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      533.0,
-      54.0,
-      18.0
+      340.0,
+      3.0,
+      50.0,
+      12.0
      ],
      "text": "Raiz sec",
      "varname": "fs2_lbl_rseq"
@@ -4429,9 +4171,9 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      551.0,
-      140.0,
+      340.0,
+      19.0,
+      90.0,
       18.0
      ],
      "saved_attribute_attributes": {
@@ -4482,8 +4224,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      469.0,
+      220.0,
+      491.0,
       15.0,
       15.0
      ],
@@ -4521,10 +4263,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      30.0,
-      450.0,
+      250.0,
+      473.0,
       26.0,
-      18.0
+      12.0
      ],
      "text": "Pad",
      "varname": "fs2_lbl_pad"
@@ -4550,8 +4292,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      30.0,
-      469.0,
+      250.0,
+      491.0,
       38.0,
       15.0
      ],
@@ -4587,10 +4329,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      70.0,
-      450.0,
-      36.0,
-      18.0
+      296.0,
+      473.0,
+      40.0,
+      12.0
      ],
      "text": "R.Arm",
      "varname": "fs2_lbl_rarm"
@@ -4616,8 +4358,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      70.0,
-      469.0,
+      296.0,
+      491.0,
       38.0,
       15.0
      ],
@@ -4653,10 +4395,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      110.0,
-      450.0,
-      30.0,
-      18.0
+      316.0,
+      3.0,
+      40.0,
+      12.0
      ],
      "text": "Cond",
      "varname": "fs2_lbl_cond"
@@ -4681,8 +4423,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      110.0,
-      469.0,
+      318.0,
+      19.0,
       15.0,
       15.0
      ],
@@ -4720,10 +4462,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      450.0,
-      64.0,
-      18.0
+      92.0,
+      170.0,
+      90.0,
+      12.0
      ],
      "text": "Vector min",
      "varname": "fs2_lbl_vmin"
@@ -4748,10 +4490,10 @@
      "varname": "fs2_apilar",
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      572.0,
-      60.0,
-      18.0
+      270.0,
+      834.0,
+      58.0,
+      16.0
      ]
     }
    },
@@ -4775,8 +4517,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      509.0,
+      92.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -4812,10 +4554,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      491.0,
-      64.0,
-      18.0
+      92.0,
+      202.0,
+      90.0,
+      12.0
      ],
      "text": "Vector max",
      "varname": "fs2_lbl_vmax"
@@ -4835,10 +4577,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      533.0,
+      360.0,
+      786.0,
       26.0,
-      18.0
+      12.0
      ],
      "text": "Fav",
      "varname": "fs2_lbl_fav"
@@ -4863,8 +4605,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      551.0,
+      360.0,
+      802.0,
       15.0,
       15.0
      ],
@@ -4908,8 +4650,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      150.0,
-      469.0,
+      92.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -4951,8 +4693,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      177.0,
-      509.0,
+      120.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -4994,8 +4736,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      177.0,
-      469.0,
+      120.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -5031,10 +4773,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      185.0,
-      533.0,
-      32.0,
-      18.0
+      395.0,
+      786.0,
+      30.0,
+      12.0
      ],
      "text": "Solo",
      "varname": "fs2_lbl_favo"
@@ -5059,8 +4801,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      185.0,
-      551.0,
+      395.0,
+      802.0,
       15.0,
       15.0
      ],
@@ -5104,8 +4846,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      204.0,
-      509.0,
+      148.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -5147,8 +4889,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      204.0,
-      469.0,
+      148.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -5189,10 +4931,10 @@
      "varname": "fs2_unisono",
      "presentation": 1,
      "presentation_rect": [
-      216.0,
-      572.0,
-      66.0,
-      18.0
+      332.0,
+      834.0,
+      60.0,
+      16.0
      ]
     }
    },
@@ -5215,10 +4957,10 @@
      "varname": "fs2_favclr_ui",
      "presentation": 1,
      "presentation_rect": [
-      220.0,
-      551.0,
-      66.0,
-      18.0
+      430.0,
+      802.0,
+      60.0,
+      16.0
      ]
     }
    },
@@ -5242,8 +4984,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      231.0,
-      509.0,
+      176.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -5285,8 +5027,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      231.0,
-      469.0,
+      176.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -5328,8 +5070,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      258.0,
-      509.0,
+      204.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -5371,8 +5113,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      258.0,
-      469.0,
+      204.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -5414,8 +5156,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      285.0,
-      469.0,
+      232.0,
+      184.0,
       26.0,
       15.0
      ],
@@ -5457,8 +5199,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      285.0,
-      509.0,
+      232.0,
+      216.0,
       26.0,
       15.0
      ],
@@ -6009,7 +5751,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      600.0,
+      450.0,
       56.0,
       18.0
      ],
@@ -6038,7 +5780,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      619.0,
+      469.0,
       56.0,
       18.0
      ],
@@ -6083,7 +5825,7 @@
      "presentation": 1,
      "presentation_rect": [
       64.0,
-      600.0,
+      450.0,
       40.0,
       18.0
      ],
@@ -6111,7 +5853,7 @@
      "presentation": 1,
      "presentation_rect": [
       64.0,
-      619.0,
+      469.0,
       40.0,
       15.0
      ],
@@ -6149,7 +5891,7 @@
      "presentation": 1,
      "presentation_rect": [
       112.0,
-      600.0,
+      450.0,
       44.0,
       18.0
      ],
@@ -6177,7 +5919,7 @@
      "presentation": 1,
      "presentation_rect": [
       112.0,
-      619.0,
+      469.0,
       44.0,
       15.0
      ],
@@ -6215,7 +5957,7 @@
      "presentation": 1,
      "presentation_rect": [
       168.0,
-      600.0,
+      450.0,
       38.0,
       18.0
      ],
@@ -6243,7 +5985,7 @@
      "presentation": 1,
      "presentation_rect": [
       168.0,
-      619.0,
+      469.0,
       38.0,
       15.0
      ],
@@ -6281,7 +6023,7 @@
      "presentation": 1,
      "presentation_rect": [
       216.0,
-      600.0,
+      450.0,
       150.0,
       18.0
      ],
@@ -6310,7 +6052,7 @@
      "presentation": 1,
      "presentation_rect": [
       216.0,
-      619.0,
+      469.0,
       150.0,
       18.0
      ],
@@ -6353,7 +6095,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      641.0,
+      491.0,
       38.0,
       18.0
      ],
@@ -6381,7 +6123,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      660.0,
+      510.0,
       38.0,
       15.0
      ],
@@ -6419,7 +6161,7 @@
      "presentation": 1,
      "presentation_rect": [
       48.0,
-      641.0,
+      491.0,
       38.0,
       18.0
      ],
@@ -6447,7 +6189,7 @@
      "presentation": 1,
      "presentation_rect": [
       48.0,
-      660.0,
+      510.0,
       38.0,
       15.0
      ],
@@ -6485,7 +6227,7 @@
      "presentation": 1,
      "presentation_rect": [
       96.0,
-      641.0,
+      491.0,
       40.0,
       18.0
      ],
@@ -6513,7 +6255,7 @@
      "presentation": 1,
      "presentation_rect": [
       96.0,
-      660.0,
+      510.0,
       40.0,
       15.0
      ],
@@ -6551,7 +6293,7 @@
      "presentation": 1,
      "presentation_rect": [
       148.0,
-      641.0,
+      491.0,
       40.0,
       18.0
      ],
@@ -6579,7 +6321,7 @@
      "presentation": 1,
      "presentation_rect": [
       148.0,
-      660.0,
+      510.0,
       40.0,
       15.0
      ],
@@ -6617,7 +6359,7 @@
      "text": "Sub 1 deja el reloj exactamente como estaba: sin lugar entre un paso y el siguiente, Swing, Humaniz y Ratchet no hacen nada.",
      "presentation_rect": [
       0.0,
-      686.0,
+      536.0,
       500.0,
       32.0
      ],
@@ -6972,10 +6714,10 @@
      "text": "Larg",
      "presentation": 1,
      "presentation_rect": [
-      40.0,
-      750.0,
-      44.0,
-      18.0
+      30.0,
+      596.0,
+      26.0,
+      10.0
      ],
      "patching_rect": [
       60.0,
@@ -6994,10 +6736,10 @@
      "text": "Puls",
      "presentation": 1,
      "presentation_rect": [
-      100.0,
-      750.0,
-      44.0,
-      18.0
+      62.0,
+      596.0,
+      26.0,
+      10.0
      ],
      "patching_rect": [
       120.0,
@@ -7016,10 +6758,10 @@
      "text": "Gir",
      "presentation": 1,
      "presentation_rect": [
-      160.0,
-      750.0,
-      44.0,
-      18.0
+      94.0,
+      596.0,
+      26.0,
+      10.0
      ],
      "patching_rect": [
       180.0,
@@ -7038,10 +6780,10 @@
      "text": "V1",
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      769.0,
-      30.0,
-      18.0
+      10.0,
+      608.0,
+      18.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -7066,9 +6808,9 @@
      "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
      "presentation": 1,
      "presentation_rect": [
-      40.0,
-      770.0,
-      44.0,
+      30.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7127,9 +6869,9 @@
      "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
      "presentation": 1,
      "presentation_rect": [
-      100.0,
-      770.0,
-      44.0,
+      62.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7188,9 +6930,9 @@
      "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
      "presentation": 1,
      "presentation_rect": [
-      160.0,
-      770.0,
-      44.0,
+      94.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7243,10 +6985,10 @@
      "text": "V2",
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      791.0,
-      30.0,
-      18.0
+      124.0,
+      608.0,
+      18.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -7271,9 +7013,9 @@
      "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
      "presentation": 1,
      "presentation_rect": [
-      40.0,
-      792.0,
-      44.0,
+      144.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7332,9 +7074,9 @@
      "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
      "presentation": 1,
      "presentation_rect": [
-      100.0,
-      792.0,
-      44.0,
+      176.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7393,9 +7135,9 @@
      "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
      "presentation": 1,
      "presentation_rect": [
-      160.0,
-      792.0,
-      44.0,
+      208.0,
+      608.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7448,10 +7190,10 @@
      "text": "V3",
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      813.0,
-      30.0,
-      18.0
+      10.0,
+      628.0,
+      18.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -7476,9 +7218,9 @@
      "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
      "presentation": 1,
      "presentation_rect": [
-      40.0,
-      814.0,
-      44.0,
+      30.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7537,9 +7279,9 @@
      "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
      "presentation": 1,
      "presentation_rect": [
-      100.0,
-      814.0,
-      44.0,
+      62.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7598,9 +7340,9 @@
      "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
      "presentation": 1,
      "presentation_rect": [
-      160.0,
-      814.0,
-      44.0,
+      94.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7653,10 +7395,10 @@
      "text": "V4",
      "presentation": 1,
      "presentation_rect": [
-      0.0,
-      835.0,
-      30.0,
-      18.0
+      124.0,
+      628.0,
+      18.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -7681,9 +7423,9 @@
      "annotation": "Largo del patron de esta voz, en pasos. En 0 no hay patron y la voz suena en cada paso que le toca, que es lo que hacia antes de que esto existiera. Los largos que no comparten divisor son el punto: 3 contra 5 contra 7 contra 8 recien vuelve a alinearse a los 840 pasos, y hasta ahi cada paso es una combinacion distinta de quien habla.",
      "presentation": 1,
      "presentation_rect": [
-      40.0,
-      836.0,
-      44.0,
+      144.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7742,9 +7484,9 @@
      "annotation": "Cuantos golpes se reparten en esos pasos, lo mas parejo que el largo permita. E(3,8) es el tresillo cubano y E(5,8) el cinquillo. Con Puls en 0 la voz calla; con Puls igual o mayor que Larg suena en todos los pasos.",
      "presentation": 1,
      "presentation_rect": [
-      100.0,
-      836.0,
-      44.0,
+      176.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7803,9 +7545,9 @@
      "annotation": "Desde que celda arranca el patron. Es lo que separa dos voces que llevan el mismo ritmo: el mismo E(3,8) girado 2 no cae nunca junto al sin girar.",
      "presentation": 1,
      "presentation_rect": [
-      160.0,
-      836.0,
-      44.0,
+      208.0,
+      628.0,
+      28.0,
       15.0
      ],
      "patching_rect": [
@@ -7857,13 +7599,6 @@
      "numoutlets": 0,
      "varname": "rt_nota",
      "text": "Cada voz lleva su propio E(Puls, Larg). La reja de acentos decide con cuanta fuerza habla una voz; esto decide si habla. Una celda apagada es una compuerta, no una pausa: el cursor de la voz igual avanza, asi que la voz guarda su lugar en la armonia en vez de tocar una melodia mas lenta. Con Indep encendido el patron se lee contra los pasos que el divisor le entrega a la voz, no contra el reloj, para que un divisor y un patron no puedan caer en celdas distintas y callarla para siempre.",
-     "presentation": 1,
-     "presentation_rect": [
-      220.0,
-      752.0,
-      292.0,
-      110.0
-     ],
      "patching_rect": [
       600.0,
       3740.0,
@@ -7901,7 +7636,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      900.0,
+      752.0,
       44.0,
       18.0
      ],
@@ -7929,7 +7664,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      919.0,
+      766.0,
       44.0,
       15.0
      ],
@@ -7984,7 +7719,7 @@
      "presentation": 1,
      "presentation_rect": [
       60.0,
-      900.0,
+      752.0,
       44.0,
       18.0
      ],
@@ -8012,7 +7747,7 @@
      "presentation": 1,
      "presentation_rect": [
       60.0,
-      919.0,
+      766.0,
       44.0,
       15.0
      ],
@@ -8067,7 +7802,7 @@
      "presentation": 1,
      "presentation_rect": [
       120.0,
-      900.0,
+      752.0,
       130.0,
       18.0
      ],
@@ -8096,7 +7831,7 @@
      "presentation": 1,
      "presentation_rect": [
       120.0,
-      919.0,
+      766.0,
       130.0,
       18.0
      ],
@@ -8155,7 +7890,7 @@
      "presentation": 1,
      "presentation_rect": [
       262.0,
-      900.0,
+      752.0,
       44.0,
       18.0
      ],
@@ -8182,7 +7917,7 @@
      "presentation": 1,
      "presentation_rect": [
       262.0,
-      919.0,
+      766.0,
       15.0,
       15.0
      ],
@@ -8237,13 +7972,6 @@
      "numoutlets": 0,
      "varname": "cm_nota",
      "text": "Las tres reglas se pisan en este orden: Prog manda sobre Tension, y Tension sobre el recorrido normal del catalogo. Enlace se aplica a las dos ultimas pero nunca a Prog. Ninguna de las tres hace nada mientras la armonia no se mueva, asi que se escuchan sobre todo con Ritmo Arm. -- en la pagina Musical -- o con pasadas cortas.",
-     "presentation": 1,
-     "presentation_rect": [
-      0.0,
-      944.0,
-      512.0,
-      90.0
-     ],
      "patching_rect": [
       20.0,
       4570.0,
@@ -8281,7 +8009,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1050.0,
+      788.0,
       70.0,
       18.0
      ],
@@ -8310,7 +8038,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1069.0,
+      802.0,
       160.0,
       18.0
      ],
@@ -8369,7 +8097,7 @@
      "presentation": 1,
      "presentation_rect": [
       176.0,
-      1050.0,
+      788.0,
       50.0,
       18.0
      ],
@@ -8396,7 +8124,7 @@
      "presentation": 1,
      "presentation_rect": [
       176.0,
-      1069.0,
+      802.0,
       15.0,
       15.0
      ],
@@ -8453,7 +8181,7 @@
      "presentation": 1,
      "presentation_rect": [
       232.0,
-      1050.0,
+      788.0,
       50.0,
       18.0
      ],
@@ -8480,7 +8208,7 @@
      "presentation": 1,
      "presentation_rect": [
       232.0,
-      1069.0,
+      802.0,
       15.0,
       15.0
      ],
@@ -8545,7 +8273,7 @@
      "presentation": 1,
      "presentation_rect": [
       292.0,
-      1069.0,
+      802.0,
       56.0,
       18.0
      ],
@@ -8602,13 +8330,6 @@
      "numoutlets": 0,
      "varname": "es_nota",
      "text": "Escuchar manda sobre todo lo de la pagina Camino: una mano en el teclado ES la armonia. Seguir tambien. Emitir y Seguir usan el mismo Bus que las notas, asi que dos motores en el bus 1 comparten armonia y dos en buses distintos se ignoran.",
-     "presentation": 1,
-     "presentation_rect": [
-      0.0,
-      1094.0,
-      512.0,
-      76.0
-     ],
      "patching_rect": [
       20.0,
       5270.0,
@@ -8646,9 +8367,9 @@
      "presentation": 1,
      "presentation_rect": [
       24.0,
-      1200.0,
-      72.0,
-      18.0
+      642.0,
+      60.0,
+      12.0
      ],
      "patching_rect": [
       44.0,
@@ -8668,9 +8389,9 @@
      "presentation": 1,
      "presentation_rect": [
       100.0,
-      1200.0,
-      42.0,
-      18.0
+      642.0,
+      40.0,
+      12.0
      ],
      "patching_rect": [
       120.0,
@@ -8690,9 +8411,9 @@
      "presentation": 1,
      "presentation_rect": [
       146.0,
-      1200.0,
-      46.0,
-      18.0
+      642.0,
+      40.0,
+      12.0
      ],
      "patching_rect": [
       166.0,
@@ -8712,9 +8433,9 @@
      "presentation": 1,
      "presentation_rect": [
       196.0,
-      1200.0,
-      42.0,
-      18.0
+      642.0,
+      40.0,
+      12.0
      ],
      "patching_rect": [
       216.0,
@@ -8734,9 +8455,9 @@
      "presentation": 1,
      "presentation_rect": [
       242.0,
-      1200.0,
+      642.0,
       80.0,
-      18.0
+      12.0
      ],
      "patching_rect": [
       262.0,
@@ -8756,9 +8477,9 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1221.0,
-      24.0,
-      18.0
+      651.0,
+      22.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -8785,7 +8506,7 @@
      "presentation": 1,
      "presentation_rect": [
       24.0,
-      1220.0,
+      650.0,
       72.0,
       18.0
      ],
@@ -8853,7 +8574,7 @@
      "presentation": 1,
      "presentation_rect": [
       100.0,
-      1222.0,
+      652.0,
       42.0,
       15.0
      ],
@@ -8914,7 +8635,7 @@
      "presentation": 1,
      "presentation_rect": [
       146.0,
-      1222.0,
+      652.0,
       46.0,
       15.0
      ],
@@ -8975,7 +8696,7 @@
      "presentation": 1,
      "presentation_rect": [
       196.0,
-      1222.0,
+      652.0,
       42.0,
       15.0
      ],
@@ -9037,7 +8758,7 @@
      "presentation": 1,
      "presentation_rect": [
       242.0,
-      1220.0,
+      650.0,
       80.0,
       18.0
      ],
@@ -9062,9 +8783,11 @@
         "Swing",
         "Rasgueo",
         "Ratchet",
-        "Grado"
+        "Grado",
+        "Human",
+        "Caida"
        ],
-       "parameter_mmax": 9,
+       "parameter_mmax": 11,
        "parameter_modmode": 0,
        "parameter_type": 2,
        "parameter_unitstyle": 9,
@@ -9103,9 +8826,9 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1246.0,
-      24.0,
-      18.0
+      674.0,
+      22.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -9132,7 +8855,7 @@
      "presentation": 1,
      "presentation_rect": [
       24.0,
-      1245.0,
+      673.0,
       72.0,
       18.0
      ],
@@ -9200,7 +8923,7 @@
      "presentation": 1,
      "presentation_rect": [
       100.0,
-      1247.0,
+      675.0,
       42.0,
       15.0
      ],
@@ -9261,7 +8984,7 @@
      "presentation": 1,
      "presentation_rect": [
       146.0,
-      1247.0,
+      675.0,
       46.0,
       15.0
      ],
@@ -9322,7 +9045,7 @@
      "presentation": 1,
      "presentation_rect": [
       196.0,
-      1247.0,
+      675.0,
       42.0,
       15.0
      ],
@@ -9384,7 +9107,7 @@
      "presentation": 1,
      "presentation_rect": [
       242.0,
-      1245.0,
+      673.0,
       80.0,
       18.0
      ],
@@ -9409,9 +9132,11 @@
         "Swing",
         "Rasgueo",
         "Ratchet",
-        "Grado"
+        "Grado",
+        "Human",
+        "Caida"
        ],
-       "parameter_mmax": 9,
+       "parameter_mmax": 11,
        "parameter_modmode": 0,
        "parameter_type": 2,
        "parameter_unitstyle": 9,
@@ -9450,9 +9175,9 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1271.0,
-      24.0,
-      18.0
+      697.0,
+      22.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -9479,7 +9204,7 @@
      "presentation": 1,
      "presentation_rect": [
       24.0,
-      1270.0,
+      696.0,
       72.0,
       18.0
      ],
@@ -9547,7 +9272,7 @@
      "presentation": 1,
      "presentation_rect": [
       100.0,
-      1272.0,
+      698.0,
       42.0,
       15.0
      ],
@@ -9608,7 +9333,7 @@
      "presentation": 1,
      "presentation_rect": [
       146.0,
-      1272.0,
+      698.0,
       46.0,
       15.0
      ],
@@ -9669,7 +9394,7 @@
      "presentation": 1,
      "presentation_rect": [
       196.0,
-      1272.0,
+      698.0,
       42.0,
       15.0
      ],
@@ -9731,7 +9456,7 @@
      "presentation": 1,
      "presentation_rect": [
       242.0,
-      1270.0,
+      696.0,
       80.0,
       18.0
      ],
@@ -9756,9 +9481,11 @@
         "Swing",
         "Rasgueo",
         "Ratchet",
-        "Grado"
+        "Grado",
+        "Human",
+        "Caida"
        ],
-       "parameter_mmax": 9,
+       "parameter_mmax": 11,
        "parameter_modmode": 0,
        "parameter_type": 2,
        "parameter_unitstyle": 9,
@@ -9797,9 +9524,9 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1296.0,
-      24.0,
-      18.0
+      720.0,
+      22.0,
+      12.0
      ],
      "patching_rect": [
       20.0,
@@ -9826,7 +9553,7 @@
      "presentation": 1,
      "presentation_rect": [
       24.0,
-      1295.0,
+      719.0,
       72.0,
       18.0
      ],
@@ -9894,7 +9621,7 @@
      "presentation": 1,
      "presentation_rect": [
       100.0,
-      1297.0,
+      721.0,
       42.0,
       15.0
      ],
@@ -9955,7 +9682,7 @@
      "presentation": 1,
      "presentation_rect": [
       146.0,
-      1297.0,
+      721.0,
       46.0,
       15.0
      ],
@@ -10016,7 +9743,7 @@
      "presentation": 1,
      "presentation_rect": [
       196.0,
-      1297.0,
+      721.0,
       42.0,
       15.0
      ],
@@ -10078,7 +9805,7 @@
      "presentation": 1,
      "presentation_rect": [
       242.0,
-      1295.0,
+      719.0,
       80.0,
       18.0
      ],
@@ -10103,9 +9830,11 @@
         "Swing",
         "Rasgueo",
         "Ratchet",
-        "Grado"
+        "Grado",
+        "Human",
+        "Caida"
        ],
-       "parameter_mmax": 9,
+       "parameter_mmax": 11,
        "parameter_modmode": 0,
        "parameter_type": 2,
        "parameter_unitstyle": 9,
@@ -10142,13 +9871,6 @@
      "numoutlets": 0,
      "varname": "md_nota",
      "text": "Cuatro moduladores, uno por fila. Dos apuntados al mismo destino se suman. Ninguno escribe el parametro: el dial sigue diciendo lo tuyo y esto suma encima al leer, asi que Prof en 0 devuelve el numero exacto. Avanzan por paso, no por reloj: con la secuencia detenida no se mueven.",
-     "presentation": 1,
-     "presentation_rect": [
-      328.0,
-      1202.0,
-      188.0,
-      130.0
-     ],
      "patching_rect": [
       900.0,
       5840.0,
@@ -10186,7 +9908,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1350.0,
+      820.0,
       44.0,
       18.0
      ],
@@ -10214,7 +9936,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1369.0,
+      834.0,
       44.0,
       15.0
      ],
@@ -10277,7 +9999,7 @@
      "presentation": 1,
      "presentation_rect": [
       54.0,
-      1369.0,
+      834.0,
       64.0,
       18.0
      ],
@@ -10344,7 +10066,7 @@
      "presentation": 1,
      "presentation_rect": [
       124.0,
-      1369.0,
+      834.0,
       64.0,
       18.0
      ],
@@ -10411,7 +10133,7 @@
      "presentation": 1,
      "presentation_rect": [
       194.0,
-      1369.0,
+      834.0,
       64.0,
       18.0
      ],
@@ -10470,7 +10192,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1392.0,
+      854.0,
       54.0,
       18.0
      ],
@@ -10492,7 +10214,7 @@
      "presentation": 1,
      "presentation_rect": [
       56.0,
-      1392.0,
+      854.0,
       202.0,
       18.0
      ],
@@ -10552,13 +10274,6 @@
      "numinlets": 1,
      "numoutlets": 0,
      "text": "Los veinte slots viven en forteseq2_presets.txt, al lado del .amxd, y no adentro del set de Live. Eso los hace tuyos y no de la cancion: los mismos veinte te siguen a cualquier set, igual que los favoritos, y varias instancias del device comparten el archivo. Se escribe en cada Guardar y en cada Borrar, y se lee al cargar el device.",
-     "presentation": 1,
-     "presentation_rect": [
-      264.0,
-      1352.0,
-      252.0,
-      130.0
-     ],
      "patching_rect": [
       700.0,
       6540.0,
@@ -10668,7 +10383,7 @@
      "presentation": 1,
      "presentation_rect": [
       330.0,
-      900.0,
+      752.0,
       54.0,
       18.0
      ]
@@ -10697,7 +10412,7 @@
      "presentation": 1,
      "presentation_rect": [
       330.0,
-      919.0,
+      766.0,
       90.0,
       18.0
      ],
@@ -10921,7 +10636,7 @@
      "presentation": 1,
      "presentation_rect": [
       0.0,
-      1420.0,
+      872.0,
       54.0,
       18.0
      ],
@@ -10945,7 +10660,7 @@
      "presentation": 1,
      "presentation_rect": [
       56.0,
-      1420.0,
+      872.0,
       200.0,
       18.0
      ],
@@ -11011,10 +10726,10 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      330.0,
-      450.0,
-      60.0,
-      18.0
+      436.0,
+      3.0,
+      50.0,
+      12.0
      ]
     }
    },
@@ -11039,8 +10754,8 @@
      ],
      "presentation": 1,
      "presentation_rect": [
-      330.0,
-      469.0,
+      436.0,
+      19.0,
       38.0,
       15.0
      ],
@@ -11102,18 +10817,6 @@
      ],
      "destination": [
       "obj-37",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-18",
-      0
-     ],
-     "destination": [
-      "obj-49",
       0
      ]
     }
@@ -11193,35 +10896,11 @@
    {
     "patchline": {
      "source": [
-      "obj-10",
-      0
-     ],
-     "destination": [
-      "obj-46",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
       "obj-13",
       0
      ],
      "destination": [
       "obj-48",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-27",
-      0
-     ],
-     "destination": [
-      "obj-38",
       0
      ]
     }
@@ -11278,18 +10957,6 @@
     "patchline": {
      "source": [
       "obj-37",
-      0
-     ],
-     "destination": [
-      "obj-5",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-38",
       0
      ],
      "destination": [
@@ -11373,18 +11040,6 @@
    {
     "patchline": {
      "source": [
-      "obj-46",
-      0
-     ],
-     "destination": [
-      "obj-5",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
       "obj-47",
       0
      ],
@@ -11398,18 +11053,6 @@
     "patchline": {
      "source": [
       "obj-48",
-      0
-     ],
-     "destination": [
-      "obj-5",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-49",
       0
      ],
      "destination": [
@@ -11438,18 +11081,6 @@
      ],
      "destination": [
       "obj-12",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-6",
-      0
-     ],
-     "destination": [
-      "obj-18",
       0
      ]
     }
@@ -11521,31 +11152,7 @@
       0
      ],
      "destination": [
-      "obj-10",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-6",
-      0
-     ],
-     "destination": [
       "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-6",
-      0
-     ],
-     "destination": [
-      "obj-27",
       0
      ]
     }
@@ -16693,11 +16300,6 @@
     "Root",
     0
    ],
-   "obj-10": [
-    "Indep",
-    "Indep",
-    0
-   ],
    "obj-12": [
     "Set",
     "Set",
@@ -16713,11 +16315,6 @@
     "Oct Maestra",
     0
    ],
-   "obj-18": [
-    "Lock",
-    "Lock",
-    0
-   ],
    "obj-19": [
     "Modo",
     "Modo",
@@ -16731,11 +16328,6 @@
    "obj-25": [
     "Perm",
     "Perm",
-    0
-   ],
-   "obj-27": [
-    "Filtro",
-    "Filtro",
     0
    ],
    "obj-32": [
