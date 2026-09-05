@@ -16,7 +16,9 @@
 //   clearall           borra todo
 //   setbase / setspan  Base / Rango
 //   refresh / bang     re-emitir estado a la grilla
-// outlet 1 -> grilla jsui:
+//   setpresetslot <n> / storepreset / recallpreset / clearpreset / setpresetname <txt>
+//   loadpresets        leer el archivo sidecar (arranque)
+// outlet 1 -> grilla jsui (+ route presetname/presetslots que va a la UI de Presets):
 //   padroutes <128 ints>   mapa completo (nota -> pad, o -1)
 //   padbase <n>            nota del pad 0
 //   padspan <n>            Rango (la grilla atenua pads >= span)
@@ -24,6 +26,11 @@
 //   padactive <pad> <0|1>  encender / apagar un pad (note on/off)
 //   pianoassigned <notas>  lista de notas de entrada asignadas (el piano las pinta verde)
 //   noteon <nota> <0|1>    nota de entrada sonando (el piano la pinta ambar)
+//   presetname <txt> / presetslots <"1 - 3 - ...">   estado de la pestana Presets
+//
+// Presets: archivo sidecar `midirouter_presets.txt` junto al .amxd (mismo mecanismo que
+// forteseqwf). 16 slots con nombre + una linea `current` que se auto-guarda con debounce
+// en cada cambio y se restaura al instanciar el device.
 
 autowatch = 1;
 inlets = 1;
@@ -92,6 +99,7 @@ function bindNote(pitch) {
     DBG("bind: nota", pitch, "-> pad", armedPad);
     armedPad = -1;
     pushgrid();
+    saveCurrent();
 }
 function arm(p) {
     p = p | 0;
@@ -108,6 +116,7 @@ function keyclick(p) {
         map[p] = -1;
         DBG("keyclick: desasigno nota", p);
         pushgrid();
+        saveCurrent();
     } else {                          // libre -> ligar al pad armado (si hay)
         bindNote(p);
     }
@@ -119,6 +128,7 @@ function clearpad(p) {
     for (var i = 0; i < SIZE; i++) if (map[i] === p) { map[i] = -1; n++; }
     DBG("clearpad", p, "(" + n + ")");
     pushgrid();
+    saveCurrent();
 }
 function clearall() {
     for (var i = 0; i < SIZE; i++) map[i] = -1;
@@ -126,6 +136,7 @@ function clearall() {
     for (var j = 0; j < PADS; j++) padHeld[j] = 0;
     DBG("clearall");
     pushgrid();
+    saveCurrent();
 }
 
 // ---- parametros ---------------------------------------------------------------
@@ -134,6 +145,7 @@ function setbase(v) {
     for (var j = 0; j < PADS; j++) padHeld[j] = 0;   // los pads iluminados dejan de tener sentido
     DBG("setbase", base);
     pushgrid();
+    saveCurrent();
 }
 function setspan(v) {
     span = clampi(v, 1, 128);
@@ -141,6 +153,7 @@ function setspan(v) {
     for (var j = 0; j < PADS; j++) padHeld[j] = 0;
     DBG("setspan", span);
     pushgrid();
+    saveCurrent();
 }
 
 function refresh() { pushgrid(); }
@@ -179,19 +192,159 @@ function pushPiano() {
     outlet(1, a);
 }
 
-// ---- persistencia (Fase 2: pattrstorage) -----------------------------------
-function getstate() {
-    var a = ["state", base, span];
-    for (var i = 0; i < SIZE; i++) a.push(map[i]);
-    outlet(1, a);
+// ---- presets: archivo sidecar junto al .amxd (mismo mecanismo que forteseqwf) -----------
+var PRESET_FILE = "midirouter_presets.txt";
+var PRESET_SLOTS = 16;
+var presetSlot = 1;
+var presetBank = [];                 // 1..16 -> {base,span,map[,__name]} | null ; indice 0 sin uso
+var saveTask = new Task(function () { savepresets(); }, this);   // debounce del auto-guardado
+
+// Junto al .amxd, no donde ande el cwd de Max (un nombre pelado solo resuelve por search path
+// al LEER, escribirlo cae en cualquier lado). Copiado de forteseqwf.js.
+function devPath(file) {
+    var fp = "";
+    try { fp = this.patcher.filepath; } catch (e) { fp = ""; }
+    if (!fp) return file;
+    var cut = fp.lastIndexOf("/");
+    if (cut < 0) cut = fp.lastIndexOf("\\");
+    return cut >= 0 ? fp.slice(0, cut + 1) + file : file;
 }
-function setstate() {
-    var a = arrayfromargs(arguments);
-    if (a.length < 2 + SIZE) return;
-    base = clampi(a[0], 0, 127);
-    span = clampi(a[1], 1, 128);
-    for (var i = 0; i < SIZE; i++) map[i] = a[2 + i] | 0;
+
+function configFromCurrent() { return { base: base, span: span, map: map.slice(0) }; }
+
+function applyConfig(c) {
+    if (!c) return;
+    base = clampi(c.base, 0, 127);
+    span = clampi(c.span, 1, 128);
+    for (var i = 0; i < SIZE; i++) map[i] = (c.map && c.map.length > i) ? (c.map[i] | 0) : -1;
     armedPad = -1;
     for (var j = 0; j < PADS; j++) padHeld[j] = 0;
     pushgrid();
+}
+
+function configToLine(c) { return c.base + "\t" + c.span + "\t" + c.map.join(" "); }
+
+// parts = campos despues del <slot> (o "current"); el "__name=" lo saca el caller
+function configFromParts(parts) {
+    var f = [];
+    for (var i = 0; i < parts.length; i++)
+        if (parts[i].slice(0, 7) !== "__name=") f.push(parts[i]);
+    var c = { base: 36, span: 64, map: [] };
+    if (f.length >= 3) {
+        c.base = parseInt(f[0], 10);
+        c.span = parseInt(f[1], 10);
+        var mm = f[2].split(" ");
+        for (var k = 0; k < SIZE; k++) c.map[k] = (k < mm.length) ? (parseInt(mm[k], 10) | 0) : -1;
+    } else {
+        for (var z = 0; z < SIZE; z++) c.map[z] = -1;
+    }
+    return c;
+}
+
+function saveCurrent() { saveTask.cancel(); saveTask.schedule(400); }
+
+function slotOf(slot) {
+    var s = (slot === undefined || slot === null) ? presetSlot : Math.round(slot);
+    if (!(s >= 1 && s <= PRESET_SLOTS)) { DBG("slot fuera de rango:", s); return -1; }
+    return s;
+}
+function setpresetslot(n) {
+    n = Math.round(n);
+    if (!isFinite(n) || n < 1) n = 1;
+    if (n > PRESET_SLOTS) n = PRESET_SLOTS;
+    presetSlot = n;
+    sendPresetName(n);
+}
+function storepreset(slot) {
+    var s = slotOf(slot); if (s < 0) return;
+    var c = configFromCurrent();
+    var old = presetBank[s] && presetBank[s].__name;
+    if (old) c.__name = old;                 // re-guardar sobre un slot con nombre lo conserva
+    presetBank[s] = c;
+    savepresets();
+    sendPresetList(); sendPresetName(s);
+    DBG("slot", s, "guardado");
+}
+function recallpreset(slot) {
+    var s = slotOf(slot); if (s < 0) return;
+    var c = presetBank[s];
+    if (!c) { DBG("slot", s, "vacio"); return; }
+    applyConfig({ base: c.base, span: c.span, map: c.map });
+    saveCurrent();                            // el slot cargado pasa a ser el `current`
+    DBG("slot", s, "cargado");
+}
+function clearpreset(slot) {
+    var s = slotOf(slot); if (s < 0) return;
+    presetBank[s] = null;
+    savepresets();
+    sendPresetList(); sendPresetName(s);
+    DBG("slot", s, "borrado");
+}
+function setpresetname() {
+    var name = arrayfromargs(arguments).join(" ");
+    var s = presetSlot;
+    if (!presetBank[s]) presetBank[s] = configFromCurrent();
+    presetBank[s].__name = name;
+    savepresets();
+    sendPresetName(s);
+}
+function sendPresetName(s) {
+    var c = presetBank[s];
+    outlet(1, "presetname", (c && c.__name) ? c.__name : "-");
+}
+function sendPresetList() {
+    var s = "";
+    for (var i = 1; i <= PRESET_SLOTS; i++) s += (i > 1 ? " " : "") + (presetBank[i] ? i : "-");
+    outlet(1, "presetslots", s);
+}
+
+function savepresets() {
+    if (typeof File === "undefined") return;
+    var f = new File(devPath(PRESET_FILE), "write", "TEXT");
+    if (!f.isopen) { DBG("no pude escribir", devPath(PRESET_FILE)); return; }
+    try {
+        f.eof = 0; f.position = 0;
+        f.writeline("midirouter presets 1");
+        f.writeline("current\t" + configToLine(configFromCurrent()));
+        for (var s = 1; s <= PRESET_SLOTS; s++) {
+            var c = presetBank[s];
+            if (!c) continue;
+            var line = "" + s;
+            if (c.__name) line += "\t__name=" + c.__name;
+            line += "\t" + configToLine(c);
+            f.writeline(line);
+        }
+    } catch (e) { DBG("fallo al guardar presets:", e); }
+    f.close();
+}
+function loadpresets() {
+    if (typeof File === "undefined") return;
+    var f = new File(devPath(PRESET_FILE), "read", "TEXT");
+    if (!f.isopen) { DBG("sin archivo de presets (primera vez)"); return; }
+    presetBank = [];
+    var n = 0, curr = null;
+    try {
+        f.readline(200);   // header
+        while (f.position < f.eof) {
+            var line = "" + f.readline(65536);
+            if (!line) continue;
+            var parts = line.split("\t");
+            var head = parts[0];
+            var rest = parts.slice(1);
+            if (head === "current") { curr = configFromParts(rest); continue; }
+            var s = Math.round(parseFloat(head));
+            if (!(s >= 1 && s <= PRESET_SLOTS)) continue;
+            var nm = null;
+            for (var i = 0; i < rest.length; i++)
+                if (rest[i].slice(0, 7) === "__name=") { nm = rest[i].slice(7); break; }
+            var cc = configFromParts(rest);
+            if (nm !== null) cc.__name = nm;
+            presetBank[s] = cc; n++;
+        }
+    } catch (e) { DBG("fallo al leer presets:", e); }
+    f.close();
+    if (curr) applyConfig(curr);
+    sendPresetList();
+    sendPresetName(presetSlot);
+    DBG(n, "slots leidos; current", curr ? "restaurado" : "no habia");
 }
