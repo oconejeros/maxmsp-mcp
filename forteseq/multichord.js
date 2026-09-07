@@ -311,6 +311,7 @@ function voiceChord(pcs, prevRefPitch, span) {
 // Max global).
 // ================================================================================================
 
+autowatch = 1;   // hot-reload this file on save (no need to re-add the [js] object)
 inlets = 1;
 outlets = 1;
 
@@ -333,11 +334,15 @@ function identifyPcs(pcs) {
 var _defaultCenter = identifyPcs([0, 4, 7]);          // default centre: C major
 var classIdx = _defaultCenter.classIdx;
 var rootPc = _defaultCenter.t;
-var baseHue = 220, palSat = 0.62, palLum = 0.55;
+var baseHue = 0, palSat = 0.62, palLum = 0.55;   // C = red, matching tonnetz/ANIMIDI (Prism was the outlier at 220/blue, now fixed too)
 var rankList = [];        // current-mode neighbour list for the current centre
 var lastVoicing = [];
 var lastRefPitch = 60;
 var voiceSpan = 24;        // semitones the voicing spreads across; 0 = fully closed
+
+// Note output goes through the patch's [makenote 90 <NoteDur>] + `flush` (invertedprism
+// model), so the engine never has to track note-offs and a reload / loadbang burst can't
+// leak a held note. See voiceAndEmit.
 
 // mode 0 = "Nearest" (neighborsOf: ranked by voice-leading distance across the whole 4095-chord
 // universe). mode 1 = "Steps" (stepsNeighborsOf: elementary single-scale-step moves within a
@@ -349,7 +354,20 @@ var scaleClassIdx = _defaultScale.classIdx;
 var scaleRootPc = _defaultScale.t;
 var minSize = 3, maxSize = 7;   // Steps-mode chord-size bounds: drop/add moves stay within these
 
-function paletteOpts() { return { baseHue: baseHue, sat: palSat, lum: palLum }; }
+// RegLum: pull the wheel lightness toward octaveToLum(register) -- register = the octave of
+// lastRefPitch (where the current voicing sits). Replicates invertedprism's registerMode /
+// ANIMIDI's RegLum. regLumAmt 0 = flat palLum (unchanged). Feeds paletteOpts() so the centre,
+// every neighbour and the ring all track register together.
+var regLumAmt = 0;
+function currentLum() {
+	if (regLumAmt <= 0) return palLum;
+	var oct = Math.floor(lastRefPitch / 12);
+	// pccolor.js octaveToLum(oct) = clamp01((oct-2)/5), inlined so RegLum never depends on
+	// whatever pccolor build the [js] happened to include().
+	var otl = oct <= 2 ? 0 : (oct >= 7 ? 1 : (oct - 2) / 5);
+	return palLum + regLumAmt * (otl - palLum);
+}
+function paletteOpts() { return { baseHue: baseHue, sat: palSat, lum: currentLum() }; }
 function centerPcs() { return transposeSet(CLASSES[classIdx], rootPc); }
 function scalePcs() { return transposeSet(CLASSES[scaleClassIdx], scaleRootPc); }
 
@@ -395,14 +413,34 @@ function computeRankList(pcs) {
 	return neighborsOf(pcs, bitmask(pcs), UNIVERSE, paletteOpts());
 }
 
+// noteoff every pitch, unconditionally -- a manual panic / reload safety net, still wired
+// to the old `noteoff` route outlet. Normal playback no longer uses it (see voiceAndEmit).
+function allNotesOff() {
+	var m = [0, "noteoff"];
+	for (var p = 0; p < 128; p++) m.push(p);
+	outlet.apply(this, m);
+	lastVoicing = [];
+}
+function panic() { allNotesOff(); }
+
+// Max calls these on device load / removal. Belt-and-suspenders: the patch also flushes
+// makenote on loadbang, but clearing 0..127 here too costs nothing.
+function loadbang() { allNotesOff(); }
+function notifydeleted() { allNotesOff(); }
+
+// Emit the current voicing as a single `chord <pitches...>` message. The patch runs it
+// through [t l b] -> flush + iter -> [makenote 90 <NoteDur>] -> noteout (the invertedprism
+// model): every note gets an automatic note-off after NoteDur ms, and `flush` releases the
+// previous chord the instant a new one arrives -- so navigating can never leave a note on,
+// and there's no explicit note-off bookkeeping here to get out of sync on reload. NoteDur
+// is a parameter; set it long (up to 16 s) for a held/pad feel, short for staccato.
 function voiceAndEmit(pcs) {
-	if (lastVoicing.length) outlet.apply(this, [0, "noteoff"].concat(lastVoicing));
 	var v = voiceChord(pcs, lastRefPitch, voiceSpan);
-	outlet.apply(this, [0, "noteon"].concat(v));
+	outlet.apply(this, [0, "chord"].concat(v));
+	lastVoicing = v;
 	var sum = 0;
 	for (var k = 0; k < v.length; k++) sum += v[k];
 	lastRefPitch = v.length ? sum / v.length : lastRefPitch;
-	lastVoicing = v;
 }
 
 // nudges the register up/down an octave and re-voices the CURRENT centre in place -- doesn't
@@ -410,6 +448,7 @@ function voiceAndEmit(pcs) {
 function shiftRegister(delta) {
 	lastRefPitch = Math.max(24, Math.min(108, lastRefPitch + delta));
 	voiceAndEmit(centerPcs());
+	if (regLumAmt > 0) rebuildAndEmit();   // register moved -> recolour to its new lightness (guarded)
 }
 
 function emitState() {
@@ -477,19 +516,28 @@ function emitState() {
 	}
 }
 
+// The colour/graph path -- computeRankList + emitState -- wrapped so a fault in it (a bad
+// colour value, a stale include, whatever) can NEVER stick MIDI notes or break navigation.
+var _colourFaultLogged = false;
+function rebuildAndEmit() {
+	try {
+		rankList = computeRankList(centerPcs());
+		emitState();
+	} catch (e) {
+		if (!_colourFaultLogged) { _colourFaultLogged = true; post("multichord: colour path fault, visuals only: " + e + "\n"); }
+	}
+}
+
 // rebuilds the neighbour list (mode-dependent) against the CURRENT centre, revoices, and emits.
+// voiceAndEmit() runs FIRST and UNGUARDED so the `chord` message always goes out, whatever
+// happens in the colour path afterwards.
 function recenter() {
-	var pcs = centerPcs();
-	rankList = computeRankList(pcs);
-	voiceAndEmit(pcs);
-	emitState();
+	voiceAndEmit(centerPcs());
+	rebuildAndEmit();
 }
 
 // palette-only change: recolour the current rankList without moving the centre or the voicing.
-function recolor() {
-	rankList = computeRankList(centerPcs());
-	emitState();
-}
+function recolor() { rebuildAndEmit(); }
 
 // Steps mode only: reset the centre to the scale's first `minSize` degrees -- an always-valid
 // starting point (drop/add moves can grow it up to maxSize from there), used whenever the
@@ -557,7 +605,8 @@ function selectrank(v) {
 function sethuec(v) { v = Number(v); if (isFinite(v)) { baseHue = mod360(v); recolor(); } }
 function setpalsat(v) { v = Number(v); if (isFinite(v)) { palSat = clamp01(v); recolor(); } }
 function setpallum(v) { v = Number(v); if (isFinite(v)) { palLum = clamp01(v); recolor(); } }
-function setspan(v) { v = Number(v); if (isFinite(v)) { voiceSpan = Math.max(0, Math.min(48, v)); voiceAndEmit(centerPcs()); } }
+function setreglum(v) { v = Number(v); if (isFinite(v)) { regLumAmt = clamp01(v); recolor(); } }
+function setspan(v) { v = Number(v); if (isFinite(v)) { voiceSpan = Math.max(0, Math.min(48, v)); voiceAndEmit(centerPcs()); if (regLumAmt > 0) rebuildAndEmit(); } }
 function regup() { shiftRegister(12); }
 function regdown() { shiftRegister(-12); }
 
@@ -583,7 +632,7 @@ function setmaxsize(v) {
 	if (mode === 1) reseedSteps();
 }
 
-function bang() { if (!rankList.length) recenter(); else emitState(); }
+function bang() { if (!rankList.length) recenter(); else rebuildAndEmit(); }
 
 // ================================================================================================
 // node --check harness
@@ -689,7 +738,7 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			var atMax = elementaryMoves([0, 2, 4], 7, 1, 3);
 			ok(atMax.every(function (d) { return d.length <= 3; }), 'at maxSize=3, nothing grows past 3');
 
-			var opts = { baseHue: 220, sat: 0.62, lum: 0.55 };
+			var opts = { baseHue: 0, sat: 0.62, lum: 0.55 };
 			var one = stepsNeighborsOf(major, [0, 2, 4], 1, opts, 3, 3);
 			eq(one.length, 6, 'size-locked depth-1 BFS returns exactly the 6 collision-free shift moves');
 			ok(one.every(function (n) { return n.dist === 1; }), 'every depth-1 neighbour is 1 hop away');
