@@ -185,7 +185,7 @@ CTL = [
     ('obj-201', 'Root', 'Root', 'num', 'setroot', nb_vo('Root', 'Root', 0, 11, DEFAULT_ROOT), ANN_ROOT),
     ('obj-202', 'ChordIdx', 'Chord', 'num', 'setchordidx', nb_vo('ChordIdx', 'Chord', 0, 350, DEFAULT_CHORDIDX), ANN_CHORDIDX),
     ('obj-203', 'Nav', 'Nav', 'num', 'dial', nb_vo('Nav', 'Nav', 0, 47, 0), ANN_NAV),
-    ('obj-204', 'HueC', 'Hue', 'num', 'sethuec', nb_vo('HueC', 'Hue', 0, 359, 220), ANN_HUEC),
+    ('obj-204', 'HueC', 'Hue', 'num', 'sethuec', nb_vo('HueC', 'Hue', 0, 359, 0), ANN_HUEC),
     ('obj-205', 'PalSat', 'Sat', 'num', 'setpalsat', nb_vo('PalSat', 'Sat', 0, 1, 0.62, 1), ANN_PALSAT),
     ('obj-206', 'PalLum', 'Lum', 'num', 'setpallum', nb_vo('PalLum', 'Lum', 0, 1, 0.55, 1), ANN_PALLUM),
     ('obj-207', 'Span', 'Span', 'num', 'setspan', nb_vo('Span', 'Span', 0, 48, 24), ANN_SPAN),
