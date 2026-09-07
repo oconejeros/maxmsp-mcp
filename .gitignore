@@ -212,7 +212,7 @@ forteseq/Bigo_et_al_CMJ15.pdf
 
 # Libro de referencia (Tymoczko, A Geometry of Music) usado para chequear la base teorica
 # de multichord/Chordscape -- material con derechos, no codigo del proyecto.
-"forteseq/Geometry_of_Music (1).pdf"
+forteseq/Geometry_of_Music*.pdf
 
 # Archivos .rar generados localmente (snapshots), no fuente.
 *.rar
