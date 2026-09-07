@@ -151,15 +151,47 @@ var PC_SAT = 0.62, PC_LUM = 0.55;
 var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1
 var PC_TEXT  = [];       // readable text colour for a filled node of that pc
 
+function setPcColor(pc, lum) {
+	var c = pcToColor(pc, { baseHue: baseHue, sat: PC_SAT, lum: lum });
+	PC_COLOR[pc] = [c.r, c.g, c.b];
+	PC_TEXT[pc] = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.62
+		? [0.1, 0.1, 0.1, 1] : [1, 1, 1, 1];
+}
 function rebuildPalette() {
-	for (var pc = 0; pc < 12; pc++) {
-		var c = pcToColor(pc, { baseHue: baseHue, sat: PC_SAT, lum: PC_LUM });
-		PC_COLOR[pc] = [c.r, c.g, c.b];
-		PC_TEXT[pc] = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.62
-			? [0.1, 0.1, 0.1, 1] : [1, 1, 1, 1];
-	}
+	for (var pc = 0; pc < 12; pc++) setPcColor(pc, PC_LUM);
 }
 rebuildPalette();
+
+// RegLum: replicate invertedprism's registerMode / ANIMIDI's RegLum. A sounding pc's colour
+// takes its lightness from its own register via pccolor.js's shared octaveToLum(octave)
+// (octave = floor(pitch/12)); regLumAmt scales how far PC_LUM is pulled toward it. Uses
+// midiVoices[] (per-exact-note held counts) for the octave -- study/list() sets have no octave
+// and stay flat. refreshRegPalette() overlays this onto PC_COLOR at the top of every paint().
+var regLumAmt = 0;
+function pcAvgOctave(pc) {
+	var sum = 0, n = 0;
+	for (var m = 0; m < 128; m++) if (mod12(m) === pc && midiVoices[m] > 0) { sum += Math.floor(m / 12); n++; }
+	return n > 0 ? sum / n : null;
+}
+function heldAvgOctave() {
+	var sum = 0, n = 0;
+	for (var m = 0; m < 128; m++) if (midiVoices[m] > 0) { sum += Math.floor(m / 12); n++; }
+	return n > 0 ? sum / n : null;
+}
+function regLumFor(oct) { return PC_LUM + regLumAmt * (octaveToLum(oct) - PC_LUM); }
+function pcRegLum(pc) {
+	if (regLumAmt <= 0) return PC_LUM;
+	var o = pcAvgOctave(pc);
+	if (o == null) o = heldAvgOctave();
+	return o == null ? PC_LUM : regLumFor(o);
+}
+function refreshRegPalette() {
+	if (regLumAmt <= 0) return;
+	for (var pc = 0; pc < 12; pc++) {
+		var o = pcAvgOctave(pc);
+		if (o != null) setPcColor(pc, regLumFor(o));
+	}
+}
 
 // fixed-look palette (used when colors == 0, and for chrome)
 var BG        = [0.14, 0.14, 0.14, 1];
@@ -295,7 +327,7 @@ for (var i = 0; i < 128; i++) midiVoices[i] = 0;
 // The jsui box is left oversized; we draw only within the floating window's real size, read
 // from the subpatcher's Wind. Also try to match the box rect to it (harmless if read-only).
 var BOX_PAD_X = 8;     // must match the jsui box x in build_tonnetz.py
-var BOX_TOP   = 182;   // six-row control strip reserved at the top of the window (match build_tonnetz.py jsui y)
+var BOX_TOP   = 98;    // canvas top = 2 header rows + N packed dynamic rows; tonnetzpanel.js striph() moves it
 
 function windSize() {
 	try {
@@ -327,6 +359,15 @@ _fit.interval = 250;
 _fit.repeat();
 
 function refresh() { fitToWindow(); mgraphics.redraw(); }
+
+// tonnetzpanel.js -> striph <canvasTop>: dynamic-row count changed; move the strip reserve.
+function striph(v) {
+	v = Math.max(30, Math.round(v));
+	if (v === BOX_TOP) return;
+	BOX_TOP = v;
+	fitToWindow();
+	mgraphics.redraw();
+}
 
 // ---- helpers -------------------------------------------------------------------------
 function mod12(n) { return ((n % 12) + 12) % 12; }
@@ -509,6 +550,7 @@ function harmmode(v) { harmMode = v ? 1 : 0; mgraphics.redraw(); }
 function huec(v)   { baseHue = ((Math.round(v) % 360) + 360) % 360; rebuildPalette(); mgraphics.redraw(); }
 function palsat(v) { PC_SAT = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
 function pallum(v) { PC_LUM = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
+function reglum(v) { regLumAmt = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
 function conex(v) { conexMode = Math.max(0, Math.min(8, Math.round(v))); mgraphics.redraw(); }
 function tracepath(v) { tracePathOn = v ? 1 : 0; mgraphics.redraw(); }
 function regtrace(v) { regTraceOn = v ? 1 : 0; mgraphics.redraw(); }
@@ -588,6 +630,7 @@ function paint() {
 	var footer = 38 + (harmMode ? HARM_SWATCH_H : 0);   // row 1: chord + diso meter; row 2: analysis;
 	var cH = H - footer;                                // row 3 (HarmMode only): the colour swatch
 	computeGhost();
+	refreshRegPalette();   // RegLum: overlay per-register lightness onto sounding pcs' colours
 
 	mgraphics.set_source_rgba(BG);
 	mgraphics.rectangle(0, 0, W, H);
@@ -686,23 +729,23 @@ function paintDisoMeter(W, cH) {
 	mgraphics.show_text(band[2] + (q5span >= 0 ? "   5tas " + q5span + "/11" : ""));
 }
 
-// HarmMode swatch strip: a solid band of colour across the full width, filled with whatever
-// disoBand(disoPct) says right now -- the same reading the "diso NN%" meter already gives as a
-// bar + number, just big enough to read as a colour at a glance instead of a percentage.
+// HarmMode swatch strip: a solid band of colour across the full width. Filled with the AnWin
+// note-BLEND colour (OKLab mix, RegLum lightness included) -- "what do these notes look like
+// mixed" -- with the McKay dissonance % kept as a number in the caption.
 function paintHarmSwatch(W, cH, footer) {
 	var top = cH + 38, h = footer - 38;
 	if (h < 8) return;
-	if (disoPct >= 0) {
-		var band = disoBand(disoPct);
-		mgraphics.set_source_rgba(band[1][0], band[1][1], band[1][2], 1);
+	if (disoPct >= 0 && anwinPcs.length) {
+		var blend = anwinBlend();
+		mgraphics.set_source_rgba(blend.r, blend.g, blend.b, 1);
 		mgraphics.rectangle(0, top, W, h);
 		mgraphics.fill();
-		var lum = 0.299 * band[1][0] + 0.587 * band[1][1] + 0.114 * band[1][2];
+		var lum = 0.299 * blend.r + 0.587 * blend.g + 0.114 * blend.b;
 		mgraphics.set_source_rgba(lum > 0.62 ? 0.08 : 0.96, lum > 0.62 ? 0.08 : 0.96, lum > 0.62 ? 0.08 : 0.96, 1);
 		mgraphics.select_font_face("Arial Bold");
 		mgraphics.set_font_size(11);
 		mgraphics.move_to(8, top + h / 2 + 4);
-		mgraphics.show_text("Color de armonia (AnWin): " + band[2] + "  diso " + disoPct.toFixed(0) + "%");
+		mgraphics.show_text("Color de armonia (AnWin): mezcla  diso " + disoPct.toFixed(0) + "%");
 	} else {
 		mgraphics.set_source_rgba(0.10, 0.10, 0.11, 1);
 		mgraphics.rectangle(0, top, W, h);
@@ -785,9 +828,7 @@ function paintAnwinColor(r) {
 		mgraphics.show_text("sin notas");
 		return;
 	}
-	var cols = [];
-	for (var i = 0; i < anwinPcs.length; i++) cols.push(pcToColor(anwinPcs[i], { baseHue: baseHue, sat: PC_SAT, lum: PC_LUM }));
-	var blend = mixColors(cols, 'oklab');
+	var blend = anwinBlend();
 	mgraphics.set_source_rgba(blend.r, blend.g, blend.b, 1);
 	mgraphics.rectangle(sx0, sy0, sw, sh);
 	mgraphics.fill();
@@ -799,6 +840,15 @@ function paintAnwinColor(r) {
 	for (i = 0; i < anwinPcs.length; i++) names.push(NOTE_NAMES[anwinPcs[i]]);
 	mgraphics.move_to(sx0 + 6, sy0 + 16);
 	mgraphics.show_text(names.join(" "));
+}
+
+// The AnWin-windowed pc set blended to one colour (OKLab), with RegLum's per-register
+// lightness folded in. Shared by the "Color (AnWin)" panel and the HarmMode swatch.
+function anwinBlend() {
+	var cols = [];
+	for (var i = 0; i < anwinPcs.length; i++)
+		cols.push(pcToColor(anwinPcs[i], { baseHue: baseHue, sat: PC_SAT, lum: pcRegLum(anwinPcs[i]) }));
+	return mixColors(cols, 'oklab');
 }
 
 function nodeFill(pc) { return isStudyRoot(pc) ? COL_ROOT : (colorsOn ? PC_COLOR[sp(pc)].concat(1) : COL_ACTIVE); }
