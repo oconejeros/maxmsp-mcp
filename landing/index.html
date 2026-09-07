@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conejeros Devices — dispositivos Max for Live para Ableton</title>
+<meta name="description" content="Motores generativos y visualizadores MIDI para Ableton Live. Versiones Lite/gratis; el pack completo por 39 USD.">
+<meta property="og:title" content="Conejeros Devices">
+<meta property="og:description" content="Motores generativos y visualizadores MIDI para Ableton Live.">
+<meta property="og:type" content="website">
+<!--
+  TODO (antes de Ola 4): reescribir el copy en INGLÉS. Nombres ya actualizados
+  (FORTESEQ / EVENFLOW / Harmonograph / Color Theory / Chordscape / Prism). FORTESEQ es un
+  device en español; su sección debe aclararlo. Los otros 5 ya tienen params en inglés.
+  Landing estática. Se publica en la OLA 4 (ver sales/launch-calendar.md).
+  Deploy: GitHub Pages apuntando a /landing (rama gh-pages o carpeta /landing en main).
+  Botones de compra: reemplazar cada data-product="PAYHIP_ID_*" por el id real del
+  producto en Payhip. El <script> de payhip.js al final activa los botones y el overlay.
+  El formulario de correo: pegar el action de Payhip (o de MailerLite) en <form action>.
+-->
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1a1a1e; --muted:#5c5c66;
+    --line:#e4e2dc; --accent:#c8452f; --accent-ink:#ffffff; --chip:#efece6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131316; --panel:#1b1b1f; --ink:#ececef; --muted:#a0a0aa;
+      --line:#2c2c32; --accent:#e8674f; --accent-ink:#1a1a1e; --chip:#232329;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131316; --panel:#1b1b1f; --ink:#ececef; --muted:#a0a0aa;
+    --line:#2c2c32; --accent:#e8674f; --accent-ink:#1a1a1e; --chip:#232329;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit}
+  .wrap{max-width:960px; margin:0 auto; padding:0 20px}
+  header.site{padding:22px 0; border-bottom:1px solid var(--line)}
+  header.site .wrap{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap}
+  .brand{font-weight:700; letter-spacing:.02em; font-size:18px}
+  .brand b{color:var(--accent)}
+  header.site nav{margin-left:auto; display:flex; gap:18px; font-size:14px; color:var(--muted)}
+  header.site nav a{text-decoration:none}
+  header.site nav a:hover{color:var(--ink)}
+
+  .hero{padding:72px 0 48px}
+  .hero h1{font-size:clamp(30px,5vw,46px); line-height:1.15; margin:0 0 16px; letter-spacing:-.01em}
+  .hero p{font-size:18px; color:var(--muted); max-width:60ch; margin:0 0 28px}
+  .cta{display:inline-flex; gap:10px; flex-wrap:wrap}
+  .btn{
+    display:inline-block; padding:12px 20px; border-radius:8px; font-weight:600;
+    text-decoration:none; border:1px solid var(--accent); background:var(--accent);
+    color:var(--accent-ink); cursor:pointer;
+  }
+  .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line)}
+  .btn.ghost:hover{border-color:var(--accent)}
+
+  section{padding:44px 0; border-top:1px solid var(--line)}
+  h2{font-size:24px; margin:0 0 6px; letter-spacing:-.01em}
+  .lede{color:var(--muted); margin:0 0 28px}
+
+  .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
+  @media (max-width:680px){ .grid{grid-template-columns:1fr} }
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:22px; display:flex; flex-direction:column; gap:12px;
+  }
+  .card h3{margin:0; font-size:19px}
+  .card .tag{
+    display:inline-block; font-size:12px; font-weight:600; color:var(--muted);
+    background:var(--chip); border-radius:999px; padding:3px 10px; align-self:flex-start;
+  }
+  .card p{margin:0; color:var(--muted); font-size:15px}
+  .card ul{margin:2px 0 0; padding-left:18px; color:var(--muted); font-size:14px}
+  .card .row{margin-top:auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+  .price{font-weight:700}
+  .price .strike{color:var(--muted); text-decoration:line-through; font-weight:400; margin-right:6px}
+  .free{color:var(--accent); font-weight:700}
+
+  .bundle{background:var(--panel); border:1px solid var(--accent); border-radius:14px; padding:28px}
+  .bundle h2{margin-bottom:4px}
+  .bundle .big{font-size:34px; font-weight:800; margin:8px 0}
+  .bundle ul{columns:2; gap:24px; color:var(--muted); font-size:14px; margin:12px 0 20px; padding-left:18px}
+  @media (max-width:520px){ .bundle ul{columns:1} }
+
+  form.mail{display:flex; gap:10px; flex-wrap:wrap; margin-top:8px}
+  form.mail input[type=email]{
+    flex:1 1 240px; padding:12px 14px; border-radius:8px; border:1px solid var(--line);
+    background:var(--bg); color:var(--ink); font-size:15px;
+  }
+  .fine{font-size:13px; color:var(--muted); margin-top:10px}
+
+  footer{padding:36px 0 60px; border-top:1px solid var(--line); color:var(--muted); font-size:14px}
+  footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <span class="brand"><b>Conejeros</b> Devices</span>
+    <nav>
+      <a href="#devices">Dispositivos</a>
+      <a href="#bundle">Pack</a>
+      <a href="#gratis">Gratis</a>
+      <a href="#lista">Novedades</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero" style="border-top:none">
+    <h1>Tres motores generativos. Cuatro formas de ver la armonía.</h1>
+    <p>
+      Dispositivos Max for Live para Ableton Live 12+: motores generativos por clases de
+      conjunto, ritmos bien formados y ritmos perfectamente balanceados dibujados como una
+      curva, más visualizadores y exploradores armónicos listos para grabar pantalla.
+      Cada motor tiene una <strong>versión Lite gratuita</strong> — probá antes de comprar.
+    </p>
+    <div class="cta">
+      <a class="btn" href="#bundle">Ver el Creative Pack — 39&nbsp;USD</a>
+      <a class="btn ghost" href="#gratis">Descargar gratis</a>
+    </div>
+  </section>
+
+  <section id="devices">
+    <h2>Dispositivos</h2>
+    <p class="lede">Comprá suelto o llevate todo con el pack.</p>
+
+    <div class="grid">
+
+      <div class="card">
+        <span class="tag">Secuenciador generativo</span>
+        <h3>FORTESEQ</h3>
+        <p>Recorre las 351 clases de altura de la teoría post-tonal y las reparte en hasta
+           16 voces con ritmo Euclidiano propio. Disonancia McKay en vivo, modo Drum Rack,
+           presets y bancos para Push.</p>
+        <ul>
+          <li>Lite: motor completo, 8 pasos, 4 voces</li>
+          <li>Premium: pasos largos, 16 voces, presets, randomización, Push</li>
+        </ul>
+        <div class="row">
+          <span class="price">desde 5&nbsp;USD · lifetime 15–19</span>
+          <!-- payhip: reemplazar PAYHIP_ID_FORTESEQ -->
+          <a class="payhip-buy-button btn" data-theme="none" data-product="PAYHIP_ID_FORTESEQ" href="#">Comprar</a>
+          <a class="btn ghost" href="#gratis">Lite gratis</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Generador de ritmos</span>
+        <h3>EVENFLOW</h3>
+        <p>Ritmos Well-Formed / Moment-of-Symmetry: patrones de máxima uniformidad, la
+           traslación al tiempo de las escalas MOS. Catálogo de marcadores r y morph entre
+           dos patrones con una perilla.</p>
+        <ul>
+          <li>Lite: motor completo, 8 slots de preset</li>
+          <li>Premium: 20 slots, Morph A/B, Quantize R</li>
+        </ul>
+        <div class="row">
+          <span class="price">desde 5&nbsp;USD · lifetime 12–15</span>
+          <!-- payhip: reemplazar PAYHIP_ID_EVENFLOW -->
+          <a class="payhip-buy-button btn" data-theme="none" data-product="PAYHIP_ID_EVENFLOW" href="#">Comprar</a>
+          <a class="btn ghost" href="#gratis">Lite gratis</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Generador de ritmos · visual</span>
+        <h3>Harmonograph</h3>
+        <p>Ocho capas-péndulo de ritmos Perfectly-Balanced, dibujadas en vivo como una
+           curva de Lissajous con cometa. Arrastrás la curva para cambiar rotación y peso
+           de cada capa. Probabilidad, moduladores cuantizados y 20 presets con nombre.</p>
+        <ul>
+          <li>Lite: motor completo, 4 capas, sin probabilidad ni moduladores</li>
+          <li>Premium: 8 capas, probabilidad, 2 moduladores, 20 presets</li>
+        </ul>
+        <div class="row">
+          <span class="price">desde 5&nbsp;USD · lifetime 15–19</span>
+          <!-- payhip: reemplazar PAYHIP_ID_HARMONOGRAPH -->
+          <a class="payhip-buy-button btn" data-theme="none" data-product="PAYHIP_ID_HARMONOGRAPH" href="#">Comprar</a>
+          <a class="btn ghost" href="#gratis">Lite gratis</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Visualizador · solo en el pack</span>
+        <h3>Color Theory</h3>
+        <p>Ocho vistas a la vez de lo que tocás: Tonnetz generalizado, círculos cromático y
+           de quintas, conducción de voces, piano, guitarra, Tonnetz diatónico con
+           auto-tonalidad y Tonnetz 3-D de Gollin. Modo estudio sobre las 351 clases.</p>
+        <div class="row">
+          <span class="price">incluido en el <a href="#bundle">Creative Pack</a></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Explorador de acordes · solo en el pack</span>
+        <h3>Chordscape</h3>
+        <p>El espacio de todos los acordes como un anillo (o una espiral) navegable:
+           clic en un vecino y suena. Dos modos — el universo completo de las 351 clases,
+           o pasos elementales dentro de una escala fija.</p>
+        <div class="row">
+          <span class="price">incluido en el <a href="#bundle">Creative Pack</a></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Visualizador · gratis</span>
+        <h3>ANIMIDI</h3>
+        <p>Un piano-roll que se desplaza en tiempo real, notas coloreadas por clase de
+           altura — estilo Music Animation Machine, dentro de Live. Multipista con el
+           device compañero ANIMIDIFeed. Listo para TikTok / Instagram.</p>
+        <div class="row">
+          <span class="free">Gratis</span>
+          <a class="btn ghost" href="#gratis">Descargar</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="tag">Color ↔ armonía · gratis</span>
+        <h3>Prism</h3>
+        <p>Soltá puntos de color en un lienzo — su posición decide el acorde. Arrastralos y
+           el acorde te sigue. Polychord por grupos y un reharmonizador que muestra el
+           color de lo que estás tocando, en vivo.</p>
+        <div class="row">
+          <span class="free">Gratis</span>
+          <a class="btn ghost" href="#gratis">Descargar</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="bundle">
+    <div class="bundle">
+      <h2>Conejeros MIDI Creative Pack</h2>
+      <p class="lede">Todo el estudio generativo, con actualizaciones de por vida.</p>
+      <div class="big">39 USD</div>
+      <ul>
+        <li>FORTESEQ Premium + Hub</li>
+        <li>EVENFLOW Premium</li>
+        <li>Harmonograph Premium</li>
+        <li>Color Theory <em>(exclusivo)</em></li>
+        <li>Chordscape <em>(exclusivo)</em></li>
+        <li>ANIMIDI Pro + ANIMIDIFeed</li>
+        <li>midibounce</li>
+        <li>Midirouter</li>
+      </ul>
+      <p style="color:var(--muted); font-size:14px; margin:0 0 18px">
+        Comprar los tres motores sueltos con updates ya cuesta ~45–53 USD. A 39 el pack
+        suma Color Theory y Chordscape, que no se venden por separado.
+      </p>
+      <!-- payhip: reemplazar PAYHIP_ID_BUNDLE -->
+      <a class="payhip-buy-button btn" data-theme="none" data-product="PAYHIP_ID_BUNDLE" href="#">Llevar el pack</a>
+    </div>
+  </section>
+
+  <section id="gratis">
+    <h2>Versiones gratuitas</h2>
+    <p class="lede">
+      Las Lite no caducan y no tienen marca de agua. Piden tu correo — así te aviso de
+      actualizaciones y lanzamientos.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>FORTESEQ Lite</h3>
+        <p>El motor generativo completo: 8 pasos, 4 voces, máscara y acentos manuales.</p>
+        <div class="row">
+          <span class="free">Gratis</span>
+          <!-- payhip: reemplazar PAYHIP_ID_FORTESEQ_LITE -->
+          <a class="payhip-buy-button btn ghost" data-product="PAYHIP_ID_FORTESEQ_LITE" href="#">Descargar</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>EVENFLOW Lite</h3>
+        <p>Motor Well-Formed completo con 8 slots de preset y el recorrido del catálogo.</p>
+        <div class="row">
+          <span class="free">Gratis</span>
+          <!-- payhip: reemplazar PAYHIP_ID_EVENFLOW_LITE -->
+          <a class="payhip-buy-button btn ghost" data-product="PAYHIP_ID_EVENFLOW_LITE" href="#">Descargar</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Harmonograph Lite</h3>
+        <p>Motor Perfectly-Balanced completo, 4 capas, la curva y el anillo de arrastre.</p>
+        <div class="row">
+          <span class="free">Gratis</span>
+          <!-- payhip: reemplazar PAYHIP_ID_HARMONOGRAPH_LITE -->
+          <a class="payhip-buy-button btn ghost" data-product="PAYHIP_ID_HARMONOGRAPH_LITE" href="#">Descargar</a>
+        </div>
+      </div>
+      <div class="card">
+        <h3>ANIMIDI</h3>
+        <p>El visualizador de barras, completo. En <a href="https://maxforlive.com" rel="noopener">maxforlive.com</a>.</p>
+        <div class="row"><span class="free">Gratis</span></div>
+      </div>
+      <div class="card">
+        <h3>Prism</h3>
+        <p>Color ↔ armonía completo, sin restricciones. En <a href="https://maxforlive.com" rel="noopener">maxforlive.com</a>.</p>
+        <div class="row"><span class="free">Gratis</span></div>
+      </div>
+      <div class="card">
+        <h3>midibounce</h3>
+        <p>Un botón: crea una pista MIDI y graba el clip como MIDI plano. En maxforlive.com.</p>
+        <div class="row"><span class="free">Gratis</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="lista">
+    <h2>Enterate de lo próximo</h2>
+    <p class="lede">Un correo por lanzamiento. Nada más.</p>
+    <!-- pegar el action del formulario de Payhip o MailerLite -->
+    <form class="mail" action="REEMPLAZAR_FORM_ACTION" method="post">
+      <input type="email" name="email" placeholder="tu@correo.com" required>
+      <button class="btn" type="submit">Avisame</button>
+    </form>
+    <p class="fine">Sin spam. Te podés dar de baja cuando quieras.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <span class="brand"><b>Conejeros</b> Devices</span> — dispositivos Max for Live para
+      Ableton Live 12 o superior.
+    </p>
+    <p>
+      Tienda en <a href="https://payhip.com/conejerosdevices" rel="noopener">Payhip</a> ·
+      <a href="mailto:oconejeros@gmail.com">soporte</a>
+    </p>
+  </div>
+</footer>
+
+<script src="https://payhip.com/payhip.js" type="text/javascript"></script>
+</body>
+</html>
