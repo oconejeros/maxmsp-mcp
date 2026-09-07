@@ -3,8 +3,9 @@
 // object (functions are global on purpose) and `require`-d by node tests.
 //
 // The base map is the circle-of-fifths HSL wheel already used by tonnetz (v13) and ANIMIDI:
-// hue given to C is `baseHue` (~220, blue), and each fifth advances the hue by 30 degrees, so
-// hue = baseHue + ((pc*7) mod 12) * 30. Everything else is built on that:
+// hue given to C is `baseHue` (0, red, matching the rest of the suite), and each fifth
+// advances the hue by 30 degrees, so hue = baseHue + ((pc*7) mod 12) * 30. Everything else
+// is built on that:
 //
 //   pcToColor(pc, opts)        pitch class      -> {h,s,l, r,g,b}
 //   mixColors(colors, model)   a stack of pc-colours -> one resultant colour   (sub|add|oklab)
@@ -102,10 +103,10 @@ function oklabDist(c1, c2) {
 
 // --- pitch class -> colour ----------------------------------------------------------------
 
-// opts: { baseHue: 220, sat: 0.62, lum: 0.55 }. C gets baseHue; each fifth adds 30 degrees.
+// opts: { baseHue: 0, sat: 0.62, lum: 0.55 }. C gets baseHue; each fifth adds 30 degrees.
 function pcToColor(pc, opts) {
 	opts = opts || {};
-	var baseHue = opts.baseHue == null ? 220 : opts.baseHue;
+	var baseHue = opts.baseHue == null ? 0 : opts.baseHue;
 	var sat = opts.sat == null ? 0.62 : opts.sat;
 	var lum = opts.lum == null ? 0.55 : opts.lum;
 	var k = mod(Math.round(pc) * 7, 12);            // circle-of-fifths index
@@ -135,6 +136,18 @@ function mixColors(cols, model) {
 	var r = 1, g = 1, b = 1;
 	for (i = 0; i < n; i++) { r *= cols[i].r; g *= cols[i].g; b *= cols[i].b; }
 	return { r: clamp01(r), g: clamp01(g), b: clamp01(b) };
+}
+
+// Generalizes the 'oklab' branch of mixColors above (an n-way OKLab mean) to a parametrized
+// blend fraction between exactly two colours: t=0 -> c1, t=1 -> c2, t=0.5 == mixColors([c1,c2],'oklab').
+function lerpOklab(c1, c2, t) {
+	t = clamp01(t);
+	var o1 = rgbToOklab(c1.r, c1.g, c1.b), o2 = rgbToOklab(c2.r, c2.g, c2.b);
+	return oklabToRgb({
+		L: o1.L + (o2.L - o1.L) * t,
+		a: o1.a + (o2.a - o1.a) * t,
+		b: o1.b + (o2.b - o1.b) * t
+	});
 }
 
 // --- interval vector + McKay dissonance -------------------------------------------------
@@ -207,7 +220,7 @@ var CHORD_LADDER = [
 //  -> { root, base, octave, intervals, notes, name, intervalVector, dissonancePct }
 function colorToHarmony(color, opts) {
 	opts = opts || {};
-	var baseHue = opts.baseHue == null ? 220 : opts.baseHue;
+	var baseHue = opts.baseHue == null ? 0 : opts.baseHue;
 	var hsl = rgbToHsl(color.r, color.g, color.b);
 
 	var k = mod(Math.round((hsl.h - baseHue) / 30), 12);   // circle-of-fifths index
@@ -228,6 +241,13 @@ function colorToHarmony(color, opts) {
 		name: noteName(root) + ' ' + chord.name,
 		intervalVector: iv, dissonancePct: dissonancePct(iv)
 	};
+}
+
+// Inverse of colorToHarmony's lightness->octave formula above (octave = round(2 + l*5), 2..7):
+// given a target octave, the lightness that would produce it. Round-trips within the
+// octave-rounding's own +-0.5 tolerance: octaveToLum(colorToHarmony(c).octave) ~= original l.
+function octaveToLum(octave) {
+	return clamp01((octave - 2) / 5);
 }
 
 // --- harmony -> colour ----------------------------------------------------------------
@@ -273,11 +293,11 @@ function splitColor(target, k, model, opts) {
 if (typeof module !== 'undefined' && module.exports) {
 	module.exports = {
 		hslToRgb: hslToRgb, rgbToHsl: rgbToHsl, rgbToOklab: rgbToOklab, oklabToRgb: oklabToRgb,
-		oklabDist: oklabDist, pcToColor: pcToColor, mixColors: mixColors,
+		oklabDist: oklabDist, pcToColor: pcToColor, mixColors: mixColors, lerpOklab: lerpOklab,
 		intervalVector: intervalVector, dissonancePct: dissonancePct,
 		dissonanceBand: dissonanceBand, bandColor: bandColor,
 		colorToHarmony: colorToHarmony, harmonyToColor: harmonyToColor, splitColor: splitColor,
-		noteName: noteName, CHORD_LADDER: CHORD_LADDER
+		octaveToLum: octaveToLum, noteName: noteName, CHORD_LADDER: CHORD_LADDER
 	};
 }
 
@@ -354,6 +374,23 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			if (failures === f0) console.log('OK   checkMix: add screens to white, sub multiplies to black, oklab averages perceptually.');
 		}
 
+		function checkLerpOklab() {
+			var f0 = failures;
+			var red = { r: 1, g: 0, b: 0 }, cyan = { r: 0, g: 1, b: 1 };
+			var at0 = lerpOklab(red, cyan, 0), at1 = lerpOklab(red, cyan, 1);
+			approxEq(at0.r, red.r, 'lerpOklab t=0 -> c1 r', 1e-4);
+			approxEq(at0.g, red.g, 'lerpOklab t=0 -> c1 g', 1e-4);
+			approxEq(at0.b, red.b, 'lerpOklab t=0 -> c1 b', 1e-4);
+			approxEq(at1.r, cyan.r, 'lerpOklab t=1 -> c2 r', 1e-4);
+			approxEq(at1.g, cyan.g, 'lerpOklab t=1 -> c2 g', 1e-4);
+			approxEq(at1.b, cyan.b, 'lerpOklab t=1 -> c2 b', 1e-4);
+			var mid = lerpOklab(red, cyan, 0.5), mean = mixColors([red, cyan], 'oklab');
+			approxEq(mid.r, mean.r, 'lerpOklab t=0.5 == mixColors oklab mean r', 1e-6);
+			approxEq(mid.g, mean.g, 'lerpOklab t=0.5 == mixColors oklab mean g', 1e-6);
+			approxEq(mid.b, mean.b, 'lerpOklab t=0.5 == mixColors oklab mean b', 1e-6);
+			if (failures === f0) console.log('OK   checkLerpOklab: t=0/1 hit the endpoints, t=0.5 matches the existing oklab mean.');
+		}
+
 		function checkDissonance() {
 			var f0 = failures;
 			// same three anchors forteseq2.js / tonnetz assert against
@@ -427,6 +464,19 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			if (failures === f0) console.log('OK   checkColorToHarmony: hue->root, saturation->density, lightness->register.');
 		}
 
+		function checkOctaveToLum() {
+			var f0 = failures;
+			// round-trips colorToHarmony's octave formula within its own rounding tolerance
+			for (var oct = 2; oct <= 7; oct++) {
+				var l = octaveToLum(oct);
+				var back = colorToHarmony(hslToRgb(0, 0.6, l), { baseHue: 0 }).octave;
+				eq(back, oct, 'octaveToLum(' + oct + ') round-trips through colorToHarmony');
+			}
+			eq(octaveToLum(2), 0, 'octaveToLum(2) -> lightness 0 (darkest/lowest)');
+			eq(octaveToLum(7), 1, 'octaveToLum(7) -> lightness 1 (lightest/highest)');
+			if (failures === f0) console.log('OK   checkOctaveToLum: inverts colorToHarmony\'s lightness->octave formula.');
+		}
+
 		function checkInverse() {
 			var f0 = failures;
 			var opts = { baseHue: 220, sat: 0.62, lum: 0.55 };
@@ -447,10 +497,12 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			checkWheel();
 			checkColorRoundTrips();
 			checkMix();
+			checkLerpOklab();
 			checkDissonance();
 			checkDissonanceBand();
 			checkBandColor();
 			checkColorToHarmony();
+			checkOctaveToLum();
 			checkInverse();
 			if (failures === 0) { console.log('ALL OK'); process.exitCode = 0; }
 			else { console.error(failures + ' failure(s)'); process.exitCode = 1; }

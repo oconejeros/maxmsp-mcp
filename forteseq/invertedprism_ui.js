@@ -9,12 +9,21 @@
 //   points     <count>  pc lum on grp  pc lum on grp ...
 //   clusters   <count>  grp r g b x01 y01 rootPc diss%  ... (one polychord blob per active group)
 //   harm       <name> <root pc> <diss %>            (footer text; name is every group's chord, joined)
+//   path       <n> <anchorA> <anchorB> [t r g b root]*n   (n=0 whenever a full pair isn't ready --
+//              anchorA/anchorB are ALWAYS sent, even -1, and are the engine's own pathAnchor: the
+//              authoritative source for which points get an A/B tag, see path() below)
 // `heardcolor r g b a` (the live reharmoniser) is filtered out before it reaches this jsui --
 // it drives a `panel` swatch up in the control row instead (see build_invertedprism.py).
 //
 // Sends back:  addpoint <pc> <lum>   setpoint <i> <pc> <lum>   rempoint <i>   setgroup <i> <grp>
+//              setpathanchor <slot> <i>
 // Shift-click an existing point to cycle it through the polychord groups (0..3); each group
 // blends independently into its own blob and they all sound together, stacked.
+// Right-click an existing point (or cmd-click on macOS / ctrl-click on Windows, where either is
+// reliably delivered) to cycle it through the path-anchor slots instead: unset -> A -> B -> unset.
+// With both A and B set, the device's "Path" button commits every
+// sampled step as a simultaneous polychord; "Next" instead walks one step at a time, replacing
+// just the currently-sounding chord on each press (see invertedprism.js's pathcommit/pathnext).
 
 if (typeof include === 'function') include('pccolor.js');
 
@@ -32,6 +41,9 @@ var gPoints = [];              // [[pc, lum, on, grp], ...]
 var gClusters = [];            // [{grp, r,g,b, x,y, root, diss}, ...] one blob per active group
 var gHarm = ['-', -1, 0];
 var dragIdx = -1;
+var gPathAnchor = [-1, -1];    // point indices cycled via cmd-click; -1 = unset
+var gPath = [];                // [{t, r,g,b, root}, ...] read-only preview of the path between them
+var gBaseHue = 0;              // echoed by the engine's "basehue" message -- see basehue() below
 // (the reharmoniser swatch lives outside the canvas now, up with the other controls -- a
 // `panel` object driven directly by "heardcolor", filtered out of this jsui's inlet before
 // it gets here. See build_invertedprism.py.)
@@ -57,11 +69,16 @@ function xToCol(x, p) {
 function yToLum(y, p) { return clamp01(1 - (y - p.y0) / p.ph); }
 
 function pcColor(pc) {
-	if (typeof pcToColor === 'function') return pcToColor(pc, { baseHue: 220, sat: 0.62, lum: 0.55 });
+	if (typeof pcToColor === 'function') return pcToColor(pc, { baseHue: gBaseHue, sat: 0.62, lum: 0.55 });
 	return { r: 0.6, g: 0.6, b: 0.6 };
 }
 
 // --- inbound ------------------------------------------------------------------------------
+
+// echoed every engine tick (see invertedprism.js's recompute()) so the column labels and each
+// point's own dot -- both drawn locally via pcColor() above -- actually track the Hue control,
+// instead of always drawing at a hardcoded baseHue regardless of what it's set to.
+function basehue(v) { gBaseHue = Number(v) || 0; mgraphics.redraw(); }
 
 function points() {
 	var a = arrayfromargs(arguments), n = Math.round(a[0] || 0);
@@ -69,6 +86,9 @@ function points() {
 	for (var i = 0; i < n && (4 + i * 4) < a.length; i++) {
 		gPoints.push([Math.round(a[1 + i * 4]), a[2 + i * 4], Math.round(a[3 + i * 4]), Math.round(a[4 + i * 4])]);
 	}
+	// gPathAnchor is NOT touched here -- the "path" message (below) is the engine's own echo of
+	// its pathAnchor state and is the only thing that gets to correct it, so the two can never
+	// drift apart even when rempoint/clear/pathcommit/a FIFO addpoint() eviction reshuffle indices.
 	mgraphics.redraw();
 }
 function clusters() {
@@ -84,6 +104,19 @@ function clusters() {
 	mgraphics.redraw();
 }
 function harm() { var a = arrayfromargs(arguments); gHarm = [a[0], Math.round(a[1]), a[2]]; mgraphics.redraw(); }
+// "path <n> <anchorA> <anchorB> [t r g b root]*n" -- anchorA/anchorB are the engine's OWN
+// pathAnchor, always sent (even -1, even with only one set): this is the single source of truth
+// for which points show an A/B tag, overriding whatever the local cmd-click cycle guessed.
+function path() {
+	var a = arrayfromargs(arguments), n = Math.round(a[0] || 0);
+	gPathAnchor = [Math.round(a[1] == null ? -1 : a[1]), Math.round(a[2] == null ? -1 : a[2])];
+	gPath = [];
+	for (var i = 0; i < n && (7 + i * 5) < a.length; i++) {
+		var o = 3 + i * 5;
+		gPath.push({ t: a[o], r: a[o + 1], g: a[o + 2], b: a[o + 3], root: Math.round(a[o + 4]) });
+	}
+	mgraphics.redraw();
+}
 
 // --- mouse -------------------------------------------------------------------------------
 
@@ -97,13 +130,37 @@ function pickPoint(x, y) {
 	return best;
 }
 
-function onclick(x, y, but, cmd, shift) {
+// Max's jsui onclick passes modifiers as (x, y, but, cmd, shift, capslock, option, ctrl) -- "cmd"
+// only ever fires on macOS (it's the Command key); on Windows the equivalent secondary-click
+// modifier arrives as "ctrl" instead, in the LAST slot, not the 4th. Reading only `cmd` (as this
+// function used to) meant cmd-click silently never fired on Windows at all -- and even `ctrl`
+// stayed unreliable in testing (Windows may translate a physical Ctrl+left-click into a
+// synthetic right-click before onclick ever sees a modifier flag). So this also accepts a plain
+// right-click (but===2) as an unambiguous, OS-independent trigger -- jsui still gets onclick for
+// a right-click while the device is locked/running (Live's normal state), it only opens Max's
+// object context menu in an unlocked *edit* patcher, which this isn't.
+function onclick(x, y, but, cmd, shift, capslock, option, ctrl) {
 	var p = plot();
 	var i = pickPoint(x, y);
 	if (shift && i >= 0) {
 		// shift-click an existing point: cycle it through the polychord groups instead of dragging
 		var g = ((gPoints[i][3] || 0) + 1) % GROUP_RING.length;
 		outlet(0, "setgroup", i, g);
+		dragIdx = -1;
+		return;
+	}
+	if ((cmd || ctrl || but === 2) && i >= 0) {
+		// cmd-click an existing point: cycle it through the path-anchor slots (unset -> A -> B ->
+		// unset) instead of dragging. This mutates gPathAnchor optimistically for instant visual
+		// feedback, but the engine's own "path" echo (see path() above) is the actual source of
+		// truth and will correct this moments later if `points` has changed shape meanwhile.
+		if (gPathAnchor[0] === i) { gPathAnchor[0] = -1; gPathAnchor[1] = i; }
+		else if (gPathAnchor[1] === i) { gPathAnchor[1] = -1; }
+		else if (gPathAnchor[0] < 0) { gPathAnchor[0] = i; }
+		else if (gPathAnchor[1] < 0) { gPathAnchor[1] = i; }
+		else { gPathAnchor[0] = i; }   // both slots taken by other points -- replace A
+		outlet(0, "setpathanchor", 0, gPathAnchor[0]);
+		outlet(0, "setpathanchor", 1, gPathAnchor[1]);
 		dragIdx = -1;
 		return;
 	}
@@ -195,6 +252,43 @@ function paint() {
 			mgraphics.set_source_rgba([ringCol[0], ringCol[1], ringCol[2], 0.9]);
 			mgraphics.set_line_width(2);
 			mgraphics.ellipse(px - r - 3, py - r - 3, (r + 3) * 2, (r + 3) * 2);
+			mgraphics.stroke();
+		}
+		// path-anchor marker: a letter tag above any point cmd-clicked into slot A or B
+		var anchorTag = (gPathAnchor[0] === i) ? 'A' : ((gPathAnchor[1] === i) ? 'B' : null);
+		if (anchorTag) {
+			mgraphics.set_source_rgba([1, 1, 1, 0.95]);
+			mgraphics.set_font_size(10);
+			mgraphics.move_to(px - 3, py - r - 6);
+			mgraphics.show_text(anchorTag);
+		}
+	}
+
+	// path preview: a dotted line + small dots for each sampled step, read-only (the "Path"
+	// button in the device commits it into real points). Drawn at each step's OWN root/lightness,
+	// same coordinate helpers the cluster blobs already use above.
+	if (gPath.length > 1) {
+		var stepXY = [];
+		for (var si = 0; si < gPath.length; si++) {
+			var st = gPath[si];
+			var lum = (typeof rgbToHsl === 'function') ? rgbToHsl(st.r, st.g, st.b).l : 0.5;
+			stepXY.push([colX(st.root, p), lumY(lum, p)]);
+		}
+		mgraphics.set_source_rgba([1, 1, 1, 0.35]);
+		mgraphics.set_line_width(1);
+		for (si = 0; si < stepXY.length; si++) {
+			if (si === 0) mgraphics.move_to(stepXY[si][0], stepXY[si][1]);
+			else mgraphics.line_to(stepXY[si][0], stepXY[si][1]);
+		}
+		mgraphics.stroke();
+		for (si = 0; si < gPath.length; si++) {
+			var sx = stepXY[si][0], sy = stepXY[si][1];
+			mgraphics.set_source_rgba([gPath[si].r, gPath[si].g, gPath[si].b, 0.9]);
+			mgraphics.ellipse(sx - 4, sy - 4, 8, 8);
+			mgraphics.fill();
+			mgraphics.set_source_rgba([1, 1, 1, 0.8]);
+			mgraphics.set_line_width(1);
+			mgraphics.ellipse(sx - 4, sy - 4, 8, 8);
 			mgraphics.stroke();
 		}
 	}

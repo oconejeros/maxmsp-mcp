@@ -8,24 +8,31 @@ Same method as build_harmonograph.py / build_tonnetz.py: copy forteseqmidifilter
 parameters / dependency_cache.
 
 Panel: an OPEN button. Floating window `[p ip_window]` (pcontrol scheme, like harmonograph):
-the jsui canvas + Model / BaseHue / Sat / Split / Clear.
+the jsui canvas + Model / BaseHue / Sat / Split / Clear (row 1), RegMode / PathSteps / Path (row 2).
 
     top patcher:
-      js invertedprism.js  outlet --> route chord clusters harm points heardcolor split
+      js invertedprism.js  outlet --> route chord clusters harm points heardcolor split path basehue
           chord --> [t l b] : b -> [flush( -> makenote ;  l -> [iter] -> makenote 90 800 -> noteout
-          clusters/harm/points/heardcolor --> [prepend <tag>] --> [p ip_window] inlet
+          clusters/harm/points/heardcolor/path/basehue --> [prepend <tag>] --> [p ip_window] inlet
       notein --> pack 0 0 --> prepend note --> js engine       (live reharmoniser feed)
       midiin --> midiout                                   (pass-through)
       OPEN / live.thisdevice --> open --> pcontrol --> [p ip_window]
 
     [p ip_window]:
-      inlet --> jsui invertedprism_ui.js
-      jsui outlet (addpoint/setpoint/rempoint) --> outlet --> (top) js
-      Model menu / BaseHue / Sat --> [prepend set*] --> outlet
-      Split / Clear (live.text mode 1) --> [sel 1] --> [split( / [clear( --> outlet
-      loadbang --> outputvalue Model ; bang BaseHue / Sat
+      inlet --> route heardcolor --> (matched) prepend bgcolor -> Heard panel
+                                  --> (rest, incl. the "path" preview) --> jsui invertedprism_ui.js
+      jsui outlet (addpoint/setpoint/rempoint/setpathanchor) --> outlet --> (top) js
+      Model menu / BaseHue / Sat / RegMode toggle / PathSteps num --> [prepend set*] --> outlet
+      Split / Clear / Path (live.text mode 1) --> [sel 1] --> [split(/[clear(/[pathcommit( --> outlet
+      loadbang --> outputvalue Model, RegMode (toggle-bang-inverts) ; bang the numboxes
 
-3 nested params (Model, BaseHue, Sat) + Open on the panel. One Push bank.
+    RegMode: the "heard" swatch's lightness follows the actual register of held notes instead of
+    colorToHarmony's fixed default -- additive, off by default, forward canvas path unchanged.
+    Path: cmd-click two points in the jsui to set anchors A/B; PathSteps (2-4) sets how many
+    chords to sample along the OKLab path between them; Path commits the sampled chords as new
+    points, one per polychord group -- the existing Split/Clear/shift-click grouping is untouched.
+
+5 nested params (Model, BaseHue, Sat, RegMode, PathSteps) + Open on the panel. One Push bank.
 
 pccolor.js is a THIRD dependency: both invertedprism.js and invertedprism_ui.js
 `include("pccolor.js")`. Close the device in Max + Live before --apply.
@@ -54,6 +61,16 @@ ANN_HUE = 'Base hue given to C on the circle-of-fifths colour wheel (0-359).'
 ANN_SAT = 'Palette saturation of the fundamental colours (0-1).'
 ANN_SPLIT = 'Split: solve for the fundamentals whose blend matches the current resultant colour, and drop them as new points.'
 ANN_CLEAR = 'Clear all points.'
+ANN_REGMODE = ("Register mode: when on, the Heard swatch's lightness follows the actual octave of "
+               "the notes currently held instead of a fixed default. Off by default; the canvas -> "
+               "chord direction is unaffected either way.")
+ANN_PATHSTEPS = 'How many chords to sample along the path between the two cmd-clicked anchor points (2-4).'
+ANN_PATH = ('Path: cmd-click two points to set them as anchors A/B, then Path samples PathSteps '
+            'chords along the OKLab path between their colours and drops them as new points, one '
+            'per polychord group. The existing Split/Clear/shift-click grouping is untouched.')
+ANN_PATHNEXT = ('Next: with anchors A/B set, walks the path one chord at a time -- each press '
+                'replaces the currently-sounding step with the next one along the path (wrapping) '
+                'instead of committing the whole path at once like Path does. Anchors stay put.')
 
 
 def tog_vo(ln, sn, init):
@@ -75,12 +92,17 @@ def nb_vo(ln, sn, mn, mx, init, unit=0):
             'parameter_unitstyle': unit, 'parameter_initial_enable': 1, 'parameter_initial': [float(init)]}
 
 
-# (innerid, longname, shortname, kind, prepend-or-None, valueof, annotation)
+# (innerid, longname, shortname, kind, prepend-or-None, valueof, annotation, row)
+# row 0 = the original Model/BaseHue/Sat line; row 1 = the new RegMode/PathSteps line below it.
 CTL = [
-    ('obj-201', 'PrismModel', 'Model', 'menu', 'setmodel', menu_vo('PrismModel', 'Model', MODEL_ITEMS, 2), ANN_MODEL),
-    ('obj-202', 'BaseHue', 'Hue', 'num', 'setbasehue', nb_vo('BaseHue', 'Hue', 0, 359, 220), ANN_HUE),
-    ('obj-203', 'PalSat', 'Sat', 'num', 'setsat', nb_vo('PalSat', 'Sat', 0, 1, 0.62, 1), ANN_SAT),
+    ('obj-201', 'PrismModel', 'Model', 'menu', 'setmodel', menu_vo('PrismModel', 'Model', MODEL_ITEMS, 2), ANN_MODEL, 0),
+    ('obj-202', 'BaseHue', 'Hue', 'num', 'setbasehue', nb_vo('BaseHue', 'Hue', 0, 359, 0), ANN_HUE, 0),
+    ('obj-203', 'PalSat', 'Sat', 'num', 'setsat', nb_vo('PalSat', 'Sat', 0, 1, 0.62, 1), ANN_SAT, 0),
+    ('obj-204', 'RegMode', 'Reg', 'toggle', 'setregmode', tog_vo('RegMode', 'Reg', 0), ANN_REGMODE, 1),
+    ('obj-205', 'PathSteps', 'Steps', 'num', 'setpathsteps', nb_vo('PathSteps', 'Steps', 2, 4, 4), ANN_PATHSTEPS, 1),
 ]
+CTL_ROW_X = {0: [8.0, 96.0, 168.0], 1: [8.0, 96.0]}   # x position within each row, in CTL order
+CTL_ROW_Y = {0: (8.0, 24.0), 1: (34.0, 50.0)}          # (label y, control y) per row
 
 
 def build_subpatcher(appversion):
@@ -102,15 +124,15 @@ def build_subpatcher(appversion):
         patching_rect=[20.0, 520.0, 30.0, 30.0], **HID)
     box(id='obj-3', maxclass='jsui', numinlets=1, numoutlets=1, outlettype=[''],
         parameter_enable=0, filename=UI_JS,
-        patching_rect=[8.0, 60.0, 468.0, 420.0],
-        presentation=1, presentation_rect=[8.0, 60.0, 468.0, 420.0], varname='ipw_ui')
-    line('obj-3', 0, 'obj-2', 0)        # jsui mouse messages (addpoint/setpoint/rempoint) -> engine
+        patching_rect=[8.0, 86.0, 468.0, 420.0],
+        presentation=1, presentation_rect=[8.0, 86.0, 468.0, 420.0], varname='ipw_ui')
+    line('obj-3', 0, 'obj-2', 0)        # jsui mouse messages (addpoint/setpoint/rempoint/setpathanchor) -> engine
 
     # controls across the top of the window
-    def label(x, txt):
+    def label(x, txt, y=8.0):
         box(id='obj-l%d' % len(boxes), maxclass='comment', numinlets=1, numoutlets=0,
-            patching_rect=[x, 8.0, 60.0, 18.0], presentation=1,
-            presentation_rect=[x, 8.0, 60.0, 16.0], fontsize=9.0, text=txt)
+            patching_rect=[x, y, 60.0, 18.0], presentation=1,
+            presentation_rect=[x, y, 60.0, 16.0], fontsize=9.0, text=txt)
 
     # reharmoniser swatch: pulled out of the jsui and up into the control row, bigger. "heardcolor
     # r g b a" is filtered off the inlet before it reaches the jsui -- only that tag drives the
@@ -129,31 +151,40 @@ def build_subpatcher(appversion):
     line('obj-230', 0, 'obj-231', 0)    # heardcolor r g b a (tag stripped) -> prepend bgcolor
     line('obj-231', 0, 'obj-232', 0)
 
-    gx = [8.0, 96.0, 168.0]
-    for k, (cid, ln, sn, kind, prep, vo, ann) in enumerate(CTL):
-        label(gx[k], sn)
+    row_i = {0: 0, 1: 0}
+    for k, (cid, ln, sn, kind, prep, vo, ann, row) in enumerate(CTL):
+        x = CTL_ROW_X[row][row_i[row]]
+        row_i[row] += 1
+        label_y, ctrl_y = CTL_ROW_Y[row]
+        label(x, sn, y=label_y)
         common = dict(id=cid, parameter_enable=1, varname='c_' + cid.replace('-', '_'),
                       presentation=1, annotation=ann,
                       saved_attribute_attributes={'valueof': vo})
         if kind == 'menu':
             box(maxclass='live.menu', numinlets=1, numoutlets=3, outlettype=['', '', ''],
-                patching_rect=[gx[k], 24.0, 76.0, 15.0], presentation_rect=[gx[k], 24.0, 76.0, 15.0], **common)
+                patching_rect=[x, ctrl_y, 76.0, 15.0], presentation_rect=[x, ctrl_y, 76.0, 15.0], **common)
+        elif kind == 'toggle':
+            box(maxclass='live.toggle', numinlets=1, numoutlets=1, outlettype=[''],
+                patching_rect=[x, ctrl_y, 15.0, 15.0], presentation_rect=[x, ctrl_y, 15.0, 15.0], **common)
         else:
             box(maxclass='live.numbox', numinlets=1, numoutlets=2, outlettype=['', 'float'],
-                patching_rect=[gx[k], 24.0, 52.0, 15.0], presentation_rect=[gx[k], 24.0, 52.0, 15.0], **common)
+                patching_rect=[x, ctrl_y, 52.0, 15.0], presentation_rect=[x, ctrl_y, 52.0, 15.0], **common)
         pid = 'p_' + cid
         box(id=pid, maxclass='newobj', numinlets=1, numoutlets=1, outlettype=[''],
             patching_rect=[8.0, 540.0 + k * 26.0, 140.0, 22.0], text='prepend ' + prep, **HID)
         line(cid, 0, pid, 0)
         line(pid, 0, 'obj-2', 0)
 
-    # Split / Clear action buttons (not params)
-    def action(bx_id, x, txt, msg):
+    # Split / Clear / Path / Next action buttons (not params)
+    ACTION_ANN = {'split': ANN_SPLIT, 'clear': ANN_CLEAR, 'pathcommit': ANN_PATH, 'pathnext': ANN_PATHNEXT}
+
+    def action(bx_id, x, txt, msg, y=24.0, pres_y=None):
+        pres_y = y if pres_y is None else pres_y
         box(id=bx_id, maxclass='live.text', numinlets=1, numoutlets=1, outlettype=[''],
             parameter_enable=0, mode=1, text=txt, texton=txt,
-            patching_rect=[x, 24.0, 60.0, 15.0], presentation=1,
-            presentation_rect=[x, 24.0, 60.0, 18.0], varname='c_' + bx_id.replace('-', '_'),
-            annotation=(ANN_SPLIT if msg == 'split' else ANN_CLEAR))
+            patching_rect=[x, y, 60.0, 15.0], presentation=1,
+            presentation_rect=[x, pres_y, 60.0, 18.0], varname='c_' + bx_id.replace('-', '_'),
+            annotation=ACTION_ANN[msg])
         sid = 's_' + bx_id
         mid = 'm_' + bx_id
         box(id=sid, maxclass='newobj', numinlets=1, numoutlets=1, outlettype=['bang'],
@@ -166,6 +197,8 @@ def build_subpatcher(appversion):
 
     action('obj-210', 260.0, 'Split', 'split')
     action('obj-211', 330.0, 'Clear', 'clear')
+    action('obj-212', 168.0, 'Path', 'pathcommit', y=50.0, pres_y=50.0)
+    action('obj-213', 240.0, 'Next', 'pathnext', y=50.0, pres_y=50.0)
 
     # loadbang: re-emit stored control values
     box(id='obj-9', maxclass='newobj', numinlets=1, numoutlets=1, outlettype=['bang'],
@@ -176,13 +209,15 @@ def build_subpatcher(appversion):
     line('obj-9m', 0, 'obj-201', 0)     # Model menu
     line('obj-9', 0, 'obj-202', 0)      # bang the numboxes
     line('obj-9', 0, 'obj-203', 0)
+    line('obj-9m', 0, 'obj-204', 0)     # RegMode toggle -- outputvalue, NOT a bare bang (bang inverts a live.toggle)
+    line('obj-9', 0, 'obj-205', 0)      # bang the PathSteps numbox
 
-    local_params = {cid: [ln, sn, i] for i, (cid, ln, sn, _k, _p, _vo, _a) in enumerate(CTL)}
+    local_params = {cid: [ln, sn, i] for i, (cid, ln, sn, _k, _p, _vo, _a, _row) in enumerate(CTL)}
     local_params['inherited_shortname'] = 1
 
     return {
         'fileversion': 1, 'appversion': appversion, 'classnamespace': 'box',
-        'rect': [120.0, 100.0, 492.0, 500.0], 'openrect': [0.0, 0.0, 492.0, 500.0],
+        'rect': [120.0, 100.0, 492.0, 526.0], 'openrect': [0.0, 0.0, 492.0, 526.0],
         'openinpresentation': 1, 'default_fontsize': 10.0, 'default_fontname': 'Arial',
         'gridsize': [8.0, 8.0], 'toolbarvisible': 0, 'enablehscroll': 0, 'enablevscroll': 0,
         'title': 'inverted prism',
@@ -227,9 +262,9 @@ def build_top(sub):
         patching_rect=[24.0, 120.0, 150.0, 22.0], text='js ' + JS, varname='ip_engine',
         saved_object_attributes={'filename': JS, 'parameter_enable': 0})
 
-    box(id='obj-11', maxclass='newobj', numinlets=1, numoutlets=7,
-        outlettype=[''] * 7, patching_rect=[24.0, 160.0, 320.0, 22.0],
-        text='route chord clusters harm points heardcolor split', varname='ip_route')
+    box(id='obj-11', maxclass='newobj', numinlets=1, numoutlets=9,
+        outlettype=[''] * 9, patching_rect=[24.0, 160.0, 320.0, 22.0],
+        text='route chord clusters harm points heardcolor split path basehue', varname='ip_route')
     line('obj-10', 0, 'obj-11', 0)
 
     # chord path: flush the old chord, then play the new notes
@@ -255,9 +290,11 @@ def build_top(sub):
     line('obj-15', 0, 'obj-16', 0)
     line('obj-15', 1, 'obj-16', 1)
 
-    # tags -> window
+    # tags -> window (route's "split" outlet, index 5, is intentionally left unwired -- split()
+    # always follows up with a "points" message, which already gets the jsui redrawn)
     tags = [('obj-21', 'clusters', 1), ('obj-22', 'harm', 2),
-            ('obj-23', 'points', 3), ('obj-24', 'heardcolor', 4)]
+            ('obj-23', 'points', 3), ('obj-24', 'heardcolor', 4), ('obj-25', 'path', 6),
+            ('obj-26', 'basehue', 7)]
     for bid, tag, outn in tags:
         box(id=bid, maxclass='newobj', numinlets=1, numoutlets=1, outlettype=[''],
             patching_rect=[200.0 + outn * 20.0, 200.0 + outn * 22.0, 110.0, 22.0],
@@ -305,11 +342,11 @@ def main():
     P['lines'] = lines
 
     params = {'obj-30': ['Open', 'Open', 0]}
-    for i, (cid, ln, sn, _k, _p, _vo, _a) in enumerate(CTL):
+    for i, (cid, ln, sn, _k, _p, _vo, _a, _row) in enumerate(CTL):
         params['%s::%s' % (SUB, cid)] = [ln, sn, i + 1]
     params['parameterbanks'] = {
         '0': {'index': 0, 'name': 'Prism',
-              'parameters': ['PrismModel', 'BaseHue', 'PalSat', '-', '-', '-', '-', '-']},
+              'parameters': ['PrismModel', 'BaseHue', 'PalSat', 'RegMode', 'PathSteps', '-', '-', '-']},
     }
     params['inherited_shortname'] = 1
     P['parameters'] = params
