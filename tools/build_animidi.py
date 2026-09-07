@@ -4,6 +4,12 @@ scrolling bar-graph score jsui).
     python tools/build_animidi.py            dry run, writes nothing
     python tools/build_animidi.py --apply    do it
 
+*** STALE as of 2026-09-06: this rebuilds the flat 3-row control strip. The device on disk
+has since been reorganised into a compact global row + a hideable per-view panel by
+tools/reorg_animidi_controls.py (and gained the ColorMode Acorde/Disonancia items, HarmLane,
+AnWin). Running --apply wipes all of that. Fold those changes in here before using it again,
+or keep patching the .amxd with one-off scripts. ***
+
 Method: same as tools/build_tonnetz.py / tools/build_midibounce.py, but the template IS the
 device. The user created forteseq/ANIMIDI.amxd as a stock Max 9 MIDI-effect device ("Build
 your MIDI effect here"); this script loads it, replaces `boxes` / `lines` / `parameters` /

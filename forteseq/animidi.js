@@ -95,12 +95,33 @@ include('pccolor.js');
 var baseHue = 0;         // hue for C, degrees 0..359
 var baseSat = 0.62;      // 0..1
 var baseLum = 0.55;      // 0..1
-var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1
+var regLumAmt = 0;       // 0..1 -- "RegLum": blend the pc-wheel lightness toward octaveToLum(register)
+var PC_COLOR = [];       // PC_COLOR[pc] = [r,g,b] in 0..1 (flat baseLum)
+var PC_COLOR_OCT = [];   // PC_COLOR_OCT[octave 0..10][pc] = [r,g,b] -- only built while regLumAmt > 0
+
+// RegLum replicates invertedprism.js's registerMode: a note's lightness follows its register
+// via pccolor.js's shared octaveToLum(octave) = clamp01((octave-2)/5) (octave = floor(pitch/12),
+// so MIDI 24..84 spans the full lightness range). regLumAmt scales how far the wheel's flat
+// baseLum is pulled toward that per-register lightness. colormode 0 (Nota) only.
+function regLumFor(octave) {
+	return baseLum + regLumAmt * (octaveToLum(octave) - baseLum);
+}
 
 function rebuildPalette() {
 	for (var pc = 0; pc < 12; pc++) {
 		var c = pcToColor(pc, { baseHue: baseHue, sat: baseSat, lum: baseLum });
 		PC_COLOR[pc] = [c.r, c.g, c.b];
+	}
+	PC_COLOR_OCT = [];
+	if (regLumAmt > 0) {
+		for (var oct = 0; oct <= 10; oct++) {
+			var row = [], lum = regLumFor(oct);
+			for (var p = 0; p < 12; p++) {
+				var cc = pcToColor(p, { baseHue: baseHue, sat: baseSat, lum: lum });
+				row.push([cc.r, cc.g, cc.b]);
+			}
+			PC_COLOR_OCT[oct] = row;
+		}
 	}
 }
 rebuildPalette();
@@ -220,7 +241,7 @@ var clipMsg = "";       // short status line
 // floating window: a slow Task reads the window size and matches the box to it, reserving
 // STRIP_H px at the top for the control strip. Falls back to the box's own rect until the
 // window size is readable.
-var STRIP_H = 96;   // control-strip height / jsui y -- must match build_animidi.py
+var STRIP_H = 92;   // jsui top = below the 3 header rows; striph() drops it when the Panel toggle hides row 3. phase3c
 var VP_PAD  = 8;
 function windSize() {
 	try {
@@ -237,10 +258,18 @@ function viewportWH() {
 }
 function fitToWindow() {
 	var s = windSize();
-	if (!s) return;
-	var r = [VP_PAD, STRIP_H, Math.round(s[0]) - VP_PAD, Math.round(s[1]) - VP_PAD];   // [l,t,r,b]
+	var r, b = box.rect;
+	if (s) {
+		r = [VP_PAD, STRIP_H, Math.round(s[0]) - VP_PAD, Math.round(s[1]) - VP_PAD];   // [l,t,r,b]
+	} else if (b) {
+		// window size unreadable in this M4L context -- keep our width/bottom, just force
+		// the top down to STRIP_H so the canvas never rides up over the header rows.
+		if (Math.round(b[1]) === STRIP_H) return;
+		r = [Math.round(b[0]), STRIP_H, Math.round(b[2]), Math.round(b[3])];
+	} else {
+		return;
+	}
 	try {
-		var b = box.rect;
 		if (!b || Math.round(b[0]) != r[0] || Math.round(b[1]) != r[1]
 			|| Math.round(b[2]) != r[2] || Math.round(b[3]) != r[3]) {
 			try { box.rect = r; } catch (e2) {}
@@ -252,6 +281,15 @@ var _fit = new Task(fitToWindow, SELF);
 _fit.interval = 300;
 _fit.repeat();
 function refresh() { resolveMyVoice(); fitToWindow(); mgraphics.redraw(); }
+// panel toggle (aw_settings -> striph <canvasTop>): move the strip reserve so the
+// canvas reclaims the hideable panel height when it is closed.
+function striph(v) {
+	v = Math.max(24, Math.round(v));
+	if (v === STRIP_H) return;
+	STRIP_H = v;
+	fitToWindow();
+	mgraphics.redraw();
+}
 
 // ---- animation clock -----------------------------------------------------------------
 // Driven BOTH by a JS Task and by a `bang` from a metro in the patch (bang() -> tick()),
@@ -330,12 +368,26 @@ function heldPcs() {
 	}
 	return pcs;
 }
+// average octave (floor(pitch/12)) of everything currently held -- null if nothing held.
+// Same idea as invertedprism.js's heldAvgOctave(); feeds RegLum into the chord blend.
+function heldAvgOctave() {
+	var sum = 0, n = 0;
+	for (var p = 0; p < 128; p++) {
+		if (held[p] >= 0 && events[held[p]]) { sum += Math.floor(p / 12); n++; }
+	}
+	return n > 0 ? sum / n : null;
+}
 // recomputes the colorMode 3 (acorde mezclado) / 4 (disonancia) caches from the held chord.
 // Called whenever `held` changes so colorFor() stays a cheap lookup during painting.
 function recomputeChordColors() {
 	var pcs = heldPcs();
 	if (!pcs.length) { currentChordCol = NEUTRAL_COL; currentDissCol = NEUTRAL_COL; return; }
-	var blend = harmonyToColor(pcs, { baseHue: baseHue, sat: baseSat }, 'oklab');
+	var opts = { baseHue: baseHue, sat: baseSat };
+	if (regLumAmt > 0) {
+		var avgOct = heldAvgOctave();
+		if (avgOct != null) opts.lum = regLumFor(avgOct);   // register-weighted lightness for the blend
+	}
+	var blend = harmonyToColor(pcs, opts, 'oklab');
 	currentChordCol = [blend.r, blend.g, blend.b];
 	var db = dissonanceBand(pcs);
 	var bc = bandColor(db.band, db.nBands);
@@ -434,6 +486,12 @@ function pushOnset(o) { onsetQ.push(o); while (onsetQ.length > traceLen) onsetQ.
 function basehue(v) { baseHue = ((Math.round(v) % 360) + 360) % 360; rebuildPalette(); mgraphics.redraw(); }
 function basesat(v) { baseSat = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
 function baselum(v) { baseLum = Math.max(0, Math.min(100, v)) / 100; rebuildPalette(); mgraphics.redraw(); }
+function reglum(v) {
+	regLumAmt = Math.max(0, Math.min(100, v)) / 100;
+	rebuildPalette();
+	if (colorMode === 3 || colorMode === 4) recomputeChordColors();
+	mgraphics.redraw();
+}
 function fps(v) {
 	fpsRate = Math.max(15, Math.min(60, Math.round(v)));
 	_anim.interval = Math.round(1000 / fpsRate);
@@ -564,12 +622,20 @@ function yRange() {
 // 1 = por Voz (per-track hue), 2 = Fijo (one accent colour), 3 = Acorde (OKLab blend of the
 // held chord), 4 = Disonancia (McKay % of the held chord, bucketed by threshold). 3/4 colour
 // every currently-sounding note the SAME -- they describe the chord, not the individual pitch.
-function colorFor(pc, voice) {
+// arg 1 is the MIDI pitch (callers pass ev.pitch); its pitch class is taken here. When
+// RegLum is on, colormode 0 looks the colour up in the per-octave table instead of the flat one.
+function colorFor(pitch, voice) {
 	if (colorMode === 4) return (currentDissCol || NEUTRAL_COL).concat(1);
 	if (colorMode === 3) return (currentChordCol || NEUTRAL_COL).concat(1);
 	if (colorMode === 2) return COL_ACCENT;
 	if (colorMode === 1) return VOICE_COLOR[((voice % VOICE_N) + VOICE_N) % VOICE_N].concat(1);
-	return PC_COLOR[((pc % 12) + 12) % 12].concat(1);
+	var idx = ((pitch % 12) + 12) % 12;
+	if (regLumAmt > 0) {
+		var oct = Math.floor(pitch / 12);
+		oct = oct < 0 ? 0 : (oct > 10 ? 10 : oct);
+		return PC_COLOR_OCT[oct][idx].concat(1);
+	}
+	return PC_COLOR[idx].concat(1);
 }
 
 // distinct voices (track indices) seen, sorted, capped at 8 (lane count). Unions the live
@@ -762,7 +828,7 @@ function paintHarmLane(W, H, nowX, loP, hiP, plotL, plotBot) {
 					var xOn = nowX + ((cn.start - posInLoop) + rep * loopLen) * beatPx;
 					var xOff = Math.max(xOn + cn.dur * beatPx, xOn + winPx);
 					if (xOff < plotL || xOn > W) continue;
-					spans.push({ x0: Math.max(plotL, xOn), x1: Math.min(W, xOff), pc: ((cn.pitch % 12) + 12) % 12 });
+					spans.push({ x0: Math.max(plotL, xOn), x1: Math.min(W, xOff), pc: ((cn.pitch % 12) + 12) % 12, pit: cn.pitch });
 				}
 			}
 		}
@@ -773,7 +839,7 @@ function paintHarmLane(W, H, nowX, loP, hiP, plotL, plotBot) {
 			var exOffRaw = ev.tOff < 0 ? nowX : nowX - (scrollMs - ev.tOff) * pxPerSec / 1000;
 			var exOff = Math.max(exOffRaw, exOn + winPx);
 			if (exOff < plotL || exOn > W) continue;
-			spans.push({ x0: Math.max(plotL, exOn), x1: Math.min(W, exOff), pc: ((ev.pitch % 12) + 12) % 12 });
+			spans.push({ x0: Math.max(plotL, exOn), x1: Math.min(W, exOff), pc: ((ev.pitch % 12) + 12) % 12, pit: ev.pitch });
 		}
 	}
 
@@ -791,14 +857,19 @@ function paintHarmLane(W, H, nowX, loP, hiP, plotL, plotBot) {
 	for (i = 0; i < bounds.length - 1; i++) {
 		var xa = bounds[i], xb = bounds[i + 1];
 		if (xb - xa < 0.25) continue;
-		var mid = (xa + xb) / 2, pcs = [], seen = {};
+		var mid = (xa + xb) / 2, pcs = [], seen = {}, octSum = 0, octN = 0;
 		for (var k = 0; k < spans.length; k++) {
 			s = spans[k];
-			if (mid >= s.x0 && mid <= s.x1 && !seen[s.pc]) { seen[s.pc] = 1; pcs.push(s.pc); }
+			if (mid >= s.x0 && mid <= s.x1) {
+				octSum += Math.floor(s.pit / 12); octN++;
+				if (!seen[s.pc]) { seen[s.pc] = 1; pcs.push(s.pc); }
+			}
 		}
 		var col;
 		if (pcs.length) {
-			var blend = harmonyToColor(pcs, { baseHue: baseHue, sat: baseSat }, 'oklab');
+			var hlOpts = { baseHue: baseHue, sat: baseSat };
+			if (regLumAmt > 0 && octN > 0) hlOpts.lum = regLumFor(octSum / octN);   // RegLum: slice lightness follows its register
+			var blend = harmonyToColor(pcs, hlOpts, 'oklab');
 			col = [blend.r, blend.g, blend.b];
 		} else col = [0.16, 0.16, 0.18];
 		mgraphics.set_source_rgba(col[0], col[1], col[2], 1);
@@ -924,7 +995,7 @@ function drawLeftPiano(H, loP, hiP) {
 			yTop = H - (n - loP + 1) * rowH;
 			kw = black ? KEYBOARD_W * 0.62 : KEYBOARD_W;
 			on = (held[n] >= 0 && events[held[n]]);
-			if (on) { col = colorFor(pc, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
+			if (on) { col = colorFor(n, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
 			else mgraphics.set_source_rgba(black ? KEY_BLACK : KEY_WHITE);
 			mgraphics.rectangle(0, yTop, kw, Math.max(1, rowH - 0.5)); mgraphics.fill();
 			mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.7);
@@ -1368,7 +1439,7 @@ function drawBottomPiano(loP, hiP, W, nowY, lay) {
 		kk = keys[n - loP]; x = kk.cx - whiteW / 2;
 		on = (held[n] >= 0 && events[held[n]]);
 		pc = ((n % 12) + 12) % 12;
-		if (on) { col = colorFor(pc, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
+		if (on) { col = colorFor(n, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
 		else mgraphics.set_source_rgba(KEY_WHITE);
 		mgraphics.rectangle(x, nowY, Math.max(1, whiteW - 1), KB_H); mgraphics.fill();
 		mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.7);
@@ -1384,7 +1455,7 @@ function drawBottomPiano(loP, hiP, W, nowY, lay) {
 		if (!isBlackPc(n)) continue;
 		kk = keys[n - loP]; x = kk.cx - bw / 2;
 		on = (held[n] >= 0 && events[held[n]]);
-		if (on) { col = colorFor(((n % 12) + 12) % 12, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
+		if (on) { col = colorFor(n, events[held[n]].voice); mgraphics.set_source_rgba(col[0], col[1], col[2], 1); }
 		else mgraphics.set_source_rgba(KEY_BLACK);
 		mgraphics.rectangle(x, nowY, bw, KB_H * 0.62); mgraphics.fill();
 		mgraphics.set_source_rgba(FRAME[0], FRAME[1], FRAME[2], 0.85);
