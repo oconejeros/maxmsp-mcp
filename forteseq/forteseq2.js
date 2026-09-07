@@ -1017,6 +1017,11 @@ var linkMin = 0;      // fewest pitch classes the next set must share with this 
 var tensLen = 0;      // set changes in one tension cycle; 0 = no curve
 var tensShape = 0;    // 0 = rising, 1 = falling, 2 = arch
 var tensPos = 0;
+var tensAnchor = 0;   // the consonance the current cycle sweeps DOWN from, captured at cycle
+                      // start. Without it the curve always departs from consHigh -- the single
+                      // most consonant set the filter allows -- which under McKay is a corner of
+                      // the catalogue, so every cycle snapped to set 1 / set 351. Anchored, the
+                      // curve leaves from whatever set is actually sounding.
 var favSeqOn = 0;     // play the favourites in the order they were marked
 var consLow = 0, consHigh = 0;   // the consonance the filter currently allows, from buildFilter()
 
@@ -1079,7 +1084,9 @@ function advanceInOrder() {
 // runs once per set change, not once per note.
 function advanceByTension() {
 	tensPos = (tensPos + 1) % tensLen;
-	var target = consHigh - tensionAt(tensPos, tensLen, tensShape) * (consHigh - consLow);
+	if (tensPos === 0) tensAnchor = harmonyValueOf(setIndex);   // new cycle: re-anchor to here
+	var lo = (tensAnchor < consLow) ? tensAnchor : consLow;     // already harsher than the floor?
+	var target = tensAnchor - tensionAt(tensPos, tensLen, tensShape) * (tensAnchor - lo);
 	var cb = linkMin > 0 ? fittedBits(setIndex) : 0;
 	var best = -1, bestD = 1e9, loose = -1, looseD = 1e9;
 	for (var i = 0; i < order.length; i++) {
@@ -1306,6 +1313,9 @@ function emitSetReadouts(displayPcs) {
 
 	outlet(1, setIndex + 1);
 	outlet(2, displayNotes(displayPcs));
+	// Current root as a plain pitch-class name, for the readout in the global panel. Same memo
+	// as everything else here -- it moves only when the set, the root or the master octave does.
+	outlet(4, ["root", NOTE_NAMES[((effRoot() % 12) + 12) % 12]]);
 	var zm = zMateOf(setIndex);
 	var mm = mirrorForteOf(setIndex);
 	outlet(7, [setForte[setIndex], vecString(setIndex), dissonancePercent(setIndex).toFixed(2),
@@ -1354,6 +1364,7 @@ var tensModel = 0;
 
 function settensmodel(m) {
 	tensModel = m ? 1 : 0;
+	if (tensLen > 0) tensAnchor = harmonyValueOf(setIndex);   // re-anchor: the units just flipped
 	requestFilter();
 }
 
@@ -1496,6 +1507,7 @@ function settension(n) {
 	if (n === tensLen) return;
 	tensLen = n;
 	tensPos = 0;
+	if (n > 0) tensAnchor = harmonyValueOf(setIndex);   // start the sweep where we stand
 }
 
 function settenshape(s) {
@@ -2083,6 +2095,10 @@ function emitNote(voiceIdx, art, pitches, now) {
 	var list = (pitches instanceof Array) ? pitches : [pitches];
 	var dur = Math.round(art.dur);
 
+	// Column-monitor flash: one tiny message per note that actually sounds -- same volume as
+	// the note events on outlet 0, so it costs nothing measurable. The panel decays the pulse.
+	outlet(3, ["colbang", voiceIdx]);
+
 	// A note that did not come from a step has nothing to be placed relative to. The whole
 	// sub-clock exists to put a note BETWEEN two steps, and every offset it produces is a
 	// fraction of one step: swing is half the gap to the next, humanize is a jitter measured
@@ -2178,6 +2194,37 @@ function stackvoices(step) {
 		if (g > 8) g = 8;    // el numbox de Grado no pasa de ahi, y el eco tiene que caer adentro
 		voiceDegOffset[v] = g;
 		if (v < 4) outlet(4, ["v" + (v + 1) + "grado", g]);   // solo hay cuatro tiras en la UI
+	}
+}
+
+// Reparto: one menu instead of the old apilar/unisono buttons. Writes a degree-offset pattern
+// across the Grado numboxes in one go (an action, like stackvoices/Rango). Modes past Apilado
+// read the live set's cardinality, so they re-spread only when fired, not continuously.
+//   0 Unisono   all voices on the same degree
+//   1 Apilado   0,1,2,3 -- the set stacked up
+//   2 Apilado x2  0,2,4,6 -- every other degree, for sets with more tones than voices
+//   3 Extremos  low half on the root, high half on the top degree of the set
+//   4 Salteado  the voices spread evenly across the set's degrees
+function stackmode(m) {
+	m = Math.round(m);
+	if (!isFinite(m)) return;
+	var card = (sets[setIndex] && sets[setIndex].length) ? sets[setIndex].length : 4;
+	var last = NUM_VOICES > 1 ? NUM_VOICES - 1 : 1;
+	// span never collapses on tiny sets: on Set 1 (card 1) card-1 is 0, which used to make
+	// Extremos and Salteado write all-zero. max(card-1, last) degrades them to Apilado-ish
+	// spacing on small sets and still skips degrees on big ones (card 7 -> 0,2,4,6).
+	var span = Math.max(card - 1, last);
+	for (var v = 0; v < NUM_VOICES; v++) {
+		var g;
+		if (m === 0) g = 0;
+		else if (m === 1) g = v;
+		else if (m === 2) g = v * 2;
+		else if (m === 3) g = (v * 2 < NUM_VOICES) ? 0 : span;
+		else g = Math.round(v * span / last);
+		if (g < -8) g = -8;
+		if (g > 8) g = 8;
+		voiceDegOffset[v] = g;
+		if (v < 4) outlet(4, ["v" + (v + 1) + "grado", g]);
 	}
 }
 
@@ -2784,6 +2831,27 @@ function randomizeaccents() {
 	post("forteseq2: Azar Acentos, " + written + " celdas escritas\n");
 }
 
+// The "Tirar" button, gated by three toggles: jump to a random set, re-roll the mask, re-roll
+// the accent grid -- whichever axes are switched on. randomset() picks inside order[], so the
+// filter and the reading order still apply; it does not fire notes, only moves the catalogue.
+var rndSet = 1, rndAcc = 1, rndSil = 1;
+function setrndset(x) { rndSet = x ? 1 : 0; }
+function setrndacc(x) { rndAcc = x ? 1 : 0; }
+function setrndsil(x) { rndSil = x ? 1 : 0; }
+
+function randomset() {
+	if (!order.length) return;
+	setIndex = order[Math.floor(Math.random() * order.length)];
+	readoutInvalidate();
+	emitSetReadouts(sets[setIndex]);
+}
+
+function randomizeall() {
+	if (rndSet) randomset();
+	if (rndSil) randomizemask();
+	if (rndAcc) randomizeaccents();
+}
+
 // A pitch class as a Drum Rack pad. Nothing that moves a note vertically applies: the octave
 // pattern, the master octave and the register clamp all exist to put a note in a register, and
 // a rack has no registers -- its rows are unrelated instruments, so folding a note into a range
@@ -2853,6 +2921,145 @@ var monShown = filled(MAX_VOICES, -2);     // what the comment currently reads
 var monScratch = filled(MAX_VOICES, -2);   // what this step would put there; reused, never realloc'd
 var monShownCount = -1;                    // the NUM_VOICES the visible line was built for
 
+// --- the per-voice column monitor (outlet 3) ------------------------------------------------
+// A panel beside the tabs shows, per voice, the pitch class sounding now plus the next three
+// the reading order will feed it. Outlet 3 was retired long ago and never reconnected, so it
+// is reused here rather than adding a ninth outlet and renumbering every cord on 4..7.
+//
+// The lookahead is cheap: degreeAt(n, pos, ...) is already a pure function of an explicit
+// position -- the reading order lives in exactly one place -- so peeking is just calling it
+// with pos + j. Chord mode and the frozen cursor of independent-Acordes have no forward
+// arpeggio to read, so they name the set's own tones instead: a static "these are in play".
+// Debounced per voice exactly like emitMonitor(): a handful of sends per harmonic change.
+var colShown = [];                         // last "h2,h1,cur,f1,f2" key sent per voice
+var colVoicesShown = -1;
+var colHist = [];                          // colHist[v] = [h1, h2]  (the two MIDI notes it played before cur)
+var colLastCur = [];                       // last non-silent MIDI note seen per voice, to detect a change
+var colFwd = [];                           // colFwd[v] = [f1, f2] last GOOD forward notes -- held, not blanked,
+                                           // at a pass edge so the upcoming cells sit still instead of blinking
+for (var _ci = 0; _ci < MAX_VOICES; _ci++) { colShown.push(""); colHist.push([-1, -1]); colLastCur.push(-1); colFwd.push([-1, -1]); }
+
+function pc12(x) { return ((Math.round(x) % 12) + 12) % 12; }
+
+// How many more steps the CURRENT set and rotation survive. The lookahead is only exact within
+// this window: at a pass boundary advanceOnPass() moves the catalogue and bumps `rotation`, and
+// with harmRate > 0 the set changes on its own step count -- neither is cheap to run forward
+// here, so cells past `colRemain` are shown blank rather than guessed wrong.
+function colRemain(n) {
+	var rem;
+	if (mode === 1 && readDir === 0 && readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) {
+		rem = MINIMAL_SUPERPERMS[n].length - minimalPos;
+	} else if (mode === 1 && readDir === 0 &&
+	           (readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP && permList.length) {
+		rem = permList.length * n - (permIndex * n + noteIndex);
+	} else {
+		rem = readCycleLength(n) - noteIndex;
+	}
+	if (harmRate > 0 && (harmRate - harmCount) < rem) rem = harmRate - harmCount;
+	return rem < 0 ? 0 : rem;
+}
+
+// pc the SHARED arpeggio walk feeds voice v, j notes after the one about to sound (j >= 1).
+// voiceDegOffset[v] (Reparto / Grado) is folded in so the lookahead follows this voice's own
+// line even in shared mode; the octave is not decided here -- nearNote() re-centres it on the
+// note sounding now -- so pitchForDegree vs pcs[] indexing is equivalent for offset 0.
+function peekSharedPc(v, pcs, n, j) {
+	var off = voiceDegOffset[v] || 0;
+	if (mode === 1 && readDir === 0 && readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) {
+		var seq = MINIMAL_SUPERPERMS[n];
+		return pc12(pitchForDegree(pcs, seq[(minimalPos + j) % seq.length] + off) + effRoot());
+	}
+	if (mode === 1 && readDir === 0 &&
+		(readMode === READ_SUPER || readMode === READ_SUPERMIN) && n <= PERM_CAP) {
+		ensurePermCache(n);
+		var flat = permIndex * n + noteIndex + j;
+		var pi = Math.floor(flat / n) % permList.length;
+		return pc12(pitchForDegree(pcs, permList[pi][flat % n] + off) + effRoot());
+	}
+	if (readMode === READ_MODOS) {
+		return pc12(pitchForDegree(pcs, degreeAt(n, noteIndex + j) + modDeg() + off) + effRoot());
+	}
+	var deg = degreeAt(n, noteIndex + j);
+	return pc12(pitchForDegree(pcs, deg + rotation + manualRot + modDeg() + off) + effRoot());
+}
+
+// The full MIDI note voice v plays j notes after its current one, in the independent-voice
+// walk -- mirrors the note calc in emitVoicesIndependent() (octave list + master shift + fold).
+function peekVoiceNote(v, pcs, n, j) {
+	var base = (mode === 1) ? voicePos[v] : 0;
+	var pc = pitchForDegree(pcs,
+		degreeAt(n, base + j, voiceReadModeOf(v), voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+	if (drumOn) return padFor(pc);
+	var list = voiceOctaveList[v];
+	var oct = list[((base + j) % list.length + list.length) % list.length];
+	return foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
+		voiceRangeMin[v], voiceRangeMax[v]);
+}
+
+// A pitch class placed in whichever octave sits nearest a reference note -- keeps the forward
+// cells of the column monitor near the note sounding now instead of jumping octaves.
+function nearNote(pc, ref) {
+	if (ref < 0) return MELODY_BASE + pc;
+	var base = ref - (((ref % 12) + 12) % 12) + pc;
+	if (base - ref > 6) base -= 12;
+	else if (ref - base > 6) base += 12;
+	return base;
+}
+
+// Per voice: the two notes it played before now, the one sounding now, and the next two the
+// reading order will feed it -- "colmon v h2 h1 cur f1 f2", MIDI note numbers (register and
+// all) or -1. History is exact -- it is what sounded. The forward side is clamped to
+// colRemain() (the walk cannot see past a pass edge, where the set and rotation move); rather
+// than blink those cells to blank as the edge approaches, the last good value is held in
+// colFwd until a fresh one is available (one step of possible staleness, no flicker). Forward
+// cells borrow the octave nearest the note sounding now (nearNote). pcs/n may be absent
+// (all-silent path): every voice reports silence and history is left intact. ctxPcs/ctxDeg,
+// when given by the shared path, name the set + degree the peek offset is measured against.
+function emitColMon(pcs, n, ctxPcs, ctxDeg) {
+	if (NUM_VOICES !== colVoicesShown) {
+		colVoicesShown = NUM_VOICES;
+		for (var r = 0; r < MAX_VOICES; r++) { colShown[r] = ""; colHist[r] = [-1, -1]; colLastCur[r] = -1; colFwd[r] = [-1, -1]; }
+		outlet(3, ["colvoices", NUM_VOICES]);
+	}
+	var haveArp = pcs && n > 0;
+	var rem = haveArp ? colRemain(n) : 0;
+	var peekPcs = ctxPcs && ctxPcs.length ? ctxPcs : pcs;
+	for (var v = 0; v < NUM_VOICES; v++) {
+		var cur = (monScratch[v] === MON_SILENT) ? -1 : monScratch[v];   // full MIDI note now
+		// history shifts only on a real change to a new sounding note; rests leave it be
+		if (cur !== -1 && cur !== colLastCur[v]) {
+			colHist[v][1] = colHist[v][0];
+			colHist[v][0] = colLastCur[v];
+			colLastCur[v] = cur;
+		}
+		var f1 = -1, f2 = -1;
+		if (haveArp && cur !== -1) {
+			if (mode === 1) {
+				if (voiceIndep) {
+					if (1 < rem) f1 = peekVoiceNote(v, pcs, n, 1);
+					if (2 < rem) f2 = peekVoiceNote(v, pcs, n, 2);
+				} else {
+					if (1 < rem) f1 = nearNote(peekSharedPc(v, peekPcs, n, 1), cur);
+					if (2 < rem) f2 = nearNote(peekSharedPc(v, peekPcs, n, 2), cur);
+				}
+			} else {                        // Acordes: no melodic "next" -- show the chord's own tones
+				f1 = nearNote(pc12(pcs[1 % n] + effRoot()), cur);
+				f2 = nearNote(pc12(pcs[2 % n] + effRoot()), cur);
+			}
+			// hold the last good value across a pass edge instead of blinking to blank
+			if (f1 < 0) f1 = colFwd[v][0]; else colFwd[v][0] = f1;
+			if (f2 < 0) f2 = colFwd[v][1]; else colFwd[v][1] = f2;
+		} else {
+			colFwd[v][0] = -1; colFwd[v][1] = -1;
+		}
+		var h1 = colHist[v][0], h2 = colHist[v][1];
+		var key = h2 + "," + h1 + "," + cur + "," + f1 + "," + f2;
+		if (key === colShown[v]) continue;
+		colShown[v] = key;
+		outlet(3, ["colmon", v, h2, h1, cur, f1, f2]);
+	}
+}
+
 function setmonitor(x) {
 	monitorOn = x ? 1 : 0;
 	monShownCount = -1;   // switching it back on must repaint, whatever the notes are doing
@@ -2866,14 +3073,18 @@ function emitMonitor() {
 		for (v = 0; v < NUM_VOICES; v++) if (monScratch[v] !== monShown[v]) { same = 0; break; }
 		if (same) return;
 	}
-	var labelled = [];
+	var names = [];
 	for (v = 0; v < NUM_VOICES; v++) {
 		monShown[v] = monScratch[v];
-		labelled.push("V" + (v + 1) + ":" +
-			(monScratch[v] === MON_SILENT ? "--" : noteName(monScratch[v])));
+		names.push(monScratch[v] === MON_SILENT ? "--" : noteName(monScratch[v]));
 	}
 	monShownCount = NUM_VOICES;
-	outlet(5, labelled);
+	// Two lines of up to six note names each, so the readout fits a control-strip slot instead
+	// of one long row. Row 1 is V1..V6, row 2 is V7..V12; voices past 12 are not shown -- at
+	// that width nobody was reading names off the strip anyway.
+	var r1 = names.slice(0, 6), r2 = names.slice(6, 12);
+	outlet(5, ["mon1"].concat(r1.length ? r1 : ["--"]));
+	outlet(5, ["mon2"].concat(r2.length ? r2 : ["--"]));
 }
 
 // Is there any voice the shared clock will actually sound? Computed each step rather than
@@ -2892,31 +3103,42 @@ function clockVoicesLive() {
 function markAllSilent() {
 	for (var v = 0; v < NUM_VOICES; v++) monScratch[v] = MON_SILENT;
 	emitMonitor();
+	emitColMon();
 }
 
-function emitVoices(noteData) {
+// ctxPcs/ctxDeg (arp branches only, never chords): the set and degree index this step's note
+// resolves from. When a voice has a non-zero voiceDegOffset (Reparto / Grado) they let the
+// shared path stack the voices across the set's degrees -- the same spread the independent
+// path does -- instead of the offset being inert with Ind off. Offset 0 -> delta 0 -> the
+// note handed in is used unchanged, so every prior preset sounds exactly as before.
+function emitVoices(noteData, ctxPcs, ctxDeg) {
 	// cardinality of the set currently sounding, for the "tie the accent cycle to n" option
 	var curSet = sets[setIndex];
 	var card = curSet ? curSet.length : 1;
+	var haveCtx = ctxPcs && ctxPcs.length && !(noteData instanceof Array);
+	var ctxBase = haveCtx ? pitchForDegree(ctxPcs, ctxDeg) : 0;
 	for (var v = 0; v < NUM_VOICES; v++) {
 		if (voiceMute[v] || voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
 		// The voice's own pattern, read against the shared step because here every voice is
 		// handed the same one. Off-cells drop out before any of the pitch work is done.
 		if (!voiceSoundsAt(v, patternStep)) { monScratch[v] = MON_SILENT; continue; }
+		var nd = (haveCtx && voiceDegOffset[v])
+			? noteData + (pitchForDegree(ctxPcs, ctxDeg + voiceDegOffset[v]) - ctxBase)
+			: noteData;
 		var list = voiceOctaveList[v];
 		var oct = list[patternStep % list.length];
 		var shift = oct * 12 + effRoot() + masterOctave * 12;
 		var shifted;
 		var repr;
 		var vmin = voiceRangeMin[v], vmax = voiceRangeMax[v];
-		if (noteData instanceof Array) {
+		if (nd instanceof Array) {
 			shifted = [];
-			for (var i = 0; i < noteData.length; i++) {
-				shifted.push(drumOn ? padFor(noteData[i]) : foldToRange(noteData[i] + shift, vmin, vmax));
+			for (var i = 0; i < nd.length; i++) {
+				shifted.push(drumOn ? padFor(nd[i]) : foldToRange(nd[i] + shift, vmin, vmax));
 			}
 			repr = shifted[0];
 		} else {
-			shifted = drumOn ? padFor(noteData) : foldToRange(noteData + shift, vmin, vmax);
+			shifted = drumOn ? padFor(nd) : foldToRange(nd + shift, vmin, vmax);
 			repr = shifted;
 		}
 		// A rest reads as "--" in the monitor, same as a muted or external voice: from the
@@ -2928,6 +3150,7 @@ function emitVoices(noteData) {
 		emitNote(v, art, shifted);
 	}
 	emitMonitor();
+	emitColMon(curSet, card, ctxPcs, ctxDeg);
 }
 
 var VOICING_SPREAD = 0, VOICING_CLOSED = 1, VOICING_DROP2 = 2, VOICING_DROP3 = 3,
@@ -3287,6 +3510,7 @@ function emitVoicesIndependent(pcs, n) {
 		emitNote(v, art, note);
 	}
 	emitMonitor();
+	emitColMon(pcs, n);
 }
 
 // One clock step with independent voices. The shared permutation walk (permIndex/minimalPos) is
@@ -3335,7 +3559,7 @@ function step() {
 		}
 
 		emitSetReadouts(pcs);
-		emitVoices(MELODY_BASE + pcs[minSeq[minimalPos]]);
+		emitVoices(MELODY_BASE + pcs[minSeq[minimalPos]], pcs, minSeq[minimalPos]);
 
 		minimalPos++;
 		if (minimalPos >= minSeq.length) {
@@ -3361,7 +3585,7 @@ function step() {
 		for (var pi = 0; pi < curPerm.length; pi++) permPcs.push(pcs[curPerm[pi]]);
 
 		emitSetReadouts(permPcs);
-		emitVoices(MELODY_BASE + permPcs[noteIndex]);
+		emitVoices(MELODY_BASE + permPcs[noteIndex], permPcs, noteIndex);
 
 		noteIndex++;
 		if (noteIndex >= n) {
@@ -3404,9 +3628,12 @@ function step() {
 		// re-voice each mode upward, so it reads through pitchForDegree() and leaves both alone,
 		// which would only fight it.
 		var deg = degreeAt(n, noteIndex);
-		emitVoices(readMode === READ_MODOS
-			? MELODY_BASE + pitchForDegree(pcs, deg + modDeg())
-			: MELODY_BASE + pcs[((deg + rotation + manualRot + modDeg()) % n + n) % n]);
+		if (readMode === READ_MODOS) {
+			emitVoices(MELODY_BASE + pitchForDegree(pcs, deg + modDeg()), pcs, deg + modDeg());
+		} else {
+			var pidx = ((deg + rotation + manualRot + modDeg()) % n + n) % n;
+			emitVoices(MELODY_BASE + pcs[pidx], pcs, pidx);
+		}
 		noteIndex++;
 		if (noteIndex >= readCycleLength(n)) {
 			noteIndex = 0;

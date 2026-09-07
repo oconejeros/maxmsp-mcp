@@ -210,8 +210,17 @@ forteseq/*.amxd.before*
 # no codigo del proyecto.
 forteseq/Bigo_et_al_CMJ15.pdf
 
+# Libro de referencia (Tymoczko, A Geometry of Music) usado para chequear la base teorica
+# de multichord/Chordscape -- material con derechos, no codigo del proyecto.
+"forteseq/Geometry_of_Music (1).pdf"
+
 # Archivos .rar generados localmente (snapshots), no fuente.
 *.rar
+
+# Snapshots con timestamp que dejan los scripts de build/edicion antes de tocar un
+# .amxd/.maxpat/.js. Son copias de seguridad locales, no fuente.
+*.bak-[0-9]*
+forteseq/*.maxpat.before*
 
 # Artefactos de release para Payhip: los .amxd/.js/.zip empaquetados los regenera
 # tools/package_release.py y tools/make_lite.py desde forteseq/. Los scripts sí se

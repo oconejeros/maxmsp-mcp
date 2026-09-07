@@ -71,15 +71,15 @@
      ],
      "parameter_enable": 1,
      "patching_rect": [
-      20.0,
-      130.0,
-      15.0,
+      4.0,
+      44.0,
+      14.0,
       15.0
      ],
      "presentation": 1,
      "presentation_rect": [
-      6.0,
-      5.0,
+      4.0,
+      3.0,
       14.0,
       14.0
      ],
@@ -106,93 +106,6 @@
    },
    {
     "box": {
-     "id": "obj-3",
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      120.0,
-      130.0,
-      15.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      34.0,
-      5.0,
-      14.0,
-      14.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Ext",
-       "parameter_shortname": "Ext",
-       "parameter_type": 2,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_mmax": 1,
-       "parameter_modmode": 0
-      }
-     },
-     "varname": "v_ext",
-     "annotation": "Externa: el reloj compartido saltea esta voz y solo suena cuando un Hub en modo Enviar la dispara."
-    }
-   },
-   {
-    "box": {
-     "id": "obj-4",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      220.0,
-      130.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      60.0,
-      4.0,
-      40.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Oct",
-       "parameter_shortname": "Oct",
-       "parameter_type": 1,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_mmin": -4.0,
-       "parameter_mmax": 4.0,
-       "parameter_modmode": 4,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_oct",
-     "annotation": "Octava base de esta voz, sobre el root y la octava maestra. El patron de octavas (Ev.N / O.Rng / Pasos) arranca desde aqui."
-    }
-   },
-   {
-    "box": {
      "id": "obj-5",
      "maxclass": "live.numbox",
      "numinlets": 1,
@@ -203,16 +116,16 @@
      ],
      "parameter_enable": 1,
      "patching_rect": [
-      330.0,
-      130.0,
+      160.0,
       44.0,
+      32.0,
       15.0
      ],
      "presentation": 1,
      "presentation_rect": [
-      108.0,
-      4.0,
-      40.0,
+      22.0,
+      3.0,
+      30.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -232,35 +145,6 @@
      },
      "varname": "v_fase",
      "annotation": "Desplaza donde lee esta voz la grilla de acentos, para que no acentuen todas en el mismo punto."
-    }
-   },
-   {
-    "box": {
-     "id": "obj-6",
-     "maxclass": "live.text",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      ""
-     ],
-     "mode": 1,
-     "patching_rect": [
-      440.0,
-      130.0,
-      50.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      154.0,
-      4.0,
-      32.0,
-      16.0
-     ],
-     "text": "Trig",
-     "varname": "v_trig",
-     "parameter_enable": 0
     }
    },
    {
@@ -303,25 +187,6 @@
    },
    {
     "box": {
-     "id": "obj-9",
-     "maxclass": "newobj",
-     "numinlets": 2,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      200.0,
-      230.0,
-      180.0,
-      22.0
-     ],
-     "text": "prepend setvoiceexternal #1",
-     "varname": "v_ext_prep"
-    }
-   },
-   {
-    "box": {
      "id": "obj-11",
      "maxclass": "newobj",
      "numinlets": 2,
@@ -337,45 +202,6 @@
      ],
      "text": "prepend setvoicephase #1",
      "varname": "v_phase_prep"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-15",
-     "maxclass": "newobj",
-     "numinlets": 2,
-     "numoutlets": 2,
-     "outlettype": [
-      "bang",
-      ""
-     ],
-     "patching_rect": [
-      800.0,
-      180.0,
-      40.0,
-      22.0
-     ],
-     "text": "sel 1",
-     "varname": "v_trig_sel"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-12",
-     "maxclass": "message",
-     "numinlets": 2,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      800.0,
-      230.0,
-      110.0,
-      22.0
-     ],
-     "text": "triggervoice #1",
-     "varname": "v_trig_msg"
     }
    },
    {
@@ -410,297 +236,6 @@
    },
    {
     "box": {
-     "annotation": "Nota MIDI mas grave del registro de esta voz.",
-     "id": "obj-20",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      20.0,
-      380.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      192.0,
-      4.0,
-      40.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_initial": [
-        40
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "V#1 Min",
-       "parameter_mmax": 127.0,
-       "parameter_mmin": 0.0,
-       "parameter_modmode": 4,
-       "parameter_shortname": "Min",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_min"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Ancho en semitonos del registro de esta voz. Las notas que caen fuera se pliegan por octavas hasta entrar. 0 colapsa la voz a una sola nota.",
-     "id": "obj-21",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      80.0,
-      380.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      236.0,
-      4.0,
-      40.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_initial": [
-        17
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "V#1 Span",
-       "parameter_mmax": 127.0,
-       "parameter_mmin": 0.0,
-       "parameter_modmode": 4,
-       "parameter_shortname": "Span",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_span"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-25",
-     "maxclass": "newobj",
-     "numinlets": 2,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      20.0,
-      420.0,
-      90.0,
-      22.0
-     ],
-     "text": "pak 40 17",
-     "varname": "v_range_pak"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-26",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      20.0,
-      460.0,
-      170.0,
-      22.0
-     ],
-     "text": "prepend setvoicerange #1",
-     "varname": "v_range_prep"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Cada cuantas notas avanza un escalon el patron de octavas de esta voz.",
-     "id": "obj-22",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      220.0,
-      380.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      280.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_initial": [
-        1
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "V#1 Ev.N",
-       "parameter_mmax": 16.0,
-       "parameter_mmin": 1.0,
-       "parameter_modmode": 4,
-       "parameter_shortname": "EvN",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_evn"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Hasta cuantas octavas se aleja el patron. Negativo baja en vez de subir. 0 deja la voz en su octava fija.",
-     "id": "obj-23",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      280.0,
-      380.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      318.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "V#1 O.Rng",
-       "parameter_mmax": 4.0,
-       "parameter_mmin": -4.0,
-       "parameter_modmode": 4,
-       "parameter_shortname": "ORng",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_orange"
-    }
-   },
-   {
-    "box": {
-     "annotation": "Cuantos saltos hay entre 0 y el rango. Menos pasos = saltos mas grandes y menos graduales.",
-     "id": "obj-24",
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "patching_rect": [
-      340.0,
-      380.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      356.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_initial": [
-        16
-       ],
-       "parameter_initial_enable": 1,
-       "parameter_longname": "V#1 Pasos",
-       "parameter_mmax": 16.0,
-       "parameter_mmin": 1.0,
-       "parameter_modmode": 4,
-       "parameter_shortname": "Pasos",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0
-      }
-     },
-     "varname": "v_osteps"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-27",
-     "maxclass": "newobj",
-     "numinlets": 4,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      220.0,
-      420.0,
-      150.0,
-      22.0
-     ],
-     "text": "pak 1 0 16 0",
-     "varname": "v_oct_pak"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-28",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      220.0,
-      460.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoiceoctavesimple #1",
-     "varname": "v_oct_prep"
-    }
-   },
-   {
-    "box": {
      "annotation": "Cuantos GRADOS del set queda esta voz por encima de su propia lectura. 0,1,2,3 en cuatro voces da un acorde a cuatro partes; negativo la pone debajo. Solo actua con Indep encendido.",
      "id": "obj-30",
      "maxclass": "live.numbox",
@@ -712,16 +247,16 @@
      ],
      "parameter_enable": 1,
      "patching_rect": [
-      420.0,
-      380.0,
+      196.0,
       44.0,
+      28.0,
       15.0
      ],
      "presentation": 1,
      "presentation_rect": [
-      392.0,
-      4.0,
-      32.0,
+      86.0,
+      3.0,
+      26.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -774,16 +309,16 @@
      ],
      "parameter_enable": 1,
      "patching_rect": [
-      480.0,
-      380.0,
+      128.0,
       44.0,
+      28.0,
       15.0
      ],
      "presentation": 1,
      "presentation_rect": [
-      426.0,
-      4.0,
-      32.0,
+      56.0,
+      3.0,
+      26.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -825,45 +360,6 @@
    },
    {
     "box": {
-     "id": "obj-34",
-     "maxclass": "inlet",
-     "numinlets": 0,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "patching_rect": [
-      90.0,
-      20.0,
-      30.0,
-      30.0
-     ],
-     "comment": "registro: min y span que el motor impone a esta voz",
-     "varname": "v_range_in"
-    }
-   },
-   {
-    "box": {
-     "id": "obj-35",
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "int",
-      "int"
-     ],
-     "patching_rect": [
-      90.0,
-      70.0,
-      70.0,
-      22.0
-     ],
-     "text": "unpack 0 0",
-     "varname": "v_range_unpack"
-    }
-   },
-   {
-    "box": {
      "id": "obj-36",
      "maxclass": "inlet",
      "numinlets": 0,
@@ -895,16 +391,16 @@
      "varname": "v_desf",
      "annotation": "Corrimiento fijo de esta voz, en sub-ticks: cuanto sale tarde respecto del paso. Es lo que convierte cuatro voces tocando el mismo ritmo en un conjunto que no esta del todo junto. Distinto de Fase, que corre que celda de la reja lee la voz y no cuando suena. Necesita Sub mayor que 1.",
      "patching_rect": [
-      530.0,
-      380.0,
+      228.0,
       44.0,
+      30.0,
       15.0
      ],
      "presentation": 1,
      "presentation_rect": [
-      462.0,
-      4.0,
-      30.0,
+      116.0,
+      3.0,
+      28.0,
       15.0
      ],
      "saved_attribute_attributes": {
@@ -942,478 +438,6 @@
      ],
      "text": "prepend setvoicetimeoffset #1"
     }
-   },
-   {
-    "box": {
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "varname": "v_artown",
-     "annotation": "Si esta prendido, esta voz deja de mirar las bandas Normal/Acento y usa su propia velocidad, figura y silencio -- las cuatro de al lado. Apagado (por defecto) es exactamente el comportamiento de siempre.",
-     "patching_rect": [
-      500.0,
-      64.0,
-      14.0,
-      14.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      496.0,
-      4.0,
-      14.0,
-      14.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 ArtProp",
-       "parameter_shortname": "ArtProp",
-       "parameter_type": 2,
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_mmax": 1,
-       "parameter_modmode": 0,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-39"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_velmin",
-     "annotation": "Velocidad minima de esta voz, cuando Propia esta prendido.",
-     "patching_rect": [
-      540.0,
-      64.0,
-      34.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      526.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 VelMin",
-       "parameter_shortname": "VelMin",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0,
-       "parameter_modmode": 4,
-       "parameter_mmin": 1.0,
-       "parameter_mmax": 127.0,
-       "parameter_initial": [
-        55
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-40"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_velmax",
-     "annotation": "Velocidad maxima de esta voz, cuando Propia esta prendido.",
-     "patching_rect": [
-      580.0,
-      64.0,
-      34.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      564.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 VelMax",
-       "parameter_shortname": "VelMax",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0,
-       "parameter_modmode": 4,
-       "parameter_mmin": 1.0,
-       "parameter_mmax": 127.0,
-       "parameter_initial": [
-        80
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-41"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_figura",
-     "annotation": "Duracion de esta voz como denominador de figura (4=negra, 8=corchea, 16=semicorchea), cuando Propia esta prendido.",
-     "patching_rect": [
-      620.0,
-      64.0,
-      30.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      602.0,
-      4.0,
-      30.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Figura",
-       "parameter_shortname": "Figura",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0,
-       "parameter_modmode": 4,
-       "parameter_mmin": 1.0,
-       "parameter_mmax": 32.0,
-       "parameter_initial": [
-        16
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-42"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_silencio",
-     "annotation": "Probabilidad de silencio de esta voz, en %, cuando Propia esta prendido.",
-     "patching_rect": [
-      660.0,
-      64.0,
-      34.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      636.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Silencio",
-       "parameter_shortname": "Silenc",
-       "parameter_type": 1,
-       "parameter_unitstyle": 0,
-       "parameter_modmode": 4,
-       "parameter_mmin": 0.0,
-       "parameter_mmax": 100.0,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-43"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.toggle",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "parameter_enable": 1,
-     "varname": "v_readown",
-     "annotation": "Si esta prendido, esta voz deja de mirar Patron/Dir Lectura globales y usa los suyos propios -- solo tiene efecto bajo Voces Indep o disparo externo, que es donde cada voz ya tiene su propio cursor. Apagado (por defecto) es exactamente el comportamiento de siempre.",
-     "patching_rect": [
-      700.0,
-      64.0,
-      14.0,
-      14.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      674.0,
-      4.0,
-      14.0,
-      14.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 LecProp",
-       "parameter_shortname": "LecProp",
-       "parameter_type": 2,
-       "parameter_enum": [
-        "off",
-        "on"
-       ],
-       "parameter_mmax": 1,
-       "parameter_modmode": 0,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-44"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_patron",
-     "annotation": "Orden de lectura propio de esta voz, cuando Propia esta prendido.",
-     "patching_rect": [
-      740.0,
-      64.0,
-      44.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      704.0,
-      4.0,
-      44.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Patron",
-       "parameter_shortname": "Patron",
-       "parameter_type": 2,
-       "parameter_unitstyle": 9,
-       "parameter_enum": [
-        "Normal",
-        "Super",
-        "Minima",
-        "Modos",
-        "Coprimo",
-        "Zigzag",
-        "Urna"
-       ],
-       "parameter_mmax": 6,
-       "parameter_modmode": 0,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-45"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "live.numbox",
-     "numinlets": 1,
-     "numoutlets": 2,
-     "outlettype": [
-      "",
-      "float"
-     ],
-     "parameter_enable": 1,
-     "varname": "v_dir",
-     "annotation": "Direccion de lectura propia de esta voz, cuando Propia esta prendido.",
-     "patching_rect": [
-      780.0,
-      64.0,
-      34.0,
-      15.0
-     ],
-     "presentation": 1,
-     "presentation_rect": [
-      752.0,
-      4.0,
-      34.0,
-      15.0
-     ],
-     "saved_attribute_attributes": {
-      "valueof": {
-       "parameter_longname": "V#1 Dir",
-       "parameter_shortname": "Dir",
-       "parameter_type": 2,
-       "parameter_unitstyle": 9,
-       "parameter_enum": [
-        "Adel",
-        "Atras",
-        "Alt"
-       ],
-       "parameter_mmax": 2,
-       "parameter_modmode": 0,
-       "parameter_initial": [
-        0
-       ],
-       "parameter_initial_enable": 1
-      }
-     },
-     "id": "obj-46"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_artown_prep",
-     "patching_rect": [
-      500.0,
-      380.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoiceartown #1",
-     "id": "obj-47"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_readown_prep",
-     "patching_rect": [
-      500.0,
-      410.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoicereadown #1",
-     "id": "obj-48"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_patron_prep",
-     "patching_rect": [
-      500.0,
-      440.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoicereadmode #1",
-     "id": "obj-49"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_dir_prep",
-     "patching_rect": [
-      500.0,
-      470.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoicereaddir #1",
-     "id": "obj-50"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 4,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_art_pak",
-     "patching_rect": [
-      500.0,
-      500.0,
-      150.0,
-      22.0
-     ],
-     "text": "pak 55 80 16 0",
-     "id": "obj-51"
-    }
-   },
-   {
-    "box": {
-     "maxclass": "newobj",
-     "numinlets": 1,
-     "numoutlets": 1,
-     "outlettype": [
-      ""
-     ],
-     "varname": "v_art_prep",
-     "patching_rect": [
-      500.0,
-      530.0,
-      220.0,
-      22.0
-     ],
-     "text": "prepend setvoicearticulation #1",
-     "id": "obj-52"
-    }
    }
   ],
   "lines": [
@@ -1448,30 +472,6 @@
       0
      ],
      "destination": [
-      "obj-3",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-4",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
       "obj-5",
       0
      ]
@@ -1516,30 +516,6 @@
    {
     "patchline": {
      "source": [
-      "obj-3",
-      0
-     ],
-     "destination": [
-      "obj-9",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-9",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
       "obj-5",
       0
      ],
@@ -1563,222 +539,6 @@
    },
    {
     "patchline": {
-     "source": [
-      "obj-6",
-      0
-     ],
-     "destination": [
-      "obj-15",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-15",
-      0
-     ],
-     "destination": [
-      "obj-12",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-12",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-25",
-      0
-     ],
-     "source": [
-      "obj-20",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-25",
-      1
-     ],
-     "source": [
-      "obj-21",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-26",
-      0
-     ],
-     "source": [
-      "obj-25",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-14",
-      0
-     ],
-     "source": [
-      "obj-26",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-27",
-      0
-     ],
-     "source": [
-      "obj-22",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-27",
-      1
-     ],
-     "source": [
-      "obj-23",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-27",
-      2
-     ],
-     "source": [
-      "obj-24",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-27",
-      3
-     ],
-     "source": [
-      "obj-4",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-28",
-      0
-     ],
-     "source": [
-      "obj-27",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-14",
-      0
-     ],
-     "source": [
-      "obj-28",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-20",
-      0
-     ],
-     "source": [
-      "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-21",
-      0
-     ],
-     "source": [
-      "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-22",
-      0
-     ],
-     "source": [
-      "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-23",
-      0
-     ],
-     "source": [
-      "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-24",
-      0
-     ],
-     "source": [
-      "obj-13",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
      "destination": [
       "obj-30",
       0
@@ -1846,42 +606,6 @@
      "source": [
       "obj-33",
       0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-35",
-      0
-     ],
-     "source": [
-      "obj-34",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-20",
-      0
-     ],
-     "source": [
-      "obj-35",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
-      "obj-21",
-      0
-     ],
-     "source": [
-      "obj-35",
-      1
      ]
     }
    },
@@ -1932,270 +656,6 @@
       0
      ]
     }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-39",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-40",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-41",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-42",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-43",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-44",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-45",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-13",
-      0
-     ],
-     "destination": [
-      "obj-46",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-39",
-      0
-     ],
-     "destination": [
-      "obj-47",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-47",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-44",
-      0
-     ],
-     "destination": [
-      "obj-48",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-48",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-45",
-      0
-     ],
-     "destination": [
-      "obj-49",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-49",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-46",
-      0
-     ],
-     "destination": [
-      "obj-50",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-50",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-40",
-      0
-     ],
-     "destination": [
-      "obj-51",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-41",
-      0
-     ],
-     "destination": [
-      "obj-51",
-      1
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-42",
-      0
-     ],
-     "destination": [
-      "obj-51",
-      2
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-43",
-      0
-     ],
-     "destination": [
-      "obj-51",
-      3
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-51",
-      0
-     ],
-     "destination": [
-      "obj-52",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "source": [
-      "obj-52",
-      0
-     ],
-     "destination": [
-      "obj-14",
-      0
-     ]
-    }
    }
   ],
   "parameters": {
@@ -2204,47 +664,12 @@
     "V#1 On",
     0
    ],
-   "obj-3": [
-    "V#1 Ext",
-    "V#1 Ext",
-    0
-   ],
-   "obj-4": [
-    "V#1 Oct",
-    "V#1 Oct",
-    0
-   ],
    "obj-5": [
     "V#1 Fase",
     "V#1 Fase",
     0
    ],
    "inherited_shortname": 1,
-   "obj-20": [
-    "V#1 Min",
-    "V#1 Min",
-    0
-   ],
-   "obj-21": [
-    "V#1 Span",
-    "V#1 Span",
-    0
-   ],
-   "obj-22": [
-    "V#1 Ev.N",
-    "V#1 Ev.N",
-    0
-   ],
-   "obj-23": [
-    "V#1 O.Rng",
-    "V#1 O.Rng",
-    0
-   ],
-   "obj-24": [
-    "V#1 Pasos",
-    "V#1 Pasos",
-    0
-   ],
    "obj-30": [
     "V#1 Grado",
     "V#1 Grado",
@@ -2258,46 +683,6 @@
    "obj-37": [
     "V#1 Desf",
     "V#1 Desf",
-    0
-   ],
-   "obj-39": [
-    "V#1 ArtProp",
-    "V#1 ArtProp",
-    0
-   ],
-   "obj-40": [
-    "V#1 VelMin",
-    "V#1 VelMin",
-    0
-   ],
-   "obj-41": [
-    "V#1 VelMax",
-    "V#1 VelMax",
-    0
-   ],
-   "obj-42": [
-    "V#1 Figura",
-    "V#1 Figura",
-    0
-   ],
-   "obj-43": [
-    "V#1 Silencio",
-    "V#1 Silencio",
-    0
-   ],
-   "obj-44": [
-    "V#1 LecProp",
-    "V#1 LecProp",
-    0
-   ],
-   "obj-45": [
-    "V#1 Patron",
-    "V#1 Patron",
-    0
-   ],
-   "obj-46": [
-    "V#1 Dir",
-    "V#1 Dir",
     0
    ]
   },
