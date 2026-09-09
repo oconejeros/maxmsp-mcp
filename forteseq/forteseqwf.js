@@ -414,6 +414,8 @@ var CONFIG_SPEC = {
 	pitch:  { kind: 'intA', lo: 0, hi: 127 },
 	vel:    { kind: 'intA', lo: 1, hi: 127 },
 	dur:    { kind: 'intA', lo: 1, hi: 60000 },
+	lgroup: { kind: 'intA', lo: 1, hi: 6 },      // per-level output group, len 6
+	gchan:  { kind: 'intA', lo: 1, hi: 16 },     // per-group MIDI channel, len 6
 
 	// --- probability + per-step (Probfier-style decimation) layer ---
 	gprob:  { kind: 'int', lo: 0, hi: 100 },     // global probability %
@@ -454,6 +456,8 @@ var CONFIG_LINE_FIELDS = ['r', 'period', 'beats', 'sync', 'm', 'n', 'levels',
 	'nvmin', 'nvmax', 'nfig', 'nsil', 'avmin', 'avmax', 'afig', 'asil',
 	'lprob1', 'lprob2', 'lprob3', 'lprob4', 'lprob5', 'lprob6',
 	'lstep1', 'lstep2', 'lstep3', 'lstep4', 'lstep5', 'lstep6',
+	'lgroup1', 'lgroup2', 'lgroup3', 'lgroup4', 'lgroup5', 'lgroup6',
+	'gchan1', 'gchan2', 'gchan3', 'gchan4', 'gchan5', 'gchan6',
 	'aphase1', 'aphase2', 'aphase3', 'aphase4', 'aphase5', 'aphase6',
 	'agrid1', 'agrid2', 'agrid3', 'agrid4', 'agrid5', 'agrid6', 'agrid7', 'agrid8',
 	'agrid9', 'agrid10', 'agrid11', 'agrid12', 'agrid13', 'agrid14', 'agrid15', 'agrid16'];
@@ -467,6 +471,7 @@ function defaultConfig() {
 		dur: [100, 100, 100, 100, 100, 100],
 		gprob: 100, lprob: [100, 100, 100, 100, 100, 100],
 		lstep: [1, 1, 1, 1, 1, 1], seed: 1,
+		lgroup: [1, 2, 3, 4, 5, 6], gchan: [1, 2, 3, 4, 5, 6],
 		arton: 0, acyc: 4, atie: 0, aeuc: 0, aeuck: 4, aeucr: 0,
 		agrid: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		aphase: [0, 0, 0, 0, 0, 0],
@@ -480,6 +485,7 @@ function cloneConfig(c) {
 		on: c.on.slice(), uc: c.uc.slice(), lr: c.lr.slice(),
 		pitch: c.pitch.slice(), vel: c.vel.slice(), dur: c.dur.slice(),
 		gprob: c.gprob, lprob: c.lprob.slice(), lstep: c.lstep.slice(), seed: c.seed,
+		lgroup: c.lgroup.slice(), gchan: c.gchan.slice(),
 		arton: c.arton, acyc: c.acyc, atie: c.atie, aeuc: c.aeuc, aeuck: c.aeuck, aeucr: c.aeucr,
 		agrid: c.agrid.slice(), aphase: c.aphase.slice(),
 		nvmin: c.nvmin, nvmax: c.nvmax, nfig: c.nfig, nsil: c.nsil,
@@ -559,6 +565,8 @@ function configToLine(c) {
 		'avmin=' + c.avmin, 'avmax=' + c.avmax, 'afig=' + c.afig, 'asil=' + c.asil);
 	for (i = 0; i < 6; i++) f.push('lprob' + (i + 1) + '=' + c.lprob[i]);
 	for (i = 0; i < 6; i++) f.push('lstep' + (i + 1) + '=' + c.lstep[i]);
+	for (i = 0; i < 6; i++) f.push('lgroup' + (i + 1) + '=' + c.lgroup[i]);
+	for (i = 0; i < 6; i++) f.push('gchan' + (i + 1) + '=' + c.gchan[i]);
 	for (i = 0; i < 6; i++) f.push('aphase' + (i + 1) + '=' + c.aphase[i]);
 	for (i = 0; i < 16; i++) f.push('agrid' + (i + 1) + '=' + (c.agrid[i] ? 1 : 0));
 	return f.join('\t');
@@ -594,6 +602,12 @@ function configFromParts(parts) {
 		} else if (key.slice(0, 5) === 'lstep') {
 			var si = parseInt(key.slice(5), 10) - 1;
 			if (si >= 0 && si < 6) c.lstep[si] = Math.round(val);
+		} else if (key.slice(0, 6) === 'lgroup') {
+			var lgi = parseInt(key.slice(6), 10) - 1;
+			if (lgi >= 0 && lgi < 6) c.lgroup[lgi] = Math.round(val);
+		} else if (key.slice(0, 5) === 'gchan') {
+			var gci = parseInt(key.slice(5), 10) - 1;
+			if (gci >= 0 && gci < 6) c.gchan[gci] = Math.round(val);
 		} else if (key.slice(0, 6) === 'aphase') {
 			var hi_ = parseInt(key.slice(6), 10) - 1;
 			if (hi_ >= 0 && hi_ < 6) c.aphase[hi_] = Math.round(val);
@@ -620,7 +634,7 @@ function configEquals(a, b, eps) {
 		'gprob', 'seed', 'arton', 'acyc', 'atie', 'aeuc', 'aeuck', 'aeucr',
 		'nvmin', 'nvmax', 'nfig', 'nsil', 'avmin', 'avmax', 'afig', 'asil'];
 	for (var i = 0; i < keys.length; i++) if (Math.abs((a[keys[i]] || 0) - (b[keys[i]] || 0)) > eps) return false;
-	var arrs = ['on', 'uc', 'lr', 'pitch', 'vel', 'dur', 'lprob', 'lstep', 'aphase', 'agrid'];
+	var arrs = ['on', 'uc', 'lr', 'pitch', 'vel', 'dur', 'lprob', 'lstep', 'lgroup', 'gchan', 'aphase', 'agrid'];
 	for (i = 0; i < arrs.length; i++) {
 		var len = a[arrs[i]].length;
 		for (var j = 0; j < len; j++) if (Math.abs((a[arrs[i]][j] || 0) - (b[arrs[i]][j] || 0)) > eps) return false;
@@ -741,6 +755,21 @@ var levelReverse = [0, 0, 0, 0, 0, 0];  // L/R for the split that PRODUCES level
 var levelPitch = [60, 60, 60, 60, 60, 60];
 var levelVel = [100, 100, 100, 100, 100, 100];
 var levelDur = [100, 100, 100, 100, 100, 100];
+
+// --- output routing: per-level group + per-group MIDI channel ---------------------------------
+// levelGroup[i] picks which of MAX_LEVELS groups level i+1's onsets leave through; the patch's
+// `route 1 2 3 4 5 6` sends each group to its own makenote/noteout pair. Several levels on one
+// group value pile onto that pair (= "grouped"); distinct values = separate streams. groupChannel[]
+// only MIRRORS the channel each Max-side makenote is set to -- carried here for preset/morph
+// persistence and the visualiser label, the same "engine mirrors a Max value it does not act on"
+// pattern as liveTempo. busId/busOn drive the parallel FORTESEQ_NOTES broadcast (see fireNote).
+// Defaults are the identity map, so fireNote emits the same tag lv+1 and every channel initialises
+// to N -- byte-identical to the pre-routing engine.
+var levelGroup = [1, 2, 3, 4, 5, 6];
+var groupChannel = [1, 2, 3, 4, 5, 6];
+var busId = 1;    // FORTESEQ_NOTES bus address 1..16 -- an address, deliberately NOT in the config dict
+var busOn = 0;    // 1 = also broadcast every onset on `send FORTESEQ_NOTES` (default off -> no extra traffic)
+
 var periodMs = 2000;
 
 // Tempo-sync state (see settempo/setsynctempo/setbeatsperperiod below). periodMs stays the single
@@ -789,6 +818,10 @@ var groupFigura = [16, 8];                         // note-value denominator
 var groupSilence = [0, 0];                         // 0..100 % drop chance
 
 var scheduledTasks = [];
+
+// Set by the "Ritmos" popup button (prepend vizon). While 0, querycycle() and the fireNote pulse
+// are no-ops, so the engine's outlet traffic is exactly what it was before the visualiser existed.
+var vizActive = 0;
 
 function levelIndex(lv) {
 	var i = Math.round(lv) - 1;
@@ -884,6 +917,17 @@ function setleveldur(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelDu
 function setglobalprob(v) { globalProb = clampInt(v, 0, 100); }
 function setlevelprob(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelProb[i] = clampInt(v, 0, 100); }
 function setlevelstep(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelStep[i] = clampInt(v, 1, 8); }
+
+// --- output routing -------------------------------------------------------------------------
+// setlevelgroup / setgroupchannel keep levelGroup[] / groupChannel[] in step with the per-level
+// "Grp" and per-group "Canal" numboxes in the patch (the numbox also drives the real makenote
+// channel directly; the engine copy is for preset persistence + the visualiser label). setbus /
+// setbuson gate the parallel `send FORTESEQ_NOTES` broadcast -- voice index on the bus is the
+// GROUP number, so a single Hub RECIBIR per group index picks up a whole group with no Hub change.
+function setlevelgroup(lv, g) { var i = levelIndex(lv); if (i < 0) return; levelGroup[i] = clampInt(g, 1, MAX_LEVELS); }
+function setgroupchannel(g, ch) { g = Math.round(g); if (g >= 1 && g <= MAX_LEVELS) groupChannel[g - 1] = clampInt(ch, 1, 16); }
+function setbus(b) { b = Math.round(b); if (isFinite(b) && b >= 1 && b <= 16) busId = b; }
+function setbuson(v) { busOn = v ? 1 : 0; }
 function setseed(v) { v = Math.round(Number(v)); if (isFinite(v)) rngSeed = (v >>> 0) || 1; }
 
 // --- articulation / accent ------------------------------------------------------------------
@@ -922,6 +966,7 @@ function configFromCurrent() {
 		m: baseM, n: baseN, levels: numLevels,
 		on: levelOn.slice(), uc: levelUC.slice(), lr: levelReverse.slice(),
 		pitch: levelPitch.slice(), vel: levelVel.slice(), dur: levelDur.slice(),
+		lgroup: levelGroup.slice(), gchan: groupChannel.slice(),
 		gprob: globalProb, lprob: levelProb.slice(), lstep: levelStep.slice(), seed: rngSeed,
 		arton: artOn, acyc: accentCycle, atie: accentTieWord,
 		aeuc: euclidOn, aeuck: euclidK, aeucr: euclidRot,
@@ -951,6 +996,8 @@ function applyConfig(c) {
 		levelDur[i] = Math.round(c.dur[i]);
 		levelProb[i] = clampInt(c.lprob[i], 0, 100);
 		levelStep[i] = clampInt(c.lstep[i], 1, 8);
+		levelGroup[i] = clampInt(c.lgroup[i], 1, MAX_LEVELS);
+		groupChannel[i] = clampInt(c.gchan[i], 1, 16);
 		levelPhase[i] = clampInt(c.aphase[i], 0, 15);
 	}
 	globalProb = clampInt(c.gprob, 0, 100);
@@ -987,6 +1034,8 @@ function emitConfigUI(c) {
 		if (i < MAX_LEVELS - 1) outlet(0, "ui", "lr" + (i + 1), c.lr[i] ? 1 : 0);
 		outlet(0, "ui", "lprob" + (i + 1), Math.round(c.lprob[i]));
 		outlet(0, "ui", "lstep" + (i + 1), Math.round(c.lstep[i]));
+		outlet(0, "ui", "lgroup" + (i + 1), Math.round(c.lgroup[i]));
+		outlet(0, "ui", "gchan" + (i + 1), Math.round(c.gchan[i]));
 		outlet(0, "ui", "aphase" + (i + 1), Math.round(c.aphase[i]));
 	}
 	outlet(0, "ui", "gprob", c.gprob);
@@ -1192,24 +1241,31 @@ function stopAllTasks() {
 }
 
 // makenote (downstream in the Max patch) takes a 3-item (pitch, velocity, duration) list and
-// generates the matching note-off itself -- so this is the only outlet call an onset ever needs;
-// there is no separate note-off Task to manage. The channel/level number goes out FIRST, because
-// the patch routes on it with a Max `route 1 2 3 4 5 6` object (route strips the matched leading
-// value and sends the rest out the corresponding numbered outlet) into one of six fixed-channel
-// makenote+noteout pairs -- level N always reaches MIDI channel N. This list is `route`'s only
-// consumer, so its argument list (1-6) and MAX_LEVELS (6) both encode the same fact and must be
-// kept in sync if either ever changes. Tag 0 is reserved on this same outlet for the diagnostic
-// message below (see startCycle), and tag -1 is reserved for the tempo-sync diagnostic (see
-// recomputeSyncedPeriod) -- no real note ever uses either, since lv is always 0-based and lv+1 is
-// always >=1, so `wf_route`'s unconnected reject outlet swallows tag-0/-1 messages for free.
+// generates the matching note-off itself -- so the note list is the only outlet call an onset ever
+// needs; there is no separate note-off Task to manage. The GROUP number (levelGroup[lv], 1..6) goes
+// out FIRST, because the patch routes on it with a Max `route 1 2 3 4 5 6` object (route strips the
+// matched leading value and sends the rest out the corresponding numbered outlet) into one of six
+// makenote+noteout pairs. With the default identity map (levelGroup[i] = i+1) level N still always
+// reaches makenote/noteout pair N -- byte-identical to the fixed pre-routing engine; reassigning a
+// level's group merges it onto another pair (grouped) or moves it to a free one (separate). Each
+// pair's MIDI channel is set from its "Grupo N Canal" numbox in the patch (default N); groupChannel[]
+// here only mirrors that for preset persistence + the visualiser label. `route`'s arg list (1-6) and
+// MAX_LEVELS (6) still both encode the same fact and must be kept in sync if either changes. Tag 0 is
+// reserved on this same outlet for the diagnostic message below (see startCycle), tag -1 for the
+// tempo-sync diagnostic (see recomputeSyncedPeriod) -- no real note ever uses either, since a group
+// number is always >=1, so `wf_route`'s unconnected reject outlet swallows tag-0/-1 for free.
 //
-// The preset/morph layer adds four SYMBOL-tagged shapes on this same outlet -- `ui <token> <val>`
-// (recall repaint, routed to the controls via `set` so they never re-fire), and `presetslots` /
-// `presetname` / `markertag` (readout text). A new `route ui presetslots presetname markertag`
-// (wf_uiroute) in the patch is their only consumer; the three numeric routes reject them the same
-// way wf_route already rejects tag 0/-1.
+// The preset/morph layer adds SYMBOL-tagged shapes on this same outlet -- `ui <token> <val>` (recall
+// repaint, routed to the controls via `set` so they never re-fire), `presetslots` / `presetname` /
+// `markertag` / `accentgrid` (readout text). The visualiser popup adds `viz <selector> ...` and the
+// bus broadcast adds `notes <bus> <group> <vel> <dur> <pitch>`. Each rides its own `route` arm
+// (wf_uiroute / wf_vizroute / wf_notesroute); the numeric `route 1 2 3 4 5 6` rejects them the same
+// way it already rejects tag 0/-1.
 function fireNote(lv, pitch, vel, dur) {
-	outlet(0, lv + 1, pitch, vel, dur);
+	var g = levelGroup[lv];                                        // lv is always 0..MAX_LEVELS-1 here
+	outlet(0, g, pitch, vel, dur);                                 // -> route 1 2 3 4 5 6 -> makenote/noteout pair g
+	if (busOn) outlet(0, "notes", busId, g, vel, dur, pitch);      // -> wf_notesroute -> send FORTESEQ_NOTES
+	if (vizActive) outlet(0, "viz", "vpulse", lv);                 // -> wf_vizroute -> the "Ritmos" popup
 }
 
 function scheduleOnset(lv, delayMs, pitch, vel, dur) {
@@ -1312,6 +1368,112 @@ function startCycle() {
 }
 
 function bang() { startCycle(); }
+
+// ================================================================================================
+// Rhythm visualiser feed -- the "Ritmos" floating popup (jsui wf_rhythmviz.js). querycycle is
+// driven by a free `metro` in the patch (~8 Hz) so the popup stays alive with the transport
+// stopped, exactly like forteseq2's querynext. It NEVER schedules anything and never mutates
+// engine state: it recomputes the same hierarchy startCycle() does, from the same config, and
+// pushes it out as `viz <selector> ...` on the shared outlet (new `route viz` arm, wf_vizroute).
+// While the popup is closed (vizActive 0) querycycle() early-returns and fireNote's pulse is
+// suppressed, so the default engine's outlet traffic is exactly what it was before this existed.
+// All the maths is the pure functions startCycle() already uses -- no second source of truth.
+// ================================================================================================
+
+function vizon(v) {
+	vizActive = v ? 1 : 0;
+	if (vizActive) querycycle();
+}
+
+function querycycle() {
+	if (!vizActive) return;
+	emitVizFrame();
+}
+
+function vizEmit(sel, arr) { outlet.apply(this, [0, "viz", sel].concat(arr)); }
+
+// Frame protocol (after `route viz` strips the leading "viz", the next atom is the jsui function
+// name -- fs2 dispatch style, no [route] in the jsui):
+//   vcycle  <cycleIndex>
+//   vperiod <periodMs>
+//   vmorph  <engaged 0|1> <morphA> <morphB> <morphX>
+//   viso    <isoLevel> <isoPulses> <isoCapped 0|1>
+//   vgrid   <c0..c15>                 accent grid
+//   vreadlen <accentReadLen>
+//   vlevel  <lv> <on> <uc> <step> <group> <channel> <pitch> <pc> <r> <wordLen> <markerFam|-> <markerLvl|-1> <phase>
+//   vword   <lv> <n> <b0..b(n-1)>     1 = long interval, 0 = short
+//   vonsets <lv> 0 <nFull> <t0..>            all onsets, ms
+//   vonsets <lv> 1 <nKept> <t0 a0 t1 a1..>   after U/C + Step; a = accent flag (0 Normal / 1 Accent)
+//   vonsets <lv> 2 <nDrop> <t0..>            onsets removed by Step -> ghosted
+//   vend    <levelCount>
+function emitVizFrame() {
+	var cfg = activeConfig() || configFromCurrent();
+	var reverseFlags = cfg.lr.slice(0, Math.max(0, cfg.levels - 1));
+	var h = wfHierarchy(cfg.m, cfg.n, cfg.r, cfg.levels, reverseFlags);
+	var readLen = accentReadLen(cfg.acyc, cfg.atie, cfg.m, cfg.n);
+	var eps = cfg.period * 1e-9;
+	var a, b, lv;
+
+	outlet(0, "viz", "vcycle", cycleIndex);
+	outlet(0, "viz", "vperiod", cfg.period);
+	outlet(0, "viz", "vmorph", morphEngaged() ? 1 : 0, morphA, morphB, morphX);
+	var ol = isochronyOutlook(cfg.m, cfg.n, cfg.r);
+	outlet(0, "viz", "viso", ol.level, ol.pulses, ol.capped ? 1 : 0);
+	vizEmit("vgrid", cfg.agrid);
+	outlet(0, "viz", "vreadlen", readLen);
+
+	// Per level: full onsets -> U/C-filtered -> Step-decimated, the same three stages as startCycle().
+	var full = [], uc = [], kept = [], drop = [], perLevel = [];
+	var prevOnsets = null;
+	for (lv = 0; lv < h.length; lv++) {
+		var f = wfOnsets(h[lv], cfg.period);
+		var u = cfg.uc[lv] ? wfNewOnsets(f, prevOnsets || [], cfg.period) : f;
+		var k = decimate(u, cfg.lstep[lv] | 0);
+		full[lv] = f; uc[lv] = u; kept[lv] = k;
+		var d = [];
+		for (a = 0; a < u.length; a++) {
+			var inKept = false;
+			for (b = 0; b < k.length; b++) if (Math.abs(u[a] - k[b]) < eps) { inKept = true; break; }
+			if (!inKept) d.push(u[a]);
+		}
+		drop[lv] = d;
+		if (cfg.on[lv]) perLevel.push({ lv: lv, times: k });
+		prevOnsets = f;
+	}
+	// Global time-sorted step index -- the accent read keys off position in THIS list (startCycle).
+	var merged = mergeSortedOnsets(perLevel);
+
+	for (lv = 0; lv < h.length; lv++) {
+		var grp = levelGroup[lv];
+		var pc = (((Math.round(cfg.pitch[lv]) % 12) + 12) % 12);
+		var mk = nearestMarker(h[lv].r, MARKERS);
+		var onMk = mk && Math.abs(mk.r - h[lv].r) < 1e-6;
+		outlet(0, "viz", "vlevel", lv, cfg.on[lv] ? 1 : 0, cfg.uc[lv] ? 1 : 0, cfg.lstep[lv] | 0,
+			grp, groupChannel[grp - 1], Math.round(cfg.pitch[lv]), pc,
+			h[lv].r, h[lv].word.length,
+			onMk ? mk.family : "-", onMk ? mk.level : -1, cfg.aphase[lv] | 0);
+
+		var wbits = [];
+		for (a = 0; a < h[lv].word.length; a++) wbits.push(h[lv].word[a] === 'L' ? 1 : 0);
+		vizEmit("vword", [lv, wbits.length].concat(wbits));
+
+		vizEmit("vonsets", [lv, 0, full[lv].length].concat(full[lv]));
+
+		var pairs = [];
+		for (a = 0; a < kept[lv].length; a++) {
+			var t = kept[lv][a], gk = -1;
+			for (b = 0; b < merged.length; b++) {
+				if (merged[b].lv === lv && Math.abs(merged[b].t - t) < eps) { gk = b; break; }
+			}
+			var acc = (cfg.arton && cfg.on[lv] && gk >= 0)
+				? accentGroupAt(gk, cfg.aphase[lv] | 0, cfg.agrid, readLen) : 0;
+			pairs.push(t, acc);
+		}
+		vizEmit("vonsets", [lv, 1, kept[lv].length].concat(pairs));
+		vizEmit("vonsets", [lv, 2, drop[lv].length].concat(drop[lv]));
+	}
+	outlet(0, "viz", "vend", h.length);
+}
 
 // ================================================================================================
 // Self-test. Runs only under node (Max's js object has no `require`/`process`), mirroring
@@ -1672,6 +1834,7 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			b.pitch = [48, 50, 52, 53, 55, 57]; b.vel = [90, 90, 90, 90, 90, 90]; b.dur = [200, 200, 200, 200, 200, 200];
 			// exercise every new-field kind through the round trip / lerp
 			b.gprob = 70; b.lprob = [100, 80, 60, 40, 20, 0]; b.lstep = [1, 2, 3, 4, 5, 6]; b.seed = 424242;
+			b.lgroup = [1, 1, 3, 3, 5, 6]; b.gchan = [9, 2, 10, 4, 13, 16];
 			b.arton = 1; b.acyc = 12; b.atie = 1; b.aeuc = 1; b.aeuck = 5; b.aeucr = 2;
 			b.agrid = [1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1];
 			b.aphase = [0, 1, 2, 3, 4, 5];
@@ -1812,6 +1975,74 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			if (failures === 0) console.log('OK   checkArticulation: accentGroupAt / accentReadLen / pickVel / figuraMs / euclidGrid all correct.');
 		}
 
+		// Output routing: defaults are the identity map (level N -> group N -> channel N, byte-identical
+		// to the fixed pre-routing engine), the group map survives the disk round-trip + a lerp, and an
+		// old preset line with no lgroup/gchan fields falls back to that identity map.
+		function checkVoiceGroups() {
+			var f0 = failures;
+			var cur = configFromCurrent();
+			for (var i = 0; i < 6; i++) {
+				eq(cur.lgroup[i], i + 1, 'levelGroup default ' + i);
+				eq(cur.gchan[i], i + 1, 'groupChannel default ' + i);
+			}
+			var b = defaultConfig();
+			b.lgroup = [1, 1, 3, 3, 3, 6];
+			b.gchan = [9, 2, 10, 4, 5, 16];
+			var rt = configFromParts(configToLine(b).split('\t'));
+			if (!configEquals(rt, b)) { console.error('FAIL checkVoiceGroups: lgroup/gchan not lossless through the preset line'); failures++; }
+			if (!configEquals(lerpConfig(b, b, 0.4), b)) { console.error('FAIL checkVoiceGroups: lerp drifts the group map'); failures++; }
+			var legacy = configToLine(defaultConfig()).split('\t').filter(function (s) {
+				return s.slice(0, 6) !== 'lgroup' && s.slice(0, 5) !== 'gchan';
+			});
+			var lc = configFromParts(legacy);
+			for (i = 0; i < 6; i++) {
+				eq(lc.lgroup[i], i + 1, 'legacy line -> default levelGroup ' + i);
+				eq(lc.gchan[i], i + 1, 'legacy line -> default groupChannel ' + i);
+			}
+			if (failures === f0) console.log('OK   checkVoiceGroups: defaults are the identity routing, group map survives disk round-trip + lerp, legacy preset lines fall back to level N -> channel N.');
+		}
+
+		// The visualiser feed: querycycle() is a silent no-op while the popup is closed; one open
+		// frame emits vcycle/vlevel/vend and does NOT perturb engine state; the Step partition the
+		// frame draws (kept + dropped) covers every U/C onset exactly once.
+		function checkVizFrame() {
+			var f0 = failures;
+			eq(vizActive, 0, 'vizActive defaults off');
+			var threw = false;
+			try { querycycle(); } catch (e) { threw = true; }
+			eq(threw, false, 'querycycle() is a no-op when vizActive = 0');
+
+			var hadOutlet = (typeof outlet !== 'undefined');
+			var savedOutlet = hadOutlet ? outlet : undefined;
+			var seen = {};
+			outlet = function () {
+				var a = Array.prototype.slice.call(arguments);
+				if (a[0] === 0 && a[1] === 'viz') seen[a[2]] = (seen[a[2]] || 0) + 1;
+			};
+			var before = configFromCurrent();
+			vizActive = 1;
+			try { querycycle(); }
+			finally {
+				vizActive = 0;
+				if (hadOutlet) outlet = savedOutlet; else { try { delete outlet; } catch (e) {} }
+			}
+			eq(!!seen.vcycle && !!seen.vlevel && !!seen.vend, true, 'emitVizFrame emits vcycle/vlevel/vend');
+			if (!configEquals(configFromCurrent(), before)) { console.error('FAIL checkVizFrame: emitVizFrame perturbed engine state'); failures++; }
+
+			// Step partition: for a decimated level, kept + dropped == the full U/C onset list, once each.
+			var d = 1000;
+			var ons = wfOnsets({ word: wfBaseWord(3, 5), m: 3, n: 5, r: 1.5 }, d);
+			var kept = decimate(ons, 3), drop = [];
+			for (var i = 0; i < ons.length; i++) {
+				var has = false;
+				for (var j = 0; j < kept.length; j++) if (Math.abs(ons[i] - kept[j]) < d * 1e-9) { has = true; break; }
+				if (!has) drop.push(ons[i]);
+			}
+			eq(kept.length + drop.length, ons.length, 'viz Step partition covers every onset once');
+
+			if (failures === f0) console.log('OK   checkVizFrame: querycycle no-ops while closed, one open frame emits vcycle/vlevel/vend without perturbing engine state, Step partition exact.');
+		}
+
 		function main() {
 			checkFig7Example();
 			checkTermination();
@@ -1826,6 +2057,8 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			checkConfigMorph();
 			checkProbability();
 			checkArticulation();
+			checkVoiceGroups();
+			checkVizFrame();
 			if (failures === 0) {
 				console.log('ALL OK');
 				process.exitCode = 0;
