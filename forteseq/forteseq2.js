@@ -95,6 +95,11 @@ var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
 var noteIndex = 0;     // position within current set's arpeggio (arpeggio mode)
+// Linear position of the note the reading walk LAST sounded -- for the fs2horizon.js playhead, so
+// the cursor sits on what you hear, not one step ahead. Write-only from step()/emitVoicesIndependent;
+// -1 = nothing played yet. sharedSoundPos is the shared-clock walk; soundPosV[] is per independent voice.
+var sharedSoundPos = -1;
+var soundPosV = filled(MAX_VOICES, -1);
 var rotation = 0;      // round-robin rotation offset for arpeggio starting note (normal mode)
 // Manual rotation, dialed in by the user rather than auto-advanced -- kept separate from
 // `rotation` on purpose. `rotation` drifts under "Rotar x Cambio" independently of which mode is
@@ -982,6 +987,12 @@ function buildFilter() {
 		if (cv > consHigh) consHigh = cv;
 	}
 	if (consLow > consHigh) { consLow = 0; consHigh = 0; }
+
+	// El panel de sets del popup NO se alimenta desde aqui a proposito: buildFilter() corre en
+	// mitad del escenario del harness (y en cada arrastre de un control de filtro), y emitir por
+	// outlet 3 aqui ensuciaria golden.txt. La ventana lo recoge por querynext() (metro ~8 Hz), cuya
+	// firma count:hash(allowed):effRoot() ya detecta el cambio, y por el disparo de queryfiltsets
+	// desde el boton al abrir -- imperceptible.
 }
 
 // buildFilter() walks all 351 sets against up to twelve transpositions each -- some four thousand
@@ -2937,7 +2948,9 @@ var colHist = [];                          // colHist[v] = [h1, h2]  (the two MI
 var colLastCur = [];                       // last non-silent MIDI note seen per voice, to detect a change
 var colFwd = [];                           // colFwd[v] = [f1, f2] last GOOD forward notes -- held, not blanked,
                                            // at a pass edge so the upcoming cells sit still instead of blinking
-for (var _ci = 0; _ci < MAX_VOICES; _ci++) { colShown.push(""); colHist.push([-1, -1]); colLastCur.push(-1); colFwd.push([-1, -1]); }
+var HIST_MAX = 8;                          // notes of history kept per voice for the fs2horizon.js window
+var noteHist = [];                         // noteHist[v] = [newest ... oldest], EXACT (filled at step time)
+for (var _ci = 0; _ci < MAX_VOICES; _ci++) { colShown.push(""); colHist.push([-1, -1]); colLastCur.push(-1); colFwd.push([-1, -1]); noteHist.push([]); }
 
 function pc12(x) { return ((Math.round(x) % 12) + 12) % 12; }
 
@@ -3015,10 +3028,17 @@ function nearNote(pc, ref) {
 // cells borrow the octave nearest the note sounding now (nearNote). pcs/n may be absent
 // (all-silent path): every voice reports silence and history is left intact. ctxPcs/ctxDeg,
 // when given by the shared path, name the set + degree the peek offset is measured against.
+// true while noteHist still holds a real note -- used to stop draining a muted voice's
+// history once it has scrolled fully blank, so it does not churn the array every step.
+function noteHistHasNote(h) {
+	for (var i = 0; i < h.length; i++) if (h[i] >= 0) return true;
+	return false;
+}
+
 function emitColMon(pcs, n, ctxPcs, ctxDeg) {
 	if (NUM_VOICES !== colVoicesShown) {
 		colVoicesShown = NUM_VOICES;
-		for (var r = 0; r < MAX_VOICES; r++) { colShown[r] = ""; colHist[r] = [-1, -1]; colLastCur[r] = -1; colFwd[r] = [-1, -1]; }
+		for (var r = 0; r < MAX_VOICES; r++) { colShown[r] = ""; colHist[r] = [-1, -1]; colLastCur[r] = -1; colFwd[r] = [-1, -1]; noteHist[r] = []; }
 		outlet(3, ["colvoices", NUM_VOICES]);
 	}
 	var haveArp = pcs && n > 0;
@@ -3028,9 +3048,20 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg) {
 		var cur = (monScratch[v] === MON_SILENT) ? -1 : monScratch[v];   // full MIDI note now
 		// history shifts only on a real change to a new sounding note; rests leave it be
 		if (cur !== -1 && cur !== colLastCur[v]) {
+			if (colLastCur[v] >= 0) {                     // deep history for fs2horizon.js, newest first
+				noteHist[v].unshift(colLastCur[v]);
+				if (noteHist[v].length > HIST_MAX) noteHist[v].pop();
+			}
 			colHist[v][1] = colHist[v][0];
 			colHist[v][0] = colLastCur[v];
 			colLastCur[v] = cur;
+		} else if (voiceMute[v] && noteHistHasNote(noteHist[v])) {
+			// A voice that is OFF receives nothing: roll its fs2horizon.js history toward blank,
+			// one gap per step, so the floating viewer visibly drains instead of freezing on
+			// stale notes -- making it read as "no notes arriving here". The small colmon strip
+			// (colHist/colLastCur) is left as-is; only the deep history scrolls.
+			noteHist[v].unshift(-1);
+			if (noteHist[v].length > HIST_MAX) noteHist[v].pop();
 		}
 		var f1 = -1, f2 = -1;
 		if (haveArp && cur !== -1) {
@@ -3058,6 +3089,223 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg) {
 		colShown[v] = key;
 		outlet(3, ["colmon", v, h2, h1, cur, f1, f2]);
 	}
+}
+
+// --- lo que va a tocar el secuenciador, por voz, para la ventana flotante fs2horizon.js -------
+// Mensaje:  querynext            (el argumento antiguo, si llega, se ignora: el ancho de la
+//                                 grilla ahora sale de la forma de lectura, no de un numero fijo)
+//
+// A diferencia de emitColMon() -- que solo corre desde un paso de reloj y mira 2 notas adelante --
+// esto se dispara BAJO DEMANDA (un [metro] en el .amxd lo llama unas 8 veces por segundo), asi que
+// la ventana se actualiza aunque el transporte este parado. Emite en outlet 3 (multiplexado; los
+// dos jsui despachan por selector). Tres mensajes por voz, con debounce independiente para que lo
+// caro se mande poco:
+//
+//   hpattern <v> <kind> <cols> <c0> <c1> ...    la grilla. kind 1 = ciclo completo de la forma
+//       (cols = shapeCycleLength, tope PATTERN_MAX), celdas p = posicion p del ciclo. kind 0 =
+//       ventana rodante de HORIZON_MAX (Super/SuperMin, o cualquier ciclo mas largo que el tope),
+//       celdas = j pasos desde el cursor. Notas MIDI, -1 = vacio. Se reenvia solo si cambio: en
+//       kind 1 el contenido del loop es estable entre pasos -> se manda casi nunca.
+//   hcursor <v> <pos>                           columna del playhead dentro de la grilla (0 en
+//       kind 0). 2 atomos, se manda cada paso. Es lo unico frecuente.
+//   hist <v> <h0> <h1> ...                      hasta HIST_MAX notas ya tocadas, la mas reciente
+//       primero. EXACTA (se llena en emitColMon en el paso real, no se predice).
+//   hshape <n> <cols> <rawL> <d0> <d1> ...      la FORMA de lectura, una fila compartida: el
+//       indice de grado en cada posicion del ciclo global (submuestreado a SHAPE_MAX). Estatica,
+//       se manda solo al cambiar readMode/readDir/n. cols 0 = esconder (Acordes).
+//   hshapecur <pos>                             posicion del cursor dentro de esa forma, 1 atomo/tick.
+//
+// PURO: lee cursor / rotacion / perm / urna, no escribe nada de eso. urnAt() rebaraja urnBag y
+// consume Math.random() si urnBagN != card; se cubre con (a) urnaReady -- no se hace peek de URNA
+// hasta que un paso real siembre la bolsa -- mas (b) URNA siempre entra en kind 1 con p < n (pass
+// 0), y (c) snapshot/restore de urnBag/urnBagN/urnBagPass por si acaso.
+var HORIZON_MAX = 16;                       // profundidad de la ventana rodante (Super/SuperMin)
+var PATTERN_MAX = 48;                       // tope del ancho de grilla en modo ciclo-completo
+var SHAPE_MAX = 256;                        // tope de celdas de la tira "forma" (se submuestrea si es mas larga)
+var HORIZON_STATUS = 1;                     // 0 = no emitir la linea de estado (modo / dir / set)
+var HORIZON_SHAPE = 1;                      // 0 = no emitir la tira "forma"
+var qnPatShown = [], qnCurShown = [], qnHistShown = [];
+var qnVoicesShown = -1;
+var qnStatusShown = "";
+var qnShapeShown = "", qnShapeCurShown = "";
+for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
+
+// El panel izquierdo del popup (fs2setpick.js) necesita saber que sets pasan el filtro y con que
+// color pintarlos. Se emite por outlet 3 junto al horizonte, con la misma disciplina de firma:
+// nada sale si allowed[]/effRoot() no se movieron, asi el sondeo del metro no cuesta.
+var qnFiltShown = "";   // firma del ultimo emit de swatches; "" = forzar
+var qnMaskShown = "";   // firma del ultimo maskecho
+var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
+
+// Largo de un ciclo de la forma para la grilla (con el doblado de la pendular), o -1 para
+// "muy largo, usar ventana rodante" (Super / SuperMin: una pasada son n!-ish pasos).
+function shapeGridCols(rm, rd, card) {
+	if (rm === READ_SUPER || rm === READ_SUPERMIN) return -1;
+	var L = shapeCycleLength(card, rm);
+	if (rd === 2 && L > 1) L = 2 * L - 2;
+	return L < 1 ? 1 : L;
+}
+
+function querynext() {
+	if (NUM_VOICES !== qnVoicesShown) {
+		qnVoicesShown = NUM_VOICES;
+		for (var r = 0; r < MAX_VOICES; r++) { qnPatShown[r] = ""; qnCurShown[r] = ""; qnHistShown[r] = ""; }
+		outlet(3, ["colvoices", NUM_VOICES]);   // ambos jsui de outlet 3 lo entienden
+	}
+
+	if (HORIZON_STATUS) {
+		var skey = readMode + "," + readDir + "," + (setIndex + 1) + "," + mode;
+		if (skey !== qnStatusShown) {
+			qnStatusShown = skey;
+			outlet(3, ["hstatus", readMode, readDir, setIndex + 1, mode]);
+		}
+	}
+
+	var pcs = sets[setIndex];
+	var card = pcs ? pcs.length : 0;
+
+	var ub = urnBag ? urnBag.slice() : urnBag, ubn = urnBagN, ubp = urnBagPass;
+
+	for (var v = 0; v < NUM_VOICES; v++) {
+		var ref = colLastCur[v];             // ancla fija para las celdas de modo compartido / acordes
+
+		// historia -- exacta, llenada en el paso real; la mas reciente primero
+		var hrow = ["hist", v];
+		for (var hh = 0; hh < noteHist[v].length; hh++) hrow.push(noteHist[v][hh]);
+		var hkey = hrow.slice(2).join(",");
+		if (hkey !== qnHistShown[v]) { qnHistShown[v] = hkey; outlet(3, hrow); }
+
+		var vOwn = voiceReadOwn[v];
+		var vrm = vOwn ? voiceReadMode[v] : readMode;
+		var vrd = vOwn ? voiceReadDir[v] : readDir;
+		var cursor = (mode === 1 && voiceIndep) ? voicePos[v] : noteIndex;   // for the rolling window peek
+		var soundPos = (mode === 1 && voiceIndep) ? soundPosV[v] : sharedSoundPos;   // for the playhead box
+
+		var cols, kind;
+		if (card === 0) { cols = 0; kind = 1; }
+		else {
+			var full = shapeGridCols(vrm, vrd, card);
+			if (full > 0 && full <= PATTERN_MAX) { cols = full; kind = 1; }
+			else { cols = HORIZON_MAX; kind = 0; }
+		}
+
+		var urnaReady = (vrm !== READ_URNA) || (urnBagN === card && urnBagPass === 0);
+
+		var patrow = ["hpattern", v, kind, cols];
+		for (var p = 0; p < cols; p++) {
+			var pos = (kind === 1) ? p : (cursor + p);   // ciclo completo desde 0; rodante desde el cursor vivo
+			var note = -1;
+			if (card > 0 && urnaReady) {
+				if (mode === 1 && voiceIndep) {
+					note = peekVoiceNote(v, pcs, card, pos - voicePos[v]);
+				} else if (mode === 1) {
+					note = nearNote(peekSharedPc(v, pcs, card, pos - noteIndex), ref);
+				} else {
+					note = nearNote(pc12(pcs[((pos % card) + card) % card] + effRoot()), ref);
+				}
+			}
+			patrow.push((isFinite(note) && note >= 0) ? Math.round(note) : -1);
+		}
+		var pkey = patrow.slice(2).join(",");
+		if (pkey !== qnPatShown[v]) { qnPatShown[v] = pkey; outlet(3, patrow); }
+
+		var hp = soundPos < 0 ? 0 : soundPos;
+		var hpos = (kind === 1 && cols > 0) ? (((hp % cols) + cols) % cols) : 0;
+		var ckey = "" + hpos;
+		if (ckey !== qnCurShown[v]) { qnCurShown[v] = ckey; outlet(3, ["hcursor", v, hpos]); }
+	}
+
+	// --- la FORMA de lectura, estatica y compartida: como se recorre el ciclo ----------------
+	// Una sola fila, no por voz: el indice de grado (0..n-1) en cada posicion del ciclo de la
+	// forma global, SIN rotacion ni offsets. Incluye Super/SuperMin (su ciclo entero, aunque sea
+	// de cientos de pasos -> se submuestrea a SHAPE_MAX). Se manda solo cuando cambia
+	// readMode/readDir/n (hshape); el cursor (hshapecur) es 1 dato por tick.
+	var shReady = HORIZON_SHAPE && mode === 1 && card > 0 &&
+		(readMode !== READ_URNA || (urnBagN === card && urnBagPass === 0));
+	if (shReady) {
+		var rawL = shapeCycleLength(card, readMode);
+		if (readDir === 2 && rawL > 1) rawL = 2 * rawL - 2;
+		if (rawL < 1) rawL = 1;
+		var scols = rawL > SHAPE_MAX ? SHAPE_MAX : rawL;
+		var shkey = readMode + "," + readDir + "," + card + "," + rawL;
+		if (shkey !== qnShapeShown) {
+			qnShapeShown = shkey;
+			var shrow = ["hshape", card, scols, rawL];
+			for (var sp = 0; sp < scols; sp++) {
+				var src = (rawL === scols) ? sp : Math.floor(sp * rawL / scols);
+				shrow.push(degreeAt(card, src, readMode, readDir));
+			}
+			outlet(3, shrow);
+		}
+		// posicion de la nota que SUENA (no la proxima): sharedSoundPos la fija step() en el punto
+		// exacto del emit, en el mismo sistema de coordenadas lineal que degreeAt() y las celdas.
+		var spos = sharedSoundPos < 0 ? 0 : sharedSoundPos;
+		var scur = (((Math.floor(spos * scols / rawL)) % scols) + scols) % scols;
+		if (("" + scur) !== qnShapeCurShown) { qnShapeCurShown = "" + scur; outlet(3, ["hshapecur", scur]); }
+	} else if (qnShapeShown !== "") {
+		qnShapeShown = ""; qnShapeCurShown = "";
+		outlet(3, ["hshape", card, 0, 0]);   // Acordes / sin set -> el jsui esconde la tira
+	}
+
+	urnBag = ub; urnBagN = ubn; urnBagPass = ubp;
+
+	// El panel de sets viaja por el mismo outlet; la firma corta esto en seco si nada cambio.
+	emitFiltSets();
+	emitMaskEcho();
+}
+
+// La transposicion a la que sonara el set i si se fija ahora. effRoot() responde por setIndex;
+// esto responde por un set cualquiera del catalogo, para que el color del swatch prediga la
+// altura audible tras el lock cuando maskFit reparte cada set a una transposicion distinta.
+function effRootForSet(i) {
+	var base = listenOn ? listenTr
+		: ((filterOn && maskFit && i < setFit.length) ? setFit[i] : root);
+	return base + rootSeqOffset + modRootShift();
+}
+
+// PURA: lee allowed[]/setForte[]/sets[]/setFit[]/root/rootSeqOffset/maskFit/filterOn/listenOn/
+// listenTr y llama modRootShift()/effRoot() -- todo de solo lectura. Ni Math.random, ni urnBag, ni
+// escritura de setIndex, ni requestFilter. Debounce por firma count:hash(indices):effRoot().
+// La llaman: (a) el final de buildFilter() -- inmediato ante cualquier cambio de filtro;
+// (b) el final de querynext() -- garantiza que el panel se puebla al abrir la ventana;
+// (c) queryfiltsets() -- refresco forzado desde el boton.
+function emitFiltSets() {
+	var h = 0, cnt = 0, i;
+	for (i = 0; i < allowed.length; i++) if (allowed[i]) { h = (h * 31 + i) | 0; cnt++; }
+	var sig = cnt + ":" + h + ":" + effRoot();
+	if (sig === qnFiltShown) return;
+	qnFiltShown = sig;
+
+	var shown = cnt < FILT_MAX ? cnt : FILT_MAX;
+	outlet(3, ["filtclear"]);
+	outlet(3, ["filtinfo", cnt, shown]);
+	var slot = 0;
+	for (i = 0; i < allowed.length && slot < FILT_MAX; i++) {
+		if (!allowed[i]) continue;
+		var er = effRootForSet(i);
+		var row = ["filtset", slot, i + 1, setForte[i]];
+		var pcs = sets[i];
+		for (var j = 0; j < pcs.length; j++) row.push((((pcs[j] + er) % 12) + 12) % 12);
+		outlet(3, row);
+		slot++;
+	}
+}
+
+// La mascara cromatica la mueven dos UIs (este piano y los toggles de la pestana Filtro) sin eco
+// cruzado; maskecho deja que fs2setpick.js adopte el maskBits real del motor.
+function emitMaskEcho() {
+	var sig = "" + maskBits;
+	if (sig === qnMaskShown) return;
+	qnMaskShown = sig;
+	var row = ["maskecho"];
+	for (var i = 0; i < 12; i++) row.push((maskBits >> i) & 1);
+	outlet(3, row);
+}
+
+function queryfiltsets() {   // mensaje: refresco forzado desde el boton "Proximos 16"
+	qnFiltShown = ""; qnMaskShown = "";
+	emitFiltSets();
+	emitMaskEcho();
 }
 
 function setmonitor(x) {
@@ -3479,6 +3727,7 @@ function emitVoicesIndependent(pcs, n) {
 		// keeps its place in the harmony instead of playing a slower melody.
 		if (!voiceSoundsAt(v, (patternStep - 1) / div)) {
 			voicePos[v] = pos + 1;
+			soundPosV[v] = pos;
 			monScratch[v] = MON_SILENT;
 			continue;
 		}
@@ -3497,6 +3746,7 @@ function emitVoicesIndependent(pcs, n) {
 		// does it: a voice on a divider advances slower, and its accents have to follow its notes
 		var art = articulationFor(v, pos, n);
 		voicePos[v] = pos + 1;
+		soundPosV[v] = pos;
 
 		if (DEBUG_STEP) {
 			post("  IND v" + (v + 1) + " | pos=" + pos + " deg+" + voiceDegOffset[v] +
@@ -3520,11 +3770,16 @@ function stepIndependent(pcs, n) {
 	emitSetReadouts(pcs);
 	emitVoicesIndependent(pcs, n);
 
-	if (locked) return;
 	if (mode === 0) {
-		advanceOnPass();   // acordes: one set per step, same as the shared path
+		sharedSoundPos = -1;   // acordes: no walk to point at
+		if (!locked) advanceOnPass();
 		return;
 	}
+	// The shared noteIndex is frozen when locked, so it can't drive the shape-strip cursor here.
+	// Voice 0's own cursor (soundPosV[0], advanced by emitVoicesIndependent every step, lock or not)
+	// is the honest playhead for the strip in independent mode.
+	sharedSoundPos = soundPosV[0] >= 0 ? soundPosV[0] : noteIndex;
+	if (locked) return;
 	noteIndex++;
 	if (noteIndex >= readCycleLength(n)) {
 		noteIndex = 0;
@@ -3559,6 +3814,7 @@ function step() {
 		}
 
 		emitSetReadouts(pcs);
+		sharedSoundPos = minimalPos;
 		emitVoices(MELODY_BASE + pcs[minSeq[minimalPos]], pcs, minSeq[minimalPos]);
 
 		minimalPos++;
@@ -3585,6 +3841,7 @@ function step() {
 		for (var pi = 0; pi < curPerm.length; pi++) permPcs.push(pcs[curPerm[pi]]);
 
 		emitSetReadouts(permPcs);
+		sharedSoundPos = permIndex * n + noteIndex;
 		emitVoices(MELODY_BASE + permPcs[noteIndex], permPcs, noteIndex);
 
 		noteIndex++;
@@ -3612,6 +3869,7 @@ function step() {
 		// that whole chord was being built for nobody. It matters beyond the wasted cycles:
 		// Max runs js on one thread, so work done here sits in front of the next trig to
 		// arrive. Measured: a tick with four external voices went from 59 us to 31.
+		sharedSoundPos = -1;   // chords have no reading-order walk -> the shape strip hides
 		if (clockVoicesLive()) {
 			emitVoices(chordFor(pcs));
 		} else {
@@ -3628,6 +3886,7 @@ function step() {
 		// re-voice each mode upward, so it reads through pitchForDegree() and leaves both alone,
 		// which would only fight it.
 		var deg = degreeAt(n, noteIndex);
+		sharedSoundPos = noteIndex;
 		if (readMode === READ_MODOS) {
 			emitVoices(MELODY_BASE + pitchForDegree(pcs, deg + modDeg()), pcs, deg + modDeg());
 		} else {
@@ -3676,6 +3935,7 @@ function resetReadWalk() {
 	minimalPos = 0;
 	minimalCachedFor = -1;
 	urnBagPass = -1;
+	sharedSoundPos = -1;   // the shape strip parks at 0 until the new walk sounds its first note
 }
 
 function setreadmode(p) {

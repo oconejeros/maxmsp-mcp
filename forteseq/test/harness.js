@@ -1166,6 +1166,371 @@ function checkRotation() {
 	return ok;
 }
 
+// querynext() -- the pattern / cursor / history feed for fs2horizon.js's floating window (emits
+// hpattern / hcursor / hist on outlet 3). Its whole contract is that it is PURE: a widget polling
+// it ~8 times a second must not change a single note the engine plays, and must not disturb the
+// urn's bag (the one piece of state on the peek path that a reshuffle would corrupt). Checked by
+// running the same seeded scenario twice -- once clean, once with querynext() hammered between
+// every step -- and asserting the note logs are byte-identical, plus a direct before/after on
+// urnBag. Not folded into golden.txt: querynext() is never called in runScenario(), so the golden
+// already proves "not called changes nothing"; this proves "called changes nothing".
+function checkQueryNext() {
+	let ok = true;
+
+	function setup(seed) {
+		const e = makeEngine(seed);
+		const c = e.ctx;
+		c.setnumvoices(3);
+		for (let v = 1; v <= 3; v++) {
+			c.setvoicemute(v, 0); c.setvoicediv(v, 1);
+			c.setvoicephase(v, 0); c.setvoicedegoffset(v, 0);
+		}
+		c.setbpmtrack(120);
+		c.setmode(1);
+		c.setlock(1);
+		c.setlockindex(120);   // a five-note set, same one the reading-order block locks on
+		return { e, c };
+	}
+
+	const seed = 4242;
+	const scenarios = [
+		['Recto adelante', (c) => { c.setreadmode(0); c.setreaddir(0); }],
+		['Zigzag atras', (c) => { c.setreadmode(5); c.setreaddir(1); }],
+		['Coprimo', (c) => { c.setreadmode(4); c.setreaddir(0); c.setcoprime(2); }],
+		['alterna (pendulo)', (c) => { c.setreadmode(0); c.setreaddir(2); }],
+		['Urna', (c) => { c.setreadmode(6); c.setreaddir(0); }],
+		['SuperMin', (c) => { c.setreadmode(2); c.setreaddir(0); }],
+		['indep + grado', (c) => {
+			c.setvoiceindep(1); c.setreadmode(0); c.setreaddir(0);
+			c.setvoicedegoffset(2, 1); c.setvoicedegoffset(3, 2);
+		}],
+		['Acordes', (c) => { c.setmode(0); c.setreadmode(0); }],
+	];
+
+	for (const [name, apply] of scenarios) {
+		const ctrl = setup(seed); apply(ctrl.c);
+		for (let i = 0; i < 12; i++) ctrl.c.bang();
+		const ctrlAt = ctrl.e.log.length;
+		for (let i = 0; i < 24; i++) ctrl.c.bang();
+		const ctrlNotes = ctrl.e.log.slice(ctrlAt).filter(isNote);
+
+		const test = setup(seed); apply(test.c);
+		for (let i = 0; i < 12; i++) { test.c.querynext(); test.c.bang(); test.c.querynext(); }
+		const testAt = test.e.log.length;
+		for (let i = 0; i < 24; i++) { test.c.querynext(); test.c.bang(); test.c.querynext(); }
+		const testNotes = test.e.log.slice(testAt).filter(isNote);
+
+		if (JSON.stringify(ctrlNotes) !== JSON.stringify(testNotes)) {
+			console.error('QueryNext: "' + name + '" -- querynext() cambio lo que suena');
+			for (let i = 0; i < Math.max(ctrlNotes.length, testNotes.length); i++) {
+				if (ctrlNotes[i] !== testNotes[i]) {
+					console.error('  control : ' + (ctrlNotes[i] === undefined ? '(no hay mas)' : ctrlNotes[i]));
+					console.error('  con qn  : ' + (testNotes[i] === undefined ? '(no hay mas)' : testNotes[i]));
+					break;
+				}
+			}
+			ok = false;
+		}
+
+		const urn = setup(seed); apply(urn.c);
+		for (let i = 0; i < 12; i++) urn.c.bang();
+		const bagBefore = JSON.stringify([urn.c.urnBag, urn.c.urnBagN, urn.c.urnBagPass]);
+		urn.c.querynext();
+		const bagAfter = JSON.stringify([urn.c.urnBag, urn.c.urnBagN, urn.c.urnBagPass]);
+		if (bagBefore !== bagAfter) {
+			console.error('QueryNext: "' + name + '" -- querynext() toco la urna');
+			console.error('  antes : ' + bagBefore);
+			console.error('  despues: ' + bagAfter);
+			ok = false;
+		}
+	}
+
+	// message shapes: hpattern <v> <kind> <cols> <c0..>, hcursor <v> <pos>, hist <v> <h0..>
+	const rowsOf = (log, at, sel) =>
+		log.slice(at).filter((l) => l.indexOf('3 | ' + sel + ' ') === 0).map((l) => l.split(' ').slice(3));
+
+	// Recto on the locked 5-note set -> full cycle, cols = n = 5, one hpattern + hcursor per voice
+	const shp = setup(seed); shp.c.setreadmode(0); shp.c.setreaddir(0);
+	for (let i = 0; i < 9; i++) shp.c.bang();
+	const at = shp.e.log.length;
+	shp.c.querynext();
+	const pats = rowsOf(shp.e.log, at, 'hpattern');
+	const curs = rowsOf(shp.e.log, at, 'hcursor');
+	const hsts = rowsOf(shp.e.log, at, 'hist');
+	if (pats.length !== 3) { console.error('QueryNext: esperaba 3 hpattern, salieron ' + pats.length); ok = false; }
+	for (const a of pats) {
+		const kind = Number(a[1]), cols = Number(a[2]), cells = a.slice(3).map(Number);
+		if (kind !== 1) { console.error('QueryNext: Recto n=5 deberia ser kind 1 (ciclo completo), dio ' + kind); ok = false; }
+		if (cols !== 5) { console.error('QueryNext: Recto n=5 deberia dar cols=5, dio ' + cols); ok = false; }
+		if (cells.length !== cols) { console.error('QueryNext: hpattern con ' + cells.length + ' celdas, cols=' + cols); ok = false; }
+		if (cells.some((x) => !Number.isInteger(x) || (x < 0 && x !== -1) || x > 127)) {
+			console.error('QueryNext: celda fuera de rango en ' + JSON.stringify(a)); ok = false;
+		}
+	}
+	if (curs.length !== 3) { console.error('QueryNext: esperaba 3 hcursor, salieron ' + curs.length); ok = false; }
+	for (const a of curs) {
+		const pos = Number(a[1]);
+		if (!Number.isInteger(pos) || pos < 0 || pos >= 5) { console.error('QueryNext: hcursor pos fuera de [0,5): ' + pos); ok = false; }
+	}
+	if (hsts.length === 0 || hsts.some((a) => a.length < 1 || a.length > 1 + 8)) {
+		console.error('QueryNext: hist ausente o con largo raro: ' + JSON.stringify(hsts)); ok = false;
+	}
+
+	// SuperMin -> rolling window (a full pass is hundreds of steps): kind 0, cols = HORIZON_MAX
+	const sm = setup(seed); sm.c.setreadmode(2); sm.c.setreaddir(0);
+	for (let i = 0; i < 6; i++) sm.c.bang();
+	const atSm = sm.e.log.length;
+	sm.c.querynext();
+	for (const a of rowsOf(sm.e.log, atSm, 'hpattern')) {
+		if (Number(a[1]) !== 0) { console.error('QueryNext: SuperMin deberia ser kind 0 (rodante), dio ' + a[1]); ok = false; }
+		if (Number(a[2]) !== 16) { console.error('QueryNext: SuperMin rodante deberia dar cols=16, dio ' + a[2]); ok = false; }
+	}
+
+	// Modos on n=5 -> full cycle of n*n = 25
+	const md = setup(seed); md.c.setreadmode(3); md.c.setreaddir(0);
+	for (let i = 0; i < 4; i++) md.c.bang();
+	const atMd = md.e.log.length;
+	md.c.querynext();
+	for (const a of rowsOf(md.e.log, atMd, 'hpattern')) {
+		if (Number(a[1]) !== 1 || Number(a[2]) !== 25) {
+			console.error('QueryNext: Modos n=5 deberia dar kind 1 cols 25, dio kind ' + a[1] + ' cols ' + a[2]); ok = false;
+		}
+	}
+
+	// the static "forma" strip: hshape <n> <cols> <rawL> <degs...>, one shared row, degs in 0..n-1
+	const sh1 = rowsOf(shp.e.log, at, 'hshape');   // Recto n=5 from the block above
+	if (sh1.length !== 1) { console.error('QueryNext: esperaba 1 hshape (compartida), salieron ' + sh1.length); ok = false; }
+	for (const a of sh1) {
+		const n = Number(a[0]), cols = Number(a[1]), rawL = Number(a[2]), degs = a.slice(3).map(Number);
+		if (n !== 5 || cols !== 5 || rawL !== 5) { console.error('QueryNext: hshape Recto n=5 deberia ser n5 cols5 rawL5, dio ' + a.slice(0, 3)); ok = false; }
+		if (degs.length !== cols || degs.some((d) => !Number.isInteger(d) || d < 0 || d >= n)) {
+			console.error('QueryNext: hshape con grados fuera de [0,n): ' + JSON.stringify(degs)); ok = false;
+		}
+	}
+	const cur1 = rowsOf(shp.e.log, at, 'hshapecur');
+	if (cur1.length !== 1) { console.error('QueryNext: esperaba 1 hshapecur'); ok = false; }
+
+	// the cursor must sit on the note SOUNDING now, not one ahead. Recto n=5: after 9 bangs the
+	// last position played is (9-1) % 5 = 3.
+	if (cur1.length && Number(cur1[0][0]) !== (9 - 1) % 5) {
+		console.error('QueryNext: hshapecur deberia ser ' + ((9 - 1) % 5) + ' (la nota que suena), dio ' + cur1[0][0]);
+		ok = false;
+	}
+	if (shp.c.sharedSoundPos !== (9 - 1) % 5) {
+		console.error('QueryNext: sharedSoundPos deberia ser ' + ((9 - 1) % 5) + ', dio ' + shp.c.sharedSoundPos);
+		ok = false;
+	}
+	// one more bang -> position 4 -> cursor 4 (NOT 0, which is where noteIndex now points)
+	shp.c.bang();
+	const at1b = shp.e.log.length;
+	shp.c.querynext();
+	const cur1b = rowsOf(shp.e.log, at1b, 'hshapecur');
+	if (cur1b.length && Number(cur1b[0][0]) !== 4) {
+		console.error('QueryNext: tras un paso mas el cursor deberia ir a 4, no adelantarse; dio ' + cur1b[0][0]);
+		ok = false;
+	}
+
+	// the shape cursor must keep moving in EVERY shared/indep x locked/unlocked combo -- the
+	// locked+indep case froze noteIndex, so the strip needs voice 0's own cursor there.
+	for (const rm of [0, 1, 3, 5]) {           // Recto, Super, Modos, Zigzag
+		for (const lk of [0, 1]) {
+			for (const ind of [0, 1]) {
+				const g = setup(seed);
+				g.c.setreadmode(rm); g.c.setreaddir(0); g.c.setlock(lk);
+				if (lk) g.c.setlockindex(120);
+				g.c.setvoiceindep(ind);
+				const seen = new Set();
+				for (let s = 0; s < 12; s++) { g.c.bang(); g.c.querynext(); seen.add(g.c.sharedSoundPos); }
+				if (seen.size < 2) {
+					console.error('QueryNext: forma congelada -- read=' + rm + ' lock=' + lk +
+						' indep=' + ind + ' -> sharedSoundPos ' + [...seen]);
+					ok = false;
+				}
+			}
+		}
+	}
+	// SuperMin: the shape strip carries the WHOLE superpermutation (n=5 minimal = 153), sub-sampled to <= SHAPE_MAX
+	for (const a of rowsOf(sm.e.log, atSm, 'hshape')) {
+		const cols = Number(a[1]), rawL = Number(a[2]);
+		if (rawL < 100 || cols > 256 || cols < 1) { console.error('QueryNext: hshape SuperMin raro: cols ' + cols + ' rawL ' + rawL); ok = false; }
+	}
+	// chord mode -> no shape strip. If one is ever sent while in chord mode it must be a hide.
+	const ac = setup(seed); ac.c.setmode(1); ac.c.setreadmode(0);
+	for (let i = 0; i < 3; i++) ac.c.bang();
+	ac.c.querynext();                       // arm the shape strip in arp mode
+	ac.c.setmode(0);                        // -> chords
+	const atAc = ac.e.log.length;
+	for (let i = 0; i < 3; i++) ac.c.bang();
+	ac.c.querynext();
+	const shAc = rowsOf(ac.e.log, atAc, 'hshape');
+	if (shAc.some((a) => Number(a[1]) !== 0)) { console.error('QueryNext: Acordes no deberia emitir una forma con celdas: ' + JSON.stringify(shAc)); ok = false; }
+	if (shAc.length === 0) { console.error('QueryNext: al pasar a Acordes deberia mandar un hide de la forma (hshape ... 0 0)'); ok = false; }
+
+	// a voice that is turned OFF takes no notes: its deep history must scroll toward blank, one
+	// gap per step, so the floating viewer drains instead of freezing on stale notes. An unmuted
+	// sibling in the same run must be left untouched.
+	const mv = setup(seed); mv.c.setreadmode(0); mv.c.setreaddir(0);
+	for (let i = 0; i < 10; i++) mv.c.bang();
+	const histHasNote = (h) => Array.isArray(h) && h.some((x) => x >= 0);
+	if (!histHasNote(mv.c.noteHist[1])) { console.error('QueryNext: la voz 2 deberia tener historia real antes de apagarla'); ok = false; }
+	const sibBefore = JSON.stringify(mv.c.noteHist[0]);
+
+	mv.c.setvoicemute(2, 1);                 // apagar la voz 2
+	mv.c.bang();
+	if (mv.c.noteHist[1][0] !== -1) {
+		console.error('QueryNext: tras apagar la voz 2, el frente de su historia deberia ser un hueco (-1), dio ' + mv.c.noteHist[1][0]); ok = false;
+	}
+	for (let i = 0; i < 12; i++) mv.c.bang();
+	if (histHasNote(mv.c.noteHist[1])) {
+		console.error('QueryNext: la historia de una voz apagada deberia vaciarse del todo, quedo ' + JSON.stringify(mv.c.noteHist[1])); ok = false;
+	}
+	if (JSON.stringify(mv.c.noteHist[0]) === sibBefore) {
+		console.error('QueryNext: apagar la voz 2 no deberia congelar la historia de la voz 1 (deberia seguir avanzando)'); ok = false;
+	}
+	if (!histHasNote(mv.c.noteHist[0])) {
+		console.error('QueryNext: la voz 1 (encendida) no deberia perder su historia al apagarse una hermana'); ok = false;
+	}
+	// the drained state must reach the wire: hist for the muted voice carries only gaps
+	const atMv = mv.e.log.length;
+	mv.c.querynext();
+	for (const a of rowsOf(mv.e.log, atMv, 'hist')) {
+		if (Number(a[0]) === 1 && a.slice(1).some((x) => Number(x) >= 0)) {
+			console.error('QueryNext: el mensaje hist de la voz apagada aun trae notas: ' + JSON.stringify(a)); ok = false;
+		}
+	}
+	// unmuting drops real notes back in at the front
+	mv.c.setvoicemute(2, 0);
+	for (let i = 0; i < 3; i++) mv.c.bang();
+	if (!histHasNote(mv.c.noteHist[1])) {
+		console.error('QueryNext: al reencender la voz 2 su historia deberia volver a llenarse'); ok = false;
+	}
+
+	if (ok) console.log('OK   QueryNext: querynext() no mueve ni una nota ni la urna; hist de voz apagada se vacia; hpattern/hcursor/hist/hshape salen bien.');
+	return ok;
+}
+
+// forteseq2.js emits the FORTESEQ2 popup's set-picker feed on outlet 3 (filtclear / filtinfo /
+// filtset / maskecho), driven by querynext() and by the queryfiltsets message. This checks the
+// rows are well formed, that a repeat poll with no filter change stays silent (the signature
+// debounce), and that the emitter is PURE -- hammering it moves neither a note nor the urn.
+function checkFiltSets() {
+	let ok = true;
+	const forteRe = /^\d+-Z?\d+[AB]?$/;
+	const rowsOf = (log, at, sel) =>
+		log.slice(at)
+			.filter((l) => l.indexOf('3 | ' + sel + ' ') === 0 || l === '3 | ' + sel)
+			.map((l) => l.split(' ').slice(3));
+
+	function base(seed) {
+		const e = makeEngine(seed);
+		const c = e.ctx;
+		c.setnumvoices(3);
+		for (let v = 1; v <= 3; v++) { c.setvoicemute(v, 0); c.setvoicediv(v, 1); }
+		c.setbpmtrack(120);
+		c.setmode(1);
+		return { e, c };
+	}
+
+	// --- forma y rango: mascara acotada, filtro encendido -------------------------------------
+	const g = base(4242);
+	g.c.setfilter(1); g.c.setcardmin(3); g.c.setcardmax(4);
+	const at = g.e.log.length;
+	g.c.setmask(1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0);   // C E G
+	g.c.queryfiltsets();
+	const clr = rowsOf(g.e.log, at, 'filtclear');
+	const info = rowsOf(g.e.log, at, 'filtinfo');
+	const sets = rowsOf(g.e.log, at, 'filtset');
+	const mecho = rowsOf(g.e.log, at, 'maskecho');
+	if (clr.length < 1) { console.error('FiltSets: no salio filtclear'); ok = false; }
+	if (info.length < 1) { console.error('FiltSets: no salio filtinfo'); ok = false; }
+	let shown = 0;
+	if (info.length) {
+		const last = info[info.length - 1];
+		const total = Number(last[0]);
+		shown = Number(last[1]);
+		if (!(total >= 1)) { console.error('FiltSets: filtinfo total < 1: ' + total); ok = false; }
+		if (shown !== Math.min(total, 64)) {
+			console.error('FiltSets: shown ' + shown + ' != min(total,64) con total ' + total); ok = false;
+		}
+	}
+	if (sets.length !== shown) {
+		console.error('FiltSets: ' + sets.length + ' filas filtset, shown dice ' + shown); ok = false;
+	}
+	sets.forEach((a, k) => {
+		const slot = Number(a[0]);
+		const idx1 = Number(a[1]);
+		const forte = a[2];
+		const pcs = a.slice(3).map(Number);
+		if (slot !== k) { console.error('FiltSets: slot no consecutivo: ' + JSON.stringify(a)); ok = false; }
+		if (!(idx1 >= 1 && idx1 <= 351)) { console.error('FiltSets: idx1 fuera de 1..351: ' + idx1); ok = false; }
+		if (!forte || !forteRe.test(forte)) { console.error('FiltSets: nombre Forte raro: ' + forte); ok = false; }
+		if (pcs.length < 1 || pcs.some((p) => !Number.isInteger(p) || p < 0 || p > 11)) {
+			console.error('FiltSets: pc fuera de 0..11 en ' + JSON.stringify(a)); ok = false;
+		}
+	});
+	if (mecho.length < 1 || mecho[mecho.length - 1].length !== 12) {
+		console.error('FiltSets: maskecho ausente o sin 12 celdas: ' + JSON.stringify(mecho)); ok = false;
+	}
+
+	// --- debounce: un segundo sondeo sin cambios no emite nada ----------------------------
+	const at2 = g.e.log.length;
+	g.c.queryfiltsets();                 // forzado -> re-emite
+	if (rowsOf(g.e.log, at2, 'filtset').length === 0) {
+		console.error('FiltSets: queryfiltsets() deberia forzar un re-emit'); ok = false;
+	}
+	const at3 = g.e.log.length;
+	g.c.querynext();                     // sin cambio de filtro -> silencioso
+	if (rowsOf(g.e.log, at3, 'filtset').length !== 0) {
+		console.error('FiltSets: querynext() re-emitio sets sin cambio de filtro (debounce roto)'); ok = false;
+	}
+
+	// --- pureza: martillear el emisor no mueve ni una nota ni la urna --------------------
+	function setupPure(seed) {
+		const b = base(seed);
+		b.c.setreadmode(6); b.c.setreaddir(0);           // Urna: el camino sensible al RNG
+		b.c.setlock(1); b.c.setlockindex(120);
+		b.c.setfilter(1); b.c.setmask(1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0);
+		return b;
+	}
+	const ctrl = setupPure(99);
+	for (let i = 0; i < 12; i++) ctrl.c.bang();
+	const ctrlAt = ctrl.e.log.length;
+	for (let i = 0; i < 24; i++) ctrl.c.bang();
+	const ctrlNotes = ctrl.e.log.slice(ctrlAt).filter(isNote);
+
+	const test = setupPure(99);
+	for (let i = 0; i < 12; i++) { test.c.queryfiltsets(); test.c.bang(); test.c.queryfiltsets(); }
+	const testAt = test.e.log.length;
+	for (let i = 0; i < 24; i++) { test.c.queryfiltsets(); test.c.bang(); test.c.queryfiltsets(); }
+	const testNotes = test.e.log.slice(testAt).filter(isNote);
+	if (JSON.stringify(ctrlNotes) !== JSON.stringify(testNotes)) {
+		console.error('FiltSets: queryfiltsets() cambio lo que suena (no es puro)');
+		for (let i = 0; i < Math.max(ctrlNotes.length, testNotes.length); i++) {
+			if (ctrlNotes[i] !== testNotes[i]) {
+				console.error('  control : ' + (ctrlNotes[i] === undefined ? '(no hay mas)' : ctrlNotes[i]));
+				console.error('  con qfs : ' + (testNotes[i] === undefined ? '(no hay mas)' : testNotes[i]));
+				break;
+			}
+		}
+		ok = false;
+	}
+
+	const urn = setupPure(99);
+	for (let i = 0; i < 12; i++) urn.c.bang();
+	const bagBefore = JSON.stringify([urn.c.urnBag, urn.c.urnBagN, urn.c.urnBagPass]);
+	urn.c.queryfiltsets();
+	const bagAfter = JSON.stringify([urn.c.urnBag, urn.c.urnBagN, urn.c.urnBagPass]);
+	if (bagBefore !== bagAfter) {
+		console.error('FiltSets: queryfiltsets() toco la urna');
+		console.error('  antes  : ' + bagBefore);
+		console.error('  despues: ' + bagAfter);
+		ok = false;
+	}
+
+	if (ok) console.log('OK   FiltSets: filtclear/filtinfo/filtset/maskecho bien formados, debounce activo, emisor puro (nota y urna intactas).');
+	return ok;
+}
+
 function main() {
 	const args = process.argv.slice(2);
 	const seed = 20260819;
@@ -1178,6 +1543,8 @@ function main() {
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);
 	if (!checkRotation()) process.exit(1);
+	if (!checkQueryNext()) process.exit(1);
+	if (!checkFiltSets()) process.exit(1);
 
 	if (args.indexOf('--write') >= 0) {
 		const log = generate(seed);

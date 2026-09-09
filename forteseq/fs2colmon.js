@@ -85,6 +85,20 @@ function clear() {
 	mgraphics.redraw();
 }
 
+// forteseq2.js multiplexes the fs2horizon.js window feed onto this same outlet 3. This jsui
+// dispatches on the selector, so name the ones it must ignore, or Max logs
+// "fs2colmon: doesn't understand ..." once per tick.
+function hpattern() {}
+function hcursor() {}
+function hist() {}
+function hstatus() {}
+function hshape() {}
+function hshapecur() {}
+function filtclear() {}   // el panel fs2setpick.js del popup viaja por el mismo outlet 3
+function filtinfo() {}
+function filtset() {}
+function maskecho() {}
+
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
 function noteOrSilent(x) {
