@@ -1685,6 +1685,7 @@ function triggervoice(v) {
 	var shifted = drumOn ? padFor(pc) : foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
 	voicePos[idx] = pos + 1;
+	soundPosV[idx] = pos;   // the playhead the horizon / column monitor read for this voice, same as emitVoicesIndependent()
 
 	// Read the accent grid at this voice's OWN cursor, not patternStep: an externally
 	// triggered voice advances at its trigger's rate, so its accents have to follow that
@@ -1700,10 +1701,16 @@ function triggervoice(v) {
 			" | grp=" + (art.group ? "ACC" : "nrm") + " vel=" + art.vel +
 			" dur=" + Math.round(art.dur) + (art.rest ? " REST" : "") + "\n");
 	}
-	if (art.rest) return;
-
-	// Straight out, not into the ring: see emitNote(). This is the one caller with no step.
-	emitNote(idx, art, shifted, 1);
+	// Feed the visualisers the same way a clock step does, so a voice driven only by external
+	// triggers is not blank in the note-name monitor, the column monitor and the fs2horizon
+	// popup. A rest sets monScratch to "--" and still refreshes them, exactly as emitVoices()
+	// does. emitMonitor()/emitColMon() are signature-debounced and no-op for every voice whose
+	// monScratch did not move, so the clock-driven voices are neither re-sent nor double-counted
+	// in the deep history -- and with the monitor toggle off emitMonitor() returns immediately.
+	monScratch[idx] = art.rest ? MON_SILENT : shifted;
+	if (!art.rest) emitNote(idx, art, shifted, 1);   // straight out, not into the ring: this is the one caller with no step
+	emitMonitor();
+	emitColMon(pcs, n, undefined, undefined, idx);   // this voice's row only -- see emitColMon()
 }
 
 // The far end of the Hub's Enviar mode: [receive FORTESEQ_TRIG] -> [prepend trig] delivers
@@ -2166,6 +2173,10 @@ function setvoiceexternal(v, e) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceExternal[idx] = e ? 1 : 0;
+	// The clock no longer refreshes this voice's monitor cell, so give it a defined "--" until
+	// its first trigger lands (monScratch starts at a sentinel that is neither a note nor
+	// MON_SILENT). Turning it back off costs nothing: the next clock step overwrites it.
+	monScratch[idx] = MON_SILENT;
 }
 
 // 0 = every clock-driven voice gets the same note and can differ only by octave and register
@@ -2954,6 +2965,15 @@ for (var _ci = 0; _ci < MAX_VOICES; _ci++) { colShown.push(""); colHist.push([-1
 
 function pc12(x) { return ((Math.round(x) % 12) + 12) % 12; }
 
+// A voice reads the horizon / column monitor off its OWN cursor (voicePos / soundPosV) rather
+// than the shared clock walk (noteIndex / sharedSoundPos) whenever it is externally triggered
+// -- triggervoice() advances voicePos for it regardless of mode -- or when Voces Indep is on in
+// arpeggio. Everywhere else the two coincide, so an Indep voice at offset 0 / divider 1 still
+// reads exactly like the shared walk.
+function voiceSelfCursored(v) {
+	return voiceExternal[v] || (mode === 1 && voiceIndep);
+}
+
 // How many more steps the CURRENT set and rotation survive. The lookahead is only exact within
 // this window: at a pass boundary advanceOnPass() moves the catalogue and bumps `rotation`, and
 // with harmRate > 0 the set changes on its own step count -- neither is cheap to run forward
@@ -3035,7 +3055,11 @@ function noteHistHasNote(h) {
 	return false;
 }
 
-function emitColMon(pcs, n, ctxPcs, ctxDeg) {
+// onlyV, when given, restricts the pass to that one voice -- triggervoice() uses it so an
+// external trigger refreshes its own column-monitor row without recomputing the clock-driven
+// voices' forward cells against the raw set (the shared path passes a rotated context set, so a
+// full re-run there would emit a differently-spelled lookahead that the next clock tick undoes).
+function emitColMon(pcs, n, ctxPcs, ctxDeg, onlyV) {
 	if (NUM_VOICES !== colVoicesShown) {
 		colVoicesShown = NUM_VOICES;
 		for (var r = 0; r < MAX_VOICES; r++) { colShown[r] = ""; colHist[r] = [-1, -1]; colLastCur[r] = -1; colFwd[r] = [-1, -1]; noteHist[r] = []; }
@@ -3044,7 +3068,9 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg) {
 	var haveArp = pcs && n > 0;
 	var rem = haveArp ? colRemain(n) : 0;
 	var peekPcs = ctxPcs && ctxPcs.length ? ctxPcs : pcs;
-	for (var v = 0; v < NUM_VOICES; v++) {
+	var vLo = (onlyV === undefined || onlyV === null) ? 0 : onlyV;
+	var vHi = (onlyV === undefined || onlyV === null) ? NUM_VOICES : onlyV + 1;
+	for (var v = vLo; v < vHi; v++) {
 		var cur = (monScratch[v] === MON_SILENT) ? -1 : monScratch[v];   // full MIDI note now
 		// history shifts only on a real change to a new sounding note; rests leave it be
 		if (cur !== -1 && cur !== colLastCur[v]) {
@@ -3066,7 +3092,7 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg) {
 		var f1 = -1, f2 = -1;
 		if (haveArp && cur !== -1) {
 			if (mode === 1) {
-				if (voiceIndep) {
+				if (voiceSelfCursored(v)) {
 					if (1 < rem) f1 = peekVoiceNote(v, pcs, n, 1);
 					if (2 < rem) f2 = peekVoiceNote(v, pcs, n, 2);
 				} else {
@@ -3178,8 +3204,8 @@ function querynext() {
 		var vOwn = voiceReadOwn[v];
 		var vrm = vOwn ? voiceReadMode[v] : readMode;
 		var vrd = vOwn ? voiceReadDir[v] : readDir;
-		var cursor = (mode === 1 && voiceIndep) ? voicePos[v] : noteIndex;   // for the rolling window peek
-		var soundPos = (mode === 1 && voiceIndep) ? soundPosV[v] : sharedSoundPos;   // for the playhead box
+		var cursor = voiceSelfCursored(v) ? voicePos[v] : noteIndex;   // for the rolling window peek
+		var soundPos = voiceSelfCursored(v) ? soundPosV[v] : sharedSoundPos;   // for the playhead box
 
 		var cols, kind;
 		if (card === 0) { cols = 0; kind = 1; }
@@ -3196,7 +3222,7 @@ function querynext() {
 			var pos = (kind === 1) ? p : (cursor + p);   // ciclo completo desde 0; rodante desde el cursor vivo
 			var note = -1;
 			if (card > 0 && urnaReady) {
-				if (mode === 1 && voiceIndep) {
+				if (voiceSelfCursored(v)) {
 					note = peekVoiceNote(v, pcs, card, pos - voicePos[v]);
 				} else if (mode === 1) {
 					note = nearNote(peekSharedPc(v, pcs, card, pos - noteIndex), ref);
@@ -3347,11 +3373,15 @@ function clockVoicesLive() {
 
 // Every voice reads "--", because nothing the clock drives is going to sound this step. The
 // monitor still has to be told: a readout that freezes on its last value is worse than one
-// that says nothing, since it claims notes are still playing.
+// that says nothing, since it claims notes are still playing. Externally triggered voices are
+// the exception -- their note is still ringing and triggervoice() owns their monScratch, so the
+// clock leaves them be. emitColMon() is handed the live set so a held external voice's forward
+// cells match what triggervoice() last emitted and the signature debounce keeps it silent.
 function markAllSilent() {
-	for (var v = 0; v < NUM_VOICES; v++) monScratch[v] = MON_SILENT;
+	for (var v = 0; v < NUM_VOICES; v++) if (!voiceExternal[v]) monScratch[v] = MON_SILENT;
 	emitMonitor();
-	emitColMon();
+	var pcs = sets[setIndex];
+	emitColMon(pcs, pcs ? pcs.length : 0);
 }
 
 // ctxPcs/ctxDeg (arp branches only, never chords): the set and degree index this step's note
@@ -3366,7 +3396,10 @@ function emitVoices(noteData, ctxPcs, ctxDeg) {
 	var haveCtx = ctxPcs && ctxPcs.length && !(noteData instanceof Array);
 	var ctxBase = haveCtx ? pitchForDegree(ctxPcs, ctxDeg) : 0;
 	for (var v = 0; v < NUM_VOICES; v++) {
-		if (voiceMute[v] || voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
+		// An externally triggered voice is skipped whole: triggervoice() owns its monScratch and
+		// its column-monitor row, and stomping "--" here would blink it off on every clock tick.
+		if (voiceExternal[v]) continue;
+		if (voiceMute[v]) { monScratch[v] = MON_SILENT; continue; }
 		// The voice's own pattern, read against the shared step because here every voice is
 		// handed the same one. Off-cells drop out before any of the pitch work is done.
 		if (!voiceSoundsAt(v, patternStep)) { monScratch[v] = MON_SILENT; continue; }
@@ -3713,8 +3746,9 @@ function pitchForDegree(pcs, deg) {
 // where it would have been rather than where it left off.
 function emitVoicesIndependent(pcs, n) {
 	for (var v = 0; v < NUM_VOICES; v++) {
-		// external voices belong to triggervoice(); the clock must not move their cursor too
-		if (voiceExternal[v]) { monScratch[v] = MON_SILENT; continue; }
+		// external voices belong to triggervoice(); the clock must not move their cursor -- and
+		// must not stomp their monScratch either, or the monitor blinks them off every tick
+		if (voiceExternal[v]) continue;
 		var div = voiceDiv[v] > 0 ? voiceDiv[v] : 1;
 		if (((patternStep - 1) % div) !== 0) { monScratch[v] = MON_SILENT; continue; }
 
