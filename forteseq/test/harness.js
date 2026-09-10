@@ -714,6 +714,58 @@ function runScenario(e) {
 	c.setvoicing(0);
 	mark('rotacion manual apagada, vuelta al reposo');
 	run(16);
+
+	// --- Slonimsky: READ_ORNAMENT, base de ciclo de intervalo + ornamento infra/inter/ultra -----
+	// checkSlonimsky() (mas abajo) fija el mecanismo (buildOrnOffsets, ornamentPitchAt, el ciclo de
+	// intervalo, la propiedad de "notas fuera del set") contra un motor limpio; esto lo deja
+	// sonando dentro de una corrida real, compartida e independiente, por la misma razon que los
+	// bloques de McKay/Natural/Modal de arriba.
+	c.setlock(0);
+	c.setmode(1);
+	c.setreadmode(7);
+	for (const [I, ty, ct] of [[4, 0, 2], [4, 1, 1], [4, 2, 1], [7, 0, 1], [3, 5, 1], [14, 0, 2]]) {
+		c.setornbaseinterval(I);
+		c.setorntype(ty);
+		c.setorncount(ct);
+		mark('ornamento I=' + I + ' tipo=' + ty + ' n=' + ct);
+		run(20);
+	}
+	c.setreaddir(1);
+	mark('ornamento en retrogrado');
+	run(20);
+	c.setreaddir(0);
+	c.setvoiceindep(1);
+	c.setornbaseinterval(4);
+	c.setorntype(4);
+	c.setorncount(1);
+	mark('ornamento con voces independientes');
+	run(24);
+	c.setvoiceindep(0);
+	c.setreadmode(0);
+	mark('ornamento apagado, vuelta al orden por defecto');
+	run(16);
+
+	// Base = Grados: los tonos principales son los grados del set, no un ciclo de intervalo. Va al
+	// final del escenario para que ningun bloque previo cambie -- el diff de golden es solo esto.
+	c.setreadmode(7);
+	c.setlock(1);
+	c.setlockindex(120);            // set de 5 notas, el mismo del bloque de lectura de arriba
+	c.setornbasemode(1);
+	c.setornbaseinterval(4);
+	for (const [st, ty, ct] of [[1, 0, 1], [2, 0, 2], [1, 1, 1], [3, 4, 1]]) {
+		c.setornbasestep(st);
+		c.setorntype(ty);
+		c.setorncount(ct);
+		mark('ornamento Base=Grados paso=' + st + ' tipo=' + ty + ' n=' + ct);
+		run(20);
+	}
+	c.setlockindex(200);           // otro set: la base sigue al set
+	mark('ornamento Base=Grados, set movido');
+	run(20);
+	c.setornbasemode(0);
+	c.setornbasestep(1);
+	c.setlock(0);
+	c.setreadmode(0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -897,6 +949,132 @@ function checkModality() {
 		ok = false;
 	}
 	if (ok) console.log('OK   Modalidad: las cinco clasificaciones del libro y los dos pares espejo andan.');
+	return ok;
+}
+
+// Slonimsky's Thesaurus recipe as READ_ORNAMENT (reading order 7): a "base" of principal tones
+// stepped by a fixed interval, and a fixed ornament of signed semitone offsets stamped on each.
+// Fixes the MECHANISM against a clean engine -- the printed patterns themselves need a manual
+// transcription of the tablature glyphs, deferred. Same shape as checkMcKay(): exact values, plus
+// a not-throwing smoke test of the mode inside real clock steps.
+function checkSlonimsky() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+	const eq = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+		a.every((x, i) => x === b[i]);
+	const fail = (msg) => { console.error('Slonimsky: ' + msg); ok = false; };
+
+	if (c.READ_MAX !== 7) fail('READ_MAX deberia ser 7, es ' + c.READ_MAX);
+
+	// buildOrnOffsets(): the offset list derived from (intervalo, tipo, conteo). Types are
+	// 0 Interp / 1 Infra / 2 Ultra / 3 Infra-Inter / 4 Infra-Ultra / 5 Infra-Inter-Ultra.
+	const offs = (I, ty, ct) => { c.setornbaseinterval(I); c.setorntype(ty); c.setorncount(ct); return c.ornOffsets.slice(); };
+	if (!eq(offs(4, 0, 1), [1]))        fail('Interp I=4 n=1 deberia dar [1], dio ' + c.ornOffsets);
+	if (!eq(offs(4, 0, 2), [1, 2]))     fail('Interp I=4 n=2 deberia dar [1,2], dio ' + c.ornOffsets);
+	if (!eq(offs(4, 0, 4), [1, 2, 3]))  fail('Interp I=4 n=4 deberia recortar a [1,2,3] (I-1 huecos), dio ' + c.ornOffsets);
+	if (!eq(offs(1, 0, 2), []))         fail('Interp I=1 n=2: sin huecos entre tonos, deberia dar [], dio ' + c.ornOffsets);
+	if (!eq(offs(4, 1, 1), [-1]))       fail('Infra I=4 n=1 deberia dar [-1], dio ' + c.ornOffsets);
+	if (!eq(offs(4, 2, 1), [5]))        fail('Ultra I=4 n=1 deberia dar [I+1]=[5], dio ' + c.ornOffsets);
+	if (!eq(offs(4, 4, 1), [-1, 5]))    fail('Infra-Ultra I=4 n=1 deberia dar [-1,5], dio ' + c.ornOffsets);
+	if (!eq(offs(3, 5, 1), [-1, 1, 4])) fail('Infra-Inter-Ultra I=3 n=1 deberia dar [-1,1,4], dio ' + c.ornOffsets);
+
+	// ornBaseCycleLen(): principal tones before the pitch classes repeat -- Slonimsky's equal
+	// division. I=4 (Ditone) -> 3, I=7 (Diapente) -> 12, I=8 (Quadritone) -> 3, I=14 (Septitone) -> 6.
+	const cyc = [[4, 3], [7, 12], [8, 3], [3, 4], [6, 2], [2, 6], [14, 6], [1, 12]];
+	for (const [I, want] of cyc) {
+		c.setornbaseinterval(I);
+		if (c.ornBaseCycleLen() !== want) fail('ornBaseCycleLen I=' + I + ' deberia ser ' + want + ', es ' + c.ornBaseCycleLen());
+	}
+
+	// ornamentPitchAt(): raw semitones. Ditone + Interpolation of one note -> the augmented triad
+	// with a chromatic passing note over each tone: 0,1,4,5,8,9 then wrap.
+	c.setornbaseinterval(4); c.setorntype(0); c.setorncount(1);
+	const seq = [0, 1, 2, 3, 4, 5, 6].map((p) => c.ornamentPitchAt(p));
+	if (!eq(seq, [0, 1, 4, 5, 8, 9, 0])) fail('ornamentPitchAt Ditone/Interp1 dio ' + seq);
+	if (c.ornCycleSteps() !== 6) fail('ornCycleSteps Ditone/Interp1 deberia ser 6, es ' + c.ornCycleSteps());
+	// The defining property: notes NOT in the current set. Augmented triad = {0,4,8}; 1,5,9 are outside.
+	if ([1, 5, 9].some((x) => [0, 4, 8].indexOf(x % 12) >= 0)) fail('las notas de paso no deberian caer en la triada aumentada');
+
+	// Diapente: one pass walks all twelve pitch classes (the cycle of fifths).
+	c.setornbaseinterval(7); c.setorntype(0); c.setorncount(1);
+	const pcs = [];
+	for (let k = 0; k < c.ornBaseCycleLen(); k++) pcs.push(((c.ornamentPitchAt(k * 2) % 12) + 12) % 12);
+	pcs.sort((a, b) => a - b);
+	if (!eq(pcs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])) fail('Diapente deberia recorrer las 12 clases, dio ' + pcs);
+
+	// Infrapolation dips below the tone then leaps up; ultrapolation overshoots the next tone then
+	// falls back -- the two zigzags that plain interpolation cannot make.
+	c.setornbaseinterval(4); c.setorntype(1); c.setorncount(1);
+	if (!(c.ornamentPitchAt(1) < c.ornamentPitchAt(0) && c.ornamentPitchAt(2) > c.ornamentPitchAt(1)))
+		fail('infrapolacion deberia bajar y despues saltar arriba');
+	c.setorntype(2);
+	if (!(c.ornamentPitchAt(1) > c.ornBaseInterval && c.ornamentPitchAt(2) < c.ornamentPitchAt(1)))
+		fail('ultrapolacion deberia pasarse del siguiente tono y despues volver');
+
+	// ornamentUnionSet(): the Master Chord Slonimsky prints beside each pattern -- the pitch-class
+	// aggregate of one pass. Ditone + any +-1 ornament gives the hexatonic (augmented) scale 6-20;
+	// a whole-tone or cycle-of-fifths base with chromatic interpolation fills all twelve -> [12 Tones].
+	const uni = (I, ty, ct) => { c.setornbaseinterval(I); c.setorntype(ty); c.setorncount(ct); return c.ornamentUnionSet(); };
+	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))  fail('union Ditone/Interp1 deberia ser {0,1,4,5,8,9}, dio ' + c.ornamentUnionSet());
+	if (!eq(uni(4, 1, 1), [0, 3, 4, 7, 8, 11])) fail('union Ditone/Infra1 deberia ser {0,3,4,7,8,11}, dio ' + c.ornamentUnionSet());
+	if (c.forteLabelOf(c.ornamentUnionSet()) !== '6-20') fail('forteLabelOf de la escala Ditone/Infra1 deberia ser 6-20, dio ' + c.forteLabelOf(c.ornamentUnionSet()));
+	if (!eq(uni(7, 0, 1), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])) fail('union Diapente/Interp1 deberia llenar las 12, dio ' + c.ornamentUnionSet());
+	if (!eq(uni(2, 0, 1), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])) fail('union WholeTone/Interp1 deberia llenar las 12 ([12 Tonos]), dio ' + c.ornamentUnionSet());
+	if (c.forteLabelOf(c.ornamentUnionSet()) !== '12-1') fail('forteLabelOf del total cromatico deberia ser 12-1, dio ' + c.forteLabelOf(c.ornamentUnionSet()));
+	if (c.vecStringOf([0, 4, 8]) !== '<000300>') fail('vecStringOf de la triada aumentada deberia ser <000300>, dio ' + c.vecStringOf([0, 4, 8]));
+
+	// ORN_BASE_DEGREES: los tonos principales pasan a ser los grados del set, asi que la base -- y la
+	// escala resultante -- ya no tienen que ser simetricas (imposible en Base=Intervalo). ornBaseInterval
+	// sigue gobernando el alcance cromatico del ornamento; ornBaseMode 0 queda byte-identico.
+	c.setornbasemode(1);
+	c.setornbasestep(1);
+	c.setorntype(0); c.setornbaseinterval(1); c.setorncount(1);   // Orn Base 1 -> Interp room 0 -> sin offsets
+	if (c.ornOffsets.length !== 0) fail('Interp I=1 deberia dar ornOffsets vacio, dio ' + c.ornOffsets);
+	const majIdx = c.setForte.indexOf('7-35');                    // la mayor diatonica
+	c.setlockindex(majIdx + 1);
+	const majPcs = c.sets[majIdx].slice().sort((a, b) => a - b);
+	if (!eq(c.ornamentUnionSet(), majPcs))
+		fail('Base=Grados sin ornamento sobre 7-35: la union deberia ser el set mismo, dio ' + c.ornamentUnionSet());
+	if (c.forteLabelOf(c.ornamentUnionSet()) !== '7-35')
+		fail('Base=Grados sobre la mayor deberia clasificar 7-35 (asimetrico), dio ' + c.forteLabelOf(c.ornamentUnionSet()));
+	c.setornbasestep(2);                                          // arpegio de terceras: mismas 7 clases
+	if (!eq(c.ornamentUnionSet(), majPcs))
+		fail('Base=Grados paso 2 (terceras) sobre 7-35 deberia cubrir las mismas 7 clases, dio ' + c.ornamentUnionSet());
+	c.setornbasestep(1); c.setorntype(1); c.setornbaseinterval(4); c.setorncount(1);   // Infra 1 sobre una triada
+	const minIdx = c.setForte.indexOf('3-11B');
+	c.setlockindex(minIdx + 1);
+	const minPcs = c.sets[minIdx].slice().sort((a, b) => a - b);
+	const withOrn = c.ornamentUnionSet();
+	if (withOrn.length !== 6 || !withOrn.some((x) => minPcs.indexOf(x) < 0))
+		fail('Base=Grados + Infra sobre una triada deberia dar 6 clases con notas fuera de la triada, dio ' + withOrn);
+	if (['6-20', '6-35'].indexOf(c.forteLabelOf(withOrn)) >= 0)
+		fail('Base=Grados + ornamento sobre la triada no deberia dar un hexacordo simetrico, dio ' + c.forteLabelOf(withOrn));
+	c.setornbasemode(0); c.setornbasestep(1);                     // sin regresion: vuelve a ser Fase 1
+	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))
+		fail('volver a Base=Intervalo deberia reproducir Ditone/Interp1 = {0,1,4,5,8,9}, dio ' + c.ornamentUnionSet());
+
+	// setreadmode() clamps to the new ceiling; the legacy alias reaches it too.
+	c.setreadmode(7);
+	if (c.readMode !== 7) fail('setreadmode(7) no quedo en 7');
+	c.setreadmode(99);
+	if (c.readMode !== 7) fail('setreadmode(99) deberia recortar a 7, quedo en ' + c.readMode);
+
+	// Smoke: the mode has to survive real clock steps, shared and independent, without throwing.
+	try {
+		c.setpermmode(7);
+		c.setmode(1);
+		c.setornbaseinterval(4); c.setorntype(4); c.setorncount(2);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(0);
+		c.setreadmode(0);
+	} catch (err) {
+		fail('READ_ORNAMENT dentro de bang() tiro ' + err);
+	}
+
+	if (ok) console.log('OK   Slonimsky: buildOrnOffsets, el ciclo de intervalo, ornamentPitchAt y el modo READ_ORNAMENT andan.');
 	return ok;
 }
 
@@ -1200,6 +1378,14 @@ function checkQueryNext() {
 		['alterna (pendulo)', (c) => { c.setreadmode(0); c.setreaddir(2); }],
 		['Urna', (c) => { c.setreadmode(6); c.setreaddir(0); }],
 		['SuperMin', (c) => { c.setreadmode(2); c.setreaddir(0); }],
+		['Ornamento', (c) => {
+			c.setreadmode(7); c.setreaddir(0);
+			c.setornbaseinterval(4); c.setorntype(0); c.setorncount(2);
+		}],
+		['Ornamento atras', (c) => {
+			c.setreadmode(7); c.setreaddir(1);
+			c.setornbaseinterval(7); c.setorntype(4); c.setorncount(1);
+		}],
 		['indep + grado', (c) => {
 			c.setvoiceindep(1); c.setreadmode(0); c.setreaddir(0);
 			c.setvoicedegoffset(2, 1); c.setvoicedegoffset(3, 2);
@@ -1365,6 +1551,53 @@ function checkQueryNext() {
 	const shAc = rowsOf(ac.e.log, atAc, 'hshape');
 	if (shAc.some((a) => Number(a[1]) !== 0)) { console.error('QueryNext: Acordes no deberia emitir una forma con celdas: ' + JSON.stringify(shAc)); ok = false; }
 	if (shAc.length === 0) { console.error('QueryNext: al pasar a Acordes deberia mandar un hide de la forma (hshape ... 0 0)'); ok = false; }
+
+	// READ_ORNAMENT emits its resulting scale on the same outlet: ornscale <count> <forte> <vec>
+	// <is12> <pc0..>. Ditone + Interpolation of one note -> the hexatonic scale 6-20 {0,1,4,5,8,9}.
+	// Every other reading order sends "ornscale 0" so the window clears it.
+	const os = setup(seed);
+	os.c.setreadmode(7); os.c.setreaddir(0);
+	os.c.setornbaseinterval(4); os.c.setorntype(0); os.c.setorncount(1);
+	for (let i = 0; i < 4; i++) os.c.bang();
+	const atOs = os.e.log.length;
+	os.c.querynext();
+	const osr = rowsOf(os.e.log, atOs, 'ornscale');
+	if (osr.length !== 1) { console.error('QueryNext: Ornamento deberia emitir 1 ornscale, salieron ' + osr.length); ok = false; }
+	for (const a of osr) {
+		const cnt = Number(a[0]), forte = a[1], is12 = Number(a[3]), pcs = a.slice(4).map(Number);
+		if (cnt !== 6 || pcs.length !== 6) { console.error('QueryNext: ornscale Ditone/Interp1 deberia traer 6 clases, dio ' + JSON.stringify(a)); ok = false; }
+		if (forte !== '6-20') { console.error('QueryNext: ornscale Ditone/Interp1 forte deberia ser 6-20, dio ' + forte); ok = false; }
+		if (is12 !== 0) { console.error('QueryNext: ornscale Ditone/Interp1 no es el total cromatico, is12 deberia ser 0, dio ' + is12); ok = false; }
+		if (JSON.stringify(pcs) !== JSON.stringify([0, 1, 4, 5, 8, 9])) { console.error('QueryNext: ornscale pcs deberia ser [0,1,4,5,8,9], dio ' + JSON.stringify(pcs)); ok = false; }
+	}
+	// re-querying without a parameter change stays silent (debounce); leaving Ornamento clears it
+	const atOsQ = os.e.log.length;
+	os.c.querynext();
+	if (rowsOf(os.e.log, atOsQ, 'ornscale').length !== 0) { console.error('QueryNext: ornscale re-emitido sin cambio (debounce roto)'); ok = false; }
+	os.c.setreadmode(0);
+	const atOs2 = os.e.log.length;
+	os.c.querynext();
+	const osr2 = rowsOf(os.e.log, atOs2, 'ornscale');
+	if (osr2.length !== 1 || Number(osr2[0][0]) !== 0) { console.error('QueryNext: al salir de Ornamento deberia mandar "ornscale 0", dio ' + JSON.stringify(osr2)); ok = false; }
+
+	// Base=Grados: la escala resultante ahora sigue al set, asi que mover el set locked re-emite otra.
+	const og = setup(seed);
+	og.c.setreadmode(7); og.c.setreaddir(0);
+	og.c.setornbasemode(1); og.c.setornbasestep(1);
+	og.c.setorntype(0); og.c.setornbaseinterval(1); og.c.setorncount(1);
+	for (let i = 0; i < 4; i++) og.c.bang();
+	const atOg = og.e.log.length;
+	og.c.querynext();
+	const ogr = rowsOf(og.e.log, atOg, 'ornscale');
+	if (ogr.length !== 1) { console.error('QueryNext: Ornamento Base=Grados deberia emitir 1 ornscale, salieron ' + ogr.length); ok = false; }
+	og.c.setlockindex(200);                 // otro set
+	const atOg2 = og.e.log.length;
+	og.c.querynext();
+	const ogr2 = rowsOf(og.e.log, atOg2, 'ornscale');
+	if (ogr2.length !== 1) { console.error('QueryNext: Base=Grados deberia re-emitir ornscale al mover el set, salieron ' + ogr2.length); ok = false; }
+	if (ogr.length && ogr2.length && JSON.stringify(ogr2[0]) === JSON.stringify(ogr[0])) {
+		console.error('QueryNext: Base=Grados: mover el set deberia cambiar la escala emitida'); ok = false;
+	}
 
 	// a voice that is turned OFF takes no notes: its deep history must scroll toward blank, one
 	// gap per step, so the floating viewer drains instead of freezing on stale notes. An unmuted
@@ -1538,6 +1771,7 @@ function main() {
 	if (!checkMcKay()) process.exit(1);
 	if (!checkNHP()) process.exit(1);
 	if (!checkModality()) process.exit(1);
+	if (!checkSlonimsky()) process.exit(1);
 	if (!checkRandomize()) process.exit(1);
 	if (!checkPresetNames()) process.exit(1);
 	if (!checkVoiceArt()) process.exit(1);

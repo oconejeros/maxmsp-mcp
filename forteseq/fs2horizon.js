@@ -20,6 +20,9 @@
 //            shape reads at each position of one full cycle (downsampled if rawL > cols). One
 //            shared row under the grid. cols 0 = hide (chord mode). Sent only on shape change.
 //   hshapecur <pos>  -- cursor column within that strip, one number per tick.
+//   ornscale <count> <forte> <vec> <is12> <pc0..>  -- READ_ORNAMENT's resulting scale (Slonimsky's
+//            Master Chord): the pitch-class aggregate of one ornament pass. count 0 = clear (any
+//            other reading order). Drawn as a 12-chip strip + label above the status line.
 //   colvoices <n>   colbang <v>   color <0|1>   clear   colmon ...(ignored)
 //
 // Colour = the circle-of-fifths wheel from pccolor.js, sat/lum matched to fs2colmon / tonnetz.
@@ -72,7 +75,7 @@ var HIST_MAX = 8;
 var PATTERN_MAX = 48;
 
 var NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-var READ_NAMES = ['Recto', 'Súper', 'SúperMín', 'Modos', 'Coprimo', 'Zigzag', 'Urna'];
+var READ_NAMES = ['Recto', 'Súper', 'SúperMín', 'Modos', 'Coprimo', 'Zigzag', 'Urna', 'Ornamento'];
 var DIR_NAMES = ['adelante', 'atrás', 'alterna'];
 
 var voices = 4;
@@ -164,6 +167,18 @@ function hshapecur(pos) {
 	mgraphics.redraw();
 }
 
+// READ_ORNAMENT's resulting scale (Slonimsky's Master Chord). null = not in Ornamento.
+var ornScale = null;   // { forte, vec, is12, pcs:[...] }
+function ornscale() {
+	var a = arrayfromargs(arguments);
+	var n = Math.round(a[0]);
+	if (!(n > 0)) { ornScale = null; mgraphics.redraw(); return; }
+	var pcs = [];
+	for (var k = 0; k < n && (4 + k) < a.length; k++) pcs.push((((Math.round(a[4 + k]) % 12) + 12) % 12));
+	ornScale = { forte: String(a[1]), vec: String(a[2]), is12: Math.round(a[3]) === 1, pcs: pcs };
+	mgraphics.redraw();
+}
+
 function color(on) {
 	colorOn = on ? 1 : 0;
 	mgraphics.redraw();
@@ -171,7 +186,7 @@ function color(on) {
 
 function clear() {
 	for (var k = 0; k < MAXROWS; k++) { pat[k] = { kind: 1, cols: 0, cells: [] }; cur[k] = 0; played[k] = []; pulse[k] = 0; }
-	shape = null; shapeCur = 0;
+	shape = null; shapeCur = 0; ornScale = null;
 	mgraphics.redraw();
 }
 
@@ -268,8 +283,9 @@ function paint() {
 	var headH = 16;
 	var statusH = status ? 15 : 0;
 	var shapeH = (shape && shape.cols > 0) ? 34 : 0;   // the static reading-order strip
+	var ornH = (ornScale && status && status[0] === 7) ? 22 : 0;   // READ_ORNAMENT resulting-scale strip
 	var nRows = Math.max(1, Math.min(MAXROWS, voices));
-	var gridH = Math.max(1, H - headH - statusH - shapeH);
+	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
 
 	var histW = Math.round(Math.min(W * 0.28, HIST_MAX * 22));   // left zone for played notes
@@ -404,6 +420,37 @@ function paint() {
 		mgraphics.set_font_size(8);
 		mgraphics.move_to(4, sy - 3);
 		mgraphics.show_text('forma  ' + (scur + 1) + '/' + shape.rawL);
+	}
+
+	// --- the resulting-scale strip: Slonimsky's Master Chord for the running ornament ----------
+	if (ornH) {
+		var oy = headH + gridH + shapeH;
+		mgraphics.set_source_rgba([0.09, 0.09, 0.10, 1]);
+		mgraphics.rectangle(0, oy, W, ornH);
+		mgraphics.fill();
+		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(4, oy + ornH / 2 + 3);
+		mgraphics.show_text('escala');
+		var ocw = Math.max(4, Math.min(20, (W - 220) / 12));
+		var ox = 40;
+		for (var oi = 0; oi < 12; oi++) {
+			var lit = ornScale.pcs.indexOf(oi) >= 0;
+			if (lit && colorOn) {
+				var org = PC_RGB[oi];
+				mgraphics.set_source_rgba([org[0], org[1], org[2], 1]);
+			} else if (lit) {
+				mgraphics.set_source_rgba([0.72, 0.72, 0.74, 1]);
+			} else {
+				mgraphics.set_source_rgba([0.17, 0.17, 0.18, 1]);
+			}
+			mgraphics.rectangle(ox + oi * ocw + 1, oy + 4, ocw - 2, ornH - 8);
+			mgraphics.fill();
+		}
+		mgraphics.set_source_rgba([0.68, 0.68, 0.72, 1]);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(ox + 12 * ocw + 10, oy + ornH / 2 + 3);
+		mgraphics.show_text(ornScale.forte + '   ' + ornScale.vec + (ornScale.is12 ? '   [12 tonos]' : ''));
 	}
 
 	if (statusH) {

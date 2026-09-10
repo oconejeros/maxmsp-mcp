@@ -86,11 +86,38 @@ var READ_RECTO = 0,      // straight ascending pass, the historic default
 	READ_MODOS = 3,      // one mode per pass: pass p starts on degree p and climbs past the top
 	READ_COPRIMO = 4,    // skip by a fixed number of degrees, coprime with n so nothing repeats
 	READ_ZIGZAG = 5,     // outside in: lowest, highest, second lowest, second highest...
-	READ_URNA = 6;       // random without replacement, reshuffled once per pass
-var READ_MAX = 6;
+	READ_URNA = 6,       // random without replacement, reshuffled once per pass
+	READ_ORNAMENT = 7;   // Slonimsky: an interval-cycle base + a fixed infra/inter/ultra ornament
+var READ_MAX = 7;
 var readMode = READ_RECTO;
 var readDir = 0;        // 0 = adelante, 1 = atras, 2 = alterna: pendulum over the whole pass
 var coprimeSkip = 2;    // degrees to skip in READ_COPRIMO; snapped to a coprime of the cardinality
+
+// READ_ORNAMENT reproduces the recipe behind the first twelve chapters of Slonimsky's Thesaurus,
+// which the reading orders above cannot: the notes it plays are NOT members of the current set.
+// A "base" of principal tones is built by stepping the root by a FIXED interval (ornBaseInterval
+// semitones -- 4 = Ditone/augmented, 7 = Diapente/cycle of fifths, 14 = Septitone), and a fixed
+// "ornament" is stamped on every principal tone in turn. The ornament is a list of signed
+// semitone offsets from the principal tone: interpolation fills chromatically BETWEEN this tone
+// and the next (0 < off < I), infrapolation adds notes BELOW it (negative), ultrapolation adds
+// notes ABOVE THE NEXT one (off > I) -- the last two bend the line into Slonimsky's zigzags.
+// ornOffsets is derived from (ornType, ornCount, ornBaseInterval) by buildOrnOffsets().
+//
+// ornBaseMode picks how the principal tones are laid out: ORN_BASE_INTERVAL steps the root by the
+// fixed interval above (Slonimsky's "equal division of one or more octaves" -- always yields a
+// scale symmetric at that interval); ORN_BASE_DEGREES instead walks the DEGREES of the current
+// set, ornBaseStep at a time (1 = consecutive, 2 = thirds...), so the base can be any arpeggio and
+// the resulting scale need not be symmetric -- Slonimsky's Heptatonic Arpeggios / Cochrane Part III.
+var ORN_INTERP = 0, ORN_INFRA = 1, ORN_ULTRA = 2,
+	ORN_INFRA_INTER = 3, ORN_INFRA_ULTRA = 4, ORN_INFRA_INTER_ULTRA = 5;
+var ORN_TYPE_MAX = 5;
+var ORN_BASE_INTERVAL = 0, ORN_BASE_DEGREES = 1;
+var ornBaseInterval = 4;   // I, in semitones (1..14) -- used when ornBaseMode === ORN_BASE_INTERVAL
+var ornType = ORN_INTERP;
+var ornCount = 1;          // notes added per principal tone, per named component (1..4)
+var ornOffsets = [];       // derived: signed semitone offsets, one per added note (never the tone itself)
+var ornBaseMode = ORN_BASE_INTERVAL;
+var ornBaseStep = 1;       // degrees to advance per principal tone when ornBaseMode === ORN_BASE_DEGREES (1..4)
 var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
@@ -524,6 +551,21 @@ function vecString(i) {
 	var v = setVec[i], s = "<";
 	for (var k = 0; k < 6; k++) s += VEC_DIGITS[v[k]];
 	return s + ">";
+}
+
+// The same two readout formatters for an ARBITRARY pitch-class set, not one of the catalogue's 351.
+// READ_ORNAMENT's resulting scale (its Master Chord) is assembled at note rate and is almost never
+// a catalogue set, so it cannot ride setVec[] / setForte[].
+function vecStringOf(pcs) {
+	var v = intervalVectorOf(pcs), s = "<";
+	for (var k = 0; k < 6; k++) s += VEC_DIGITS[v[k] > 12 ? 12 : v[k]];
+	return s + ">";
+}
+
+function forteLabelOf(pcs) {
+	if (!pcs || pcs.length === 0) return "-";
+	var ent = forteClass[pcsDigits(primeFormOf(pcs))];
+	return ent ? ent.num : "?";
 }
 
 // --- traversal order -------------------------------------------------------------------
@@ -1571,6 +1613,7 @@ buildSetLabels();   // fills setBits, which the class index reads
 buildClassIndex();
 buildOrder();
 buildFilter();
+buildOrnOffsets();   // READ_ORNAMENT's offset list, so it is never empty if that mode is selected first
 
 function loadbang() {
 	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
@@ -1675,8 +1718,13 @@ function triggervoice(v) {
 	// trigger, so only the reading order is meaningful here. degreeAt() is the only copy of that
 	// reading order, shared with the clock-driven voices, so a voice sounds the same whether
 	// the clock or an external trigger moved it -- unless this voice's own Patron/Dir is on.
-	pc = pitchForDegree(pcs, degreeAt(n, pos, voiceReadModeOf(idx), voiceReadDirOf(idx)) +
-		voiceDegOffset[idx] + modDeg());
+	var tMode = voiceReadModeOf(idx);
+	if (((tMode === undefined) ? readMode : tMode) === READ_ORNAMENT) {
+		pc = ornamentPitchAt(pos, pcs);   // shared offsets, this voice's own cursor -- see emitVoicesIndependent()
+	} else {
+		pc = pitchForDegree(pcs, degreeAt(n, pos, tMode, voiceReadDirOf(idx)) +
+			voiceDegOffset[idx] + modDeg());
+	}
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
@@ -2998,6 +3046,13 @@ function colRemain(n) {
 // note sounding now -- so pitchForDegree vs pcs[] indexing is equivalent for offset 0.
 function peekSharedPc(v, pcs, n, j) {
 	var off = voiceDegOffset[v] || 0;
+	if (readMode === READ_ORNAMENT) {
+		// The ornament ignores the set, so the lookahead has to run the same interval-cycle + cell
+		// as the audio path in step(), not a walk over pcs[]. readDir 1 reverses the whole run.
+		var op = noteIndex + j;
+		if (readDir === 1) op = readCycleLength(n) - 1 - op;
+		return pc12(ornamentPitchAt(op, pcs) + effRoot());
+	}
 	if (mode === 1 && readDir === 0 && readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) {
 		var seq = MINIMAL_SUPERPERMS[n];
 		return pc12(pitchForDegree(pcs, seq[(minimalPos + j) % seq.length] + off) + effRoot());
@@ -3020,8 +3075,14 @@ function peekSharedPc(v, pcs, n, j) {
 // walk -- mirrors the note calc in emitVoicesIndependent() (octave list + master shift + fold).
 function peekVoiceNote(v, pcs, n, j) {
 	var base = (mode === 1) ? voicePos[v] : 0;
-	var pc = pitchForDegree(pcs,
-		degreeAt(n, base + j, voiceReadModeOf(v), voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+	var vm = voiceReadModeOf(v);
+	var pc;
+	if (((vm === undefined) ? readMode : vm) === READ_ORNAMENT) {
+		pc = ornamentPitchAt(base + j, pcs);   // mirrors emitVoicesIndependent()'s ornament branch
+	} else {
+		pc = pitchForDegree(pcs,
+			degreeAt(n, base + j, vm, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+	}
 	if (drumOn) return padFor(pc);
 	var list = voiceOctaveList[v];
 	var oct = list[((base + j) % list.length + list.length) % list.length];
@@ -3161,6 +3222,7 @@ for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.pus
 // nada sale si allowed[]/effRoot() no se movieron, asi el sondeo del metro no cuesta.
 var qnFiltShown = "";   // firma del ultimo emit de swatches; "" = forzar
 var qnMaskShown = "";   // firma del ultimo maskecho
+var qnOrnScaleShown = "";   // firma (I,tipo,conteo) de la ultima escala resultante emitida; "" = forzar
 var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
 
 // Largo de un ciclo de la forma para la grilla (con el doblado de la pendular), o -1 para
@@ -3168,7 +3230,7 @@ var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
 function shapeGridCols(rm, rd, card) {
 	if (rm === READ_SUPER || rm === READ_SUPERMIN) return -1;
 	var L = shapeCycleLength(card, rm);
-	if (rd === 2 && L > 1) L = 2 * L - 2;
+	if (rd === 2 && L > 1 && rm !== READ_ORNAMENT) L = 2 * L - 2;   // ornament: no pendulum over the base
 	return L < 1 ? 1 : L;
 }
 
@@ -3246,7 +3308,9 @@ function querynext() {
 	// forma global, SIN rotacion ni offsets. Incluye Super/SuperMin (su ciclo entero, aunque sea
 	// de cientos de pasos -> se submuestrea a SHAPE_MAX). Se manda solo cuando cambia
 	// readMode/readDir/n (hshape); el cursor (hshapecur) es 1 dato por tick.
-	var shReady = HORIZON_SHAPE && mode === 1 && card > 0 &&
+	// READ_ORNAMENT has no set-degree "forma": its shape is the ornament cell, not a degree cycle.
+	// The hpattern grid already shows the real upcoming notes; the degree strip is hidden (Fase 1).
+	var shReady = HORIZON_SHAPE && mode === 1 && card > 0 && readMode !== READ_ORNAMENT &&
 		(readMode !== READ_URNA || (urnBagN === card && urnBagPass === 0));
 	if (shReady) {
 		var rawL = shapeCycleLength(card, readMode);
@@ -3276,6 +3340,7 @@ function querynext() {
 	urnBag = ub; urnBagN = ubn; urnBagPass = ubp;
 
 	// El panel de sets viaja por el mismo outlet; la firma corta esto en seco si nada cambio.
+	emitOrnScale();
 	emitFiltSets();
 	emitMaskEcho();
 }
@@ -3328,10 +3393,30 @@ function emitMaskEcho() {
 	outlet(3, row);
 }
 
+// READ_ORNAMENT's resulting scale -- Slonimsky's Master Chord -- for the horizon window. The
+// signature is (baseMode, baseStep, interval, type, count); in Base=Grados the scale also follows
+// the set and the root, so setIndex + effRoot() join it there. Outside Ornamento it sends one
+// "ornscale 0" to clear whatever the window was showing.
+function emitOrnScale() {
+	if (readMode !== READ_ORNAMENT) {
+		if (qnOrnScaleShown !== "") { qnOrnScaleShown = ""; outlet(3, ["ornscale", 0]); }
+		return;
+	}
+	var key = ornBaseMode + "," + ornBaseStep + "," + ornBaseInterval + "," + ornType + "," + ornCount +
+		((ornBaseMode === ORN_BASE_DEGREES) ? ("," + setIndex + "," + effRoot()) : "");
+	if (key === qnOrnScaleShown) return;
+	qnOrnScaleShown = key;
+	var u = ornamentUnionSet(sets[setIndex]);
+	var row = ["ornscale", u.length, forteLabelOf(u), vecStringOf(u), (u.length === 12) ? 1 : 0];
+	for (var i = 0; i < u.length; i++) row.push(u[i]);
+	outlet(3, row);
+}
+
 function queryfiltsets() {   // mensaje: refresco forzado desde el boton "Proximos 16"
-	qnFiltShown = ""; qnMaskShown = "";
+	qnFiltShown = ""; qnMaskShown = ""; qnOrnScaleShown = "";
 	emitFiltSets();
 	emitMaskEcho();
+	emitOrnScale();
 }
 
 function setmonitor(x) {
@@ -3646,6 +3731,94 @@ function urnAt(n, i, pass) {
 	return urnBag[i % n];
 }
 
+// --- READ_ORNAMENT: Slonimsky's interval-cycle base + infra/inter/ultra ornament -------------
+
+// Build ornOffsets from (ornType, ornCount, ornBaseInterval). The cell played at each principal
+// tone is [0].concat(ornOffsets) -- the 0 is the principal tone itself, the rest are added notes.
+// Chromatic filling is the default, as in the printed patterns; Interpolation cannot place more
+// notes than the (I - 1) chromatic slots that fit strictly between one principal tone and the next.
+function buildOrnOffsets() {
+	var I = ornBaseInterval, N = ornCount;
+	var wantInfra = (ornType === ORN_INFRA || ornType === ORN_INFRA_INTER ||
+		ornType === ORN_INFRA_ULTRA || ornType === ORN_INFRA_INTER_ULTRA);
+	var wantInter = (ornType === ORN_INTERP || ornType === ORN_INFRA_INTER ||
+		ornType === ORN_INFRA_INTER_ULTRA);
+	var wantUltra = (ornType === ORN_ULTRA || ornType === ORN_INFRA_ULTRA ||
+		ornType === ORN_INFRA_INTER_ULTRA);
+	var infra = [], inter = [], ultra = [], k;
+	if (wantInfra) for (k = 1; k <= N; k++) infra.push(-k);
+	if (wantInter) {
+		var room = I - 1;
+		var cnt = Math.min(N, room > 0 ? room : 0);
+		for (k = 1; k <= cnt; k++) inter.push(k);
+	}
+	if (wantUltra) for (k = 1; k <= N; k++) ultra.push(I + k);
+	// cell contour: dip below, climb between, overshoot the next -- the canonical zigzag order
+	ornOffsets = infra.concat(inter).concat(ultra);
+	if (ornOffsets.length > 11) ornOffsets = ornOffsets.slice(0, 11);   // keep one cell <= 12 events
+}
+
+// How many principal tones one pass visits before the pitch classes repeat.
+//   ORN_BASE_INTERVAL -- Slonimsky's "equal division of one or more octaves": I=4 gives 3
+//     (augmented), I=7 gives 12 (cycle of fifths), I=8 (Quadritone) also 3, I=14 (Septitone) 6.
+//   ORN_BASE_DEGREES -- one full turn of the set's degrees at ornBaseStep apart: n / gcd(step, n),
+//     so step 1 gives n, step 2 on a 7-note set also gives 7, step 3 on a 6-note set gives 2.
+function ornBaseTones(pcs) {
+	if (ornBaseMode === ORN_BASE_DEGREES) {
+		var n = (pcs && pcs.length) ? pcs.length : 1;
+		var s = ((Math.round(ornBaseStep) % n) + n) % n || n;
+		return n / gcd(s, n);
+	}
+	return 12 / gcd(((ornBaseInterval % 12) + 12) % 12 || 12, 12);
+}
+
+// Interval-mode base-cycle length, kept as a named helper for the harness and for callers that
+// only ever mean the interval case.
+function ornBaseCycleLen() {
+	return 12 / gcd(((ornBaseInterval % 12) + 12) % 12 || 12, 12);
+}
+
+// One full pass: every principal tone, each carrying its cell of (1 + ornOffsets.length) notes.
+function ornCycleSteps() {
+	return ornBaseTones(sets[setIndex]) * (ornOffsets.length + 1);
+}
+
+// The raw semitone value (relative to MELODY_BASE, before root/octave/range) at linear position
+// pos. In ORN_BASE_INTERVAL the principal tone is a raw interval multiple, so the result is
+// deliberately NOT a member of the set; in ORN_BASE_DEGREES the principal tone IS a set degree and
+// only the ornament offsets fall outside. pcs defaults to the current set.
+function ornamentPitchAt(pos, pcs) {
+	if (pcs === undefined) pcs = sets[setIndex];
+	var S = ornOffsets.length + 1;
+	var K = ornBaseTones(pcs);
+	pos = Math.round(pos);
+	if (!isFinite(pos) || pos < 0) pos = 0;
+	var baseIdx = Math.floor(pos / S) % K;
+	var cellIdx = pos % S;
+	var off = (cellIdx === 0) ? 0 : ornOffsets[cellIdx - 1];
+	if (ornBaseMode === ORN_BASE_DEGREES && pcs && pcs.length) {
+		return pitchForDegree(pcs, baseIdx * Math.round(ornBaseStep)) + off;
+	}
+	return ornBaseInterval * baseIdx + off;
+}
+
+// The resulting scale Slonimsky tabulates beside each pattern as its Master Chord: the pitch-class
+// aggregate of one full pass -- every principal tone together with every note of its cell, folded to
+// twelve and sorted. The patterns whose aggregate is the whole chromatic are the ones he stamps
+// [12 Tones]. In ORN_BASE_INTERVAL this is always symmetric at the base interval; in
+// ORN_BASE_DEGREES it need not be. pcs defaults to the current set.
+function ornamentUnionSet(pcs) {
+	if (pcs === undefined) pcs = sets[setIndex];
+	var steps = ornBaseTones(pcs) * (ornOffsets.length + 1);
+	var seen = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], out = [], i, p;
+	for (i = 0; i < steps; i++) {
+		p = ((ornamentPitchAt(i, pcs) % 12) + 12) % 12;
+		if (!seen[p]) { seen[p] = 1; out.push(p); }
+	}
+	out.sort(function (a, b) { return a - b; });
+	return out;
+}
+
 // How long one pass of the SHAPE is, before direction is taken into account. `mode` defaults to
 // the global readMode so the shared-clock call site (which passes nothing) is untouched; a voice
 // with its own Patron override passes its own mode explicitly instead.
@@ -3657,6 +3830,7 @@ function shapeCycleLength(n, mode) {
 		return permList.length * n;
 	}
 	if (mode === READ_MODOS) return n * n;   // n modes, n degrees each
+	if (mode === READ_ORNAMENT) return ornCycleSteps();
 	return n;
 }
 
@@ -3725,6 +3899,9 @@ function voiceReadDirOf(idx) {
 // to change, so no reading order is ever cut off half way -- a superpermutation gets to finish,
 // and a pendulum gets to come back, before the harmony moves.
 function readCycleLength(n) {
+	// readDir 1 (atras) reverses the whole ornamented run in step(); dir 2 (pendulum) is treated
+	// as plain ascending here -- a pendulum over the base is deferred, so the pass is not doubled.
+	if (readMode === READ_ORNAMENT) return ornCycleSteps();
 	var L = shapeCycleLength(n);
 	if (readDir === 2 && L > 1) return 2 * L - 2;
 	return L;
@@ -3769,8 +3946,17 @@ function emitVoicesIndependent(pcs, n) {
 		// only when the set does -- four voices at offsets 0,1,2,3 read as a four-part chorale.
 		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
 		var readIdx = (mode === 1) ? pos : 0;
-		var pc = pitchForDegree(pcs,
-			degreeAt(n, readIdx, voiceReadModeOf(v), voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+		var vMode = voiceReadModeOf(v);
+		var pc;
+		if (((vMode === undefined) ? readMode : vMode) === READ_ORNAMENT) {
+			// Shared ornament (offsets are global in this phase); each voice runs it from its own
+			// cursor. Grado / modDeg fold the SET as a degree offset, which the ornament base does
+			// not take -- so ignored here (Base=Grados still reads the set through ornamentPitchAt).
+			pc = ornamentPitchAt(readIdx, pcs);
+		} else {
+			pc = pitchForDegree(pcs,
+				degreeAt(n, readIdx, vMode, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+		}
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
 		var note = drumOn ? padFor(pc)
@@ -3921,7 +4107,14 @@ function step() {
 		// which would only fight it.
 		var deg = degreeAt(n, noteIndex);
 		sharedSoundPos = noteIndex;
-		if (readMode === READ_MODOS) {
+		if (readMode === READ_ORNAMENT) {
+			// The ornament plays one line for every voice (no ctxPcs), differing only by
+			// octave/register -- voice Grado harmonising it is Fase 2. Base=Intervalo notes are not
+			// set members; Base=Grados principal tones are, but ornamentPitchAt still owns that.
+			// dir 1 reverses the whole run; the base itself is otherwise read ascending.
+			var op = (readDir === 1) ? (readCycleLength(n) - 1 - noteIndex) : noteIndex;
+			emitVoices(MELODY_BASE + ornamentPitchAt(op, pcs));
+		} else if (readMode === READ_MODOS) {
 			emitVoices(MELODY_BASE + pitchForDegree(pcs, deg + modDeg()), pcs, deg + modDeg());
 		} else {
 			var pidx = ((deg + rotation + manualRot + modDeg()) % n + n) % n;
@@ -3997,6 +4190,53 @@ function setcoprime(k) {
 	coprimeSkip = Math.round(k);
 	if (!isFinite(coprimeSkip) || coprimeSkip < 1) coprimeSkip = 1;
 	if (coprimeSkip > 11) coprimeSkip = 11;
+}
+
+// --- READ_ORNAMENT setters. Each rebuilds the offset list and restarts the pass, the same as a
+// change of reading order does -- the cell has changed shape, so the old cursor means nothing.
+function setornbaseinterval(v) {
+	ornBaseInterval = Math.round(v);
+	if (!isFinite(ornBaseInterval) || ornBaseInterval < 1) ornBaseInterval = 1;
+	if (ornBaseInterval > 14) ornBaseInterval = 14;
+	buildOrnOffsets();
+	resetReadWalk();
+}
+
+function setorntype(t) {
+	ornType = Math.round(t);
+	if (!isFinite(ornType) || ornType < 0) ornType = 0;
+	if (ornType > ORN_TYPE_MAX) ornType = ORN_TYPE_MAX;
+	buildOrnOffsets();
+	resetReadWalk();
+}
+
+function setorncount(c) {
+	ornCount = Math.round(c);
+	if (!isFinite(ornCount) || ornCount < 1) ornCount = 1;
+	if (ornCount > 4) ornCount = 4;
+	buildOrnOffsets();
+	resetReadWalk();
+}
+
+// Base layout: 0 = step the root by ornBaseInterval (equal division), 1 = walk the set's degrees
+// ornBaseStep apart. These do not touch ornOffsets, but the base cycle length and the resulting
+// scale both change, so restart the walk, repaint the readouts and re-emit the ornament scale.
+function setornbasemode(m) {
+	ornBaseMode = Math.round(m);
+	if (!isFinite(ornBaseMode) || ornBaseMode < 0) ornBaseMode = 0;
+	if (ornBaseMode > ORN_BASE_DEGREES) ornBaseMode = ORN_BASE_DEGREES;
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
+}
+
+function setornbasestep(s) {
+	ornBaseStep = Math.round(s);
+	if (!isFinite(ornBaseStep) || ornBaseStep < 1) ornBaseStep = 1;
+	if (ornBaseStep > 4) ornBaseStep = 4;
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
 }
 
 // --- articulation setters --------------------------------------------------------------
