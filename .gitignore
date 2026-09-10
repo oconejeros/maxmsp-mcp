@@ -214,6 +214,12 @@ forteseq/Bigo_et_al_CMJ15.pdf
 # de multichord/Chordscape -- material con derechos, no codigo del proyecto.
 forteseq/Geometry_of_Music*.pdf
 
+# Thesaurus of Scales and Melodic Patterns (Slonimsky, escaneado) y la reinterpretacion de
+# Cochrane, "Beyond Slonimsky" -- material de referencia con derechos de autor para la
+# integracion del ornamento (READ_ORNAMENT) en FORTESEQ2, no codigo del proyecto.
+forteseq/Nicolas20-20Of20And20Patterns.pdf
+forteseq/Cochrane__-__Beyond_Slonimsky.pdf
+
 # Archivos .rar generados localmente (snapshots), no fuente.
 *.rar
 
