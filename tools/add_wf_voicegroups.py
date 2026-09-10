@@ -68,9 +68,9 @@ def numbox_vo(longname, shortname, mmin, mmax, initial):
     }
 
 
-def toggle_vo(longname, shortname):
+def toggle_vo(longname, shortname, initial=0):
     return {
-        'parameter_initial': [0], 'parameter_initial_enable': 1,
+        'parameter_initial': [initial], 'parameter_initial_enable': 1,
         'parameter_longname': longname, 'parameter_shortname': shortname,
         'parameter_mmax': 1, 'parameter_enum': ['off', 'on'],
         'parameter_modmode': 0, 'parameter_type': 2, 'parameter_unitstyle': 9,
@@ -176,7 +176,9 @@ def main():
                    also_to=(MAKENOTE[i], MAKENOTE_CHAN_INLET))
 
     # ---- bus address + on/off -------------------------------------------------------------------
-    add_numbox('wf_bus', 'Bus del motor', 'Bus', 1, 16, 1, 'setbus', bus_x, ROW_Y[1], BUS_W,
+    # Default bus 2 + on: matches forteseqwftrig.amxd's "Bus EVENFLOW" = 2 so the NOTES->TRIG
+    # bridge works with nothing touched (see tools/fix_wf_bus_default.py for the in-place patch).
+    add_numbox('wf_bus', 'Bus del motor', 'Bus', 1, 16, 2, 'setbus', bus_x, ROW_Y[1], BUS_W,
                'Direccion del bus FORTESEQ (1-16) para la difusion send FORTESEQ_NOTES. '
                'Es una direccion, no se guarda con los presets.')
     bid = box(id=fresh(), maxclass='live.toggle', numinlets=1, numoutlets=1, outlettype=[''],
@@ -184,8 +186,8 @@ def main():
               patching_rect=patch_rect(24.0), presentation_rect=[bus_x + BUS_W + 8.0, ROW_Y[1], 18.0, 18.0],
               annotation=('Difunde cada onset por send FORTESEQ_NOTES como '
                           '[bus, grupo, vel, dur, pitch]; un device Hub en RECIBIR con Voz = numero '
-                          'de grupo recoge ese grupo en otra pista. Apagado por defecto.'),
-              saved_attribute_attributes={'valueof': toggle_vo('Bus On', 'Bus On')})
+                          'de grupo recoge ese grupo en otra pista. Encendido por defecto.'),
+              saved_attribute_attributes={'valueof': toggle_vo('Bus On', 'Bus On', 1)})
     PP[bid] = ['Bus On', 'Bus On', 0]
     new_param_ids.append(bid)
     pp = box(id=fresh(), maxclass='newobj', numinlets=1, numoutlets=1, outlettype=[''],

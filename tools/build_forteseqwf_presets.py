@@ -37,7 +37,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEVICE = os.path.join(ROOT, 'forteseq', 'forteseqwf.amxd')
 JS = os.path.join(ROOT, 'forteseq', 'forteseqwf.js')
 
-PRESET_SLOTS = 20   # MUST match PRESET_SLOTS in forteseqwf.js
+PRESET_SLOTS = 64   # MUST match PRESET_SLOTS in forteseqwf.js
 
 # --- level-table toggle renames: box id -> (longname, shortname) --------------------------
 TOGGLE_RENAMES = {

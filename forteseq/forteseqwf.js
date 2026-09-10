@@ -388,6 +388,40 @@ var MARKER_RMAX = 6.0;
 var MARKER_SMAX = { n: 5, phi: 3, delta: 3, sigma: 3 };
 var MARKERS = generateMarkers(MARKER_RMAX, MARKER_SMAX);
 
+// --- pulse-ordered catalog: the marker list the "Ritmos" popup shows, sorted by how isochronous
+// each MOS actually is at the current base (m, n) ------------------------------------------------
+//
+// Every MARKERS entry is a distinct r-slider tick; buildCatalog annotates each with
+// isochronyOutlook(m, n, r) -- the hierarchy level where its r-map hits 1 and the ONSET COUNT of
+// that isochronous grid -- then sorts most-even first. The onset count is (m,n)-dependent (a
+// step of the r-map grows the word by m), so the list is rebuilt whenever M or N changes; the
+// vcatmeta frame carries the base it was computed at. PURE: only isochronyOutlook (arithmetic)
+// and Array.sort -- no rng, no cycleIndex, no Task (see the querynext-urn-trap note in the
+// forteseq2 horizon work; a pull query must never touch a random-draw stream).
+//   row = { r, family, mkLevel, isoLevel, pulses, capped }
+//     capped = 1  -> metallic / deeply non-isochronous: r cycles, never reaches 1
+//                    (isoLevel / pulses reported as -1); sorted last, by r
+function buildCatalog(m, n) {
+	var out = [];
+	for (var i = 0; i < MARKERS.length; i++) {
+		var mk = MARKERS[i];
+		var ol = isochronyOutlook(m, n, mk.r, 128);   // wider budget than the default 64 so slow rationals aren't mis-capped
+		out.push({
+			r: mk.r, family: mk.family, mkLevel: mk.level,
+			isoLevel: ol.capped ? -1 : ol.level,
+			pulses: ol.capped ? -1 : ol.pulses,
+			capped: ol.capped ? 1 : 0
+		});
+	}
+	out.sort(function (a, b) {
+		if (a.capped !== b.capped) return a.capped - b.capped;            // reachable first
+		if (!a.capped && a.pulses !== b.pulses) return a.pulses - b.pulses; // fewer onsets = more isochronous
+		if (!a.capped && a.isoLevel !== b.isoLevel) return a.isoLevel - b.isoLevel;
+		return a.r - b.r;
+	});
+	return out;
+}
+
 // --- config snapshot + interpolation: the shape a preset slot stores and a morph blends --------
 //
 // One plain object holds a complete WF setup. It is what storepreset() writes, what recallpreset()
@@ -767,8 +801,12 @@ var levelDur = [100, 100, 100, 100, 100, 100];
 // to N -- byte-identical to the pre-routing engine.
 var levelGroup = [1, 2, 3, 4, 5, 6];
 var groupChannel = [1, 2, 3, 4, 5, 6];
-var busId = 1;    // FORTESEQ_NOTES bus address 1..16 -- an address, deliberately NOT in the config dict
-var busOn = 0;    // 1 = also broadcast every onset on `send FORTESEQ_NOTES` (default off -> no extra traffic)
+// Default bus 2 + on: the NOTES->TRIG bridge (forteseqwftrig.amxd) ships listening on
+// "Bus EVENFLOW" = 2, so a fresh pair of devices talks with nothing touched. Still just an
+// address (not in the config dict); the .amxd param defaults (wf_bus / wf_buson) match, and
+// loadbang re-emits them, so this is only the source-of-truth fallback if the patch is silent.
+var busId = 2;    // FORTESEQ_NOTES bus address 1..16 -- an address, deliberately NOT in the config dict
+var busOn = 1;    // 1 = also broadcast every onset on `send FORTESEQ_NOTES`
 
 var periodMs = 2000;
 
@@ -787,7 +825,10 @@ var transportPlaying = 0;
 // the stored slots, feeding startCycle() directly. morphEngaged() gates the whole thing: with
 // morphA and morphB both 0 the engine runs exactly as it did before any of this was added.
 var PRESET_FILE = "forteseqwf_presets.txt";
-var PRESET_SLOTS = 20;
+// 64 slots. The bank is a sparse array and the only per-slot work is on disk save/load (once) and
+// sendPresetList()'s one small string on Store/Recall/Clear -- startCycle() never touches it, so
+// there is no per-cycle / audio cost to raising this.
+var PRESET_SLOTS = 64;
 var presetSlot = 1;
 var presetBank = [];              // slot -> config (+ optional __name); index 0 unused
 var morphA = 0, morphB = 0, morphX = 0, morphRLinear = 0, quantizeR = 0;
@@ -850,7 +891,12 @@ function setrun(v) {
 	if (!running) stopAllTasks();
 	else cycleIndex = 0;   // restart the RNG stream so a re-trigger reproduces the same sequence
 }
-function setperiod(ms) { ms = Number(ms); if (isFinite(ms)) periodMs = clampInt(ms, MIN_PERIOD_MS, MAX_PERIOD_MS); }
+// uiEcho: repaint the matching Live panel control after a setter runs, so the popup and the panel
+// stay mirrored (they route through wf_ui_demux via `prepend set`, so no outlet re-fire / no loop).
+// emitConfigUI() does the whole set on recall; these single echoes cover live edits.
+function uiEcho(tok, val) { outlet(0, "ui", tok, val); }
+
+function setperiod(ms) { mo('period'); ms = Number(ms); if (isFinite(ms)) periodMs = clampInt(ms, MIN_PERIOD_MS, MAX_PERIOD_MS); uiEcho("period", periodMs); }
 
 // Tempo sync: when on, periodMs is DERIVED (beatsPerPeriod * ms-per-beat) instead of set directly by
 // setperiod(). settempo() is fed by a live.observer on the Live Set's tempo property in the patch (see
@@ -873,7 +919,7 @@ function recomputeSyncedPeriod() {
 	// level-ladder diagnostic uses tag 0 -- neither collides with -1.
 	outlet(0, -1, periodMs);
 }
-function setsynctempo(v) { syncTempo = v ? 1 : 0; recomputeSyncedPeriod(); }
+function setsynctempo(v) { mo('sync'); syncTempo = v ? 1 : 0; recomputeSyncedPeriod(); uiEcho("sync", syncTempo); }
 // In sync mode a stopped transport means "no cycles". Kill any Tasks already in flight so the tail
 // does not ring out; the free-running metro keeps ticking and startCycle()'s gate silently drops
 // each cycle until the transport starts again (then the next tick plays -- no Run re-toggle).
@@ -882,41 +928,42 @@ function settransport(v) {
 	transportPlaying = v ? 1 : 0;
 	if (syncTempo && !transportPlaying) stopAllTasks();
 }
-function setbeatsperperiod(v) { beatsPerPeriod = clampFloat(Number(v), MIN_BEATS_PER_PERIOD, MAX_BEATS_PER_PERIOD); recomputeSyncedPeriod(); }
+function setbeatsperperiod(v) { mo('beats'); beatsPerPeriod = clampFloat(Number(v), MIN_BEATS_PER_PERIOD, MAX_BEATS_PER_PERIOD); recomputeSyncedPeriod(); uiEcho("bpp", beatsPerPeriod); }
 function settempo(bpm) { bpm = Number(bpm); if (isFinite(bpm) && bpm > 0) { liveTempo = bpm; recomputeSyncedPeriod(); } }
 
-function setm(v) { baseM = clampInt(v, 1, MAX_MN); }
-function setn(v) { baseN = clampInt(v, 0, MAX_MN); }
+function setm(v) { mo('m'); baseM = clampInt(v, 1, MAX_MN); uiEcho("m", baseM); if (vizActive) emitCatalog(); }
+function setn(v) { mo('n'); baseN = clampInt(v, 0, MAX_MN); uiEcho("n", baseN); if (vizActive) emitCatalog(); }
 
 // setr also owns the "quantize to nearest r-slider marker" behaviour: when quantizeR is on, an
 // incoming value snaps to the closest MARKERS entry, and the snapped value is pushed BACK to the
 // wf_r control as a `set` (display only, no outlet -- see the "ui" tag) so the knob stops lying.
 // The morph path deliberately never comes through here, so a sweep is never stair-stepped.
 function setr(v) {
+	mo('r');
 	v = Number(v);
 	if (!(isFinite(v) && v >= 1)) return;
 	if (quantizeR && MARKERS.length) {
 		var snapped = nearestMarker(v, MARKERS).r;
-		if (snapped !== v) { v = snapped; baseR = v; outlet(0, "ui", "r", baseR); }
-		else baseR = v;
+		baseR = (snapped !== v) ? snapped : v;
 	} else {
 		baseR = v;
 	}
+	uiEcho("r", baseR);   // repaint wf_r on every edit (not just when the quantizer snapped)
 	outlet(0, "markertag", markerTagString(baseR, MARKERS, 1e-6));
 }
 
-function setlevels(v) { v = Math.round(v); if (v >= 1 && v <= MAX_LEVELS) numLevels = v; }
-function setlevelon(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelOn[i] = v ? 1 : 0; }
-function setleveluc(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelUC[i] = v ? 1 : 0; }
-function setlevellr(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelReverse[i] = v ? 1 : 0; }
-function setlevelpitch(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelPitch[i] = Math.round(v); }
-function setlevelvel(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelVel[i] = Math.round(v); }
-function setleveldur(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelDur[i] = Math.round(v); }
+function setlevels(v) { mo('levels'); v = Math.round(v); if (v >= 1 && v <= MAX_LEVELS) numLevels = v; uiEcho("levels", numLevels); }
+function setlevelon(lv, v) { mo('on'); var i = levelIndex(lv); if (i < 0) return; levelOn[i] = v ? 1 : 0; uiEcho("on" + (i + 1), levelOn[i]); }
+function setleveluc(lv, v) { mo('uc'); var i = levelIndex(lv); if (i < 0) return; levelUC[i] = v ? 1 : 0; uiEcho("uc" + (i + 1), levelUC[i]); }
+function setlevellr(lv, v) { mo('lr'); var i = levelIndex(lv); if (i < 0) return; levelReverse[i] = v ? 1 : 0; if (i < MAX_LEVELS - 1) uiEcho("lr" + (i + 1), levelReverse[i]); }
+function setlevelpitch(lv, v) { mo('pitch'); var i = levelIndex(lv); if (i < 0) return; levelPitch[i] = Math.round(v); uiEcho("p" + (i + 1), levelPitch[i]); }
+function setlevelvel(lv, v) { mo('vel'); var i = levelIndex(lv); if (i < 0) return; levelVel[i] = Math.round(v); }
+function setleveldur(lv, v) { mo('dur'); var i = levelIndex(lv); if (i < 0) return; levelDur[i] = Math.round(v); }
 
 // --- probability + per-step ------------------------------------------------------------------
-function setglobalprob(v) { globalProb = clampInt(v, 0, 100); }
-function setlevelprob(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelProb[i] = clampInt(v, 0, 100); }
-function setlevelstep(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelStep[i] = clampInt(v, 1, 8); }
+function setglobalprob(v) { mo('gprob'); globalProb = clampInt(v, 0, 100); uiEcho("gprob", globalProb); }
+function setlevelprob(lv, v) { mo('lprob'); var i = levelIndex(lv); if (i < 0) return; levelProb[i] = clampInt(v, 0, 100); uiEcho("lprob" + (i + 1), levelProb[i]); }
+function setlevelstep(lv, v) { mo('lstep'); var i = levelIndex(lv); if (i < 0) return; levelStep[i] = clampInt(v, 1, 8); uiEcho("lstep" + (i + 1), levelStep[i]); }
 
 // --- output routing -------------------------------------------------------------------------
 // setlevelgroup / setgroupchannel keep levelGroup[] / groupChannel[] in step with the per-level
@@ -924,27 +971,28 @@ function setlevelstep(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelS
 // channel directly; the engine copy is for preset persistence + the visualiser label). setbus /
 // setbuson gate the parallel `send FORTESEQ_NOTES` broadcast -- voice index on the bus is the
 // GROUP number, so a single Hub RECIBIR per group index picks up a whole group with no Hub change.
-function setlevelgroup(lv, g) { var i = levelIndex(lv); if (i < 0) return; levelGroup[i] = clampInt(g, 1, MAX_LEVELS); }
-function setgroupchannel(g, ch) { g = Math.round(g); if (g >= 1 && g <= MAX_LEVELS) groupChannel[g - 1] = clampInt(ch, 1, 16); }
+function setlevelgroup(lv, g) { mo('lgroup'); var i = levelIndex(lv); if (i < 0) return; levelGroup[i] = clampInt(g, 1, MAX_LEVELS); uiEcho("lgroup" + (i + 1), levelGroup[i]); }
+function setgroupchannel(g, ch) { mo('gchan'); g = Math.round(g); if (g >= 1 && g <= MAX_LEVELS) { groupChannel[g - 1] = clampInt(ch, 1, 16); uiEcho("gchan" + g, groupChannel[g - 1]); } }
 function setbus(b) { b = Math.round(b); if (isFinite(b) && b >= 1 && b <= 16) busId = b; }
 function setbuson(v) { busOn = v ? 1 : 0; }
-function setseed(v) { v = Math.round(Number(v)); if (isFinite(v)) rngSeed = (v >>> 0) || 1; }
+function setseed(v) { mo('seed'); v = Math.round(Number(v)); if (isFinite(v)) rngSeed = (v >>> 0) || 1; uiEcho("seed", rngSeed); }
 
 // --- articulation / accent ------------------------------------------------------------------
-function setarton(v) { artOn = v ? 1 : 0; }
+function setarton(v) { mo('arton'); artOn = v ? 1 : 0; uiEcho("arton", artOn); }
 function setaccentgrid() {
+	mo('agrid');
 	for (var i = 0; i < 16; i++) accentGrid[i] = (i < arguments.length && arguments[i]) ? 1 : 0;
 }
-function setaccentcycle(c) { accentCycle = clampInt(c, 1, 16); applyEuclid(); }
-function setaccenttie(t) { accentTieWord = t ? 1 : 0; }
-function seteuclid(on) { euclidOn = on ? 1 : 0; applyEuclid(); }
-function seteuclidk(k) { euclidK = clampInt(k, 0, 16); applyEuclid(); }
-function seteuclidrot(r) { euclidRot = clampInt(r, 0, 15); applyEuclid(); }
-function setlevelphase(lv, v) { var i = levelIndex(lv); if (i < 0) return; levelPhase[i] = clampInt(v, 0, 15); }
-function setgroupvelmin(g, v) { g = Math.round(g); if (g === 0 || g === 1) groupVelMin[g] = clampInt(v, 1, 127); }
-function setgroupvelmax(g, v) { g = Math.round(g); if (g === 0 || g === 1) groupVelMax[g] = clampInt(v, 1, 127); }
-function setgroupfigura(g, v) { g = Math.round(g); if (g === 0 || g === 1) groupFigura[g] = clampInt(v, 1, 32); }
-function setgroupsilence(g, v) { g = Math.round(g); if (g === 0 || g === 1) groupSilence[g] = clampInt(v, 0, 100); }
+function setaccentcycle(c) { mo('acyc'); accentCycle = clampInt(c, 1, 16); applyEuclid(); uiEcho("acyc", accentCycle); }
+function setaccenttie(t) { mo('atie'); accentTieWord = t ? 1 : 0; uiEcho("atie", accentTieWord); }
+function seteuclid(on) { mo('aeuc'); euclidOn = on ? 1 : 0; applyEuclid(); uiEcho("aeuc", euclidOn); }
+function seteuclidk(k) { mo('aeuck'); euclidK = clampInt(k, 0, 16); applyEuclid(); uiEcho("aeuck", euclidK); }
+function seteuclidrot(r) { mo('aeucr'); euclidRot = clampInt(r, 0, 15); applyEuclid(); uiEcho("aeucr", euclidRot); }
+function setlevelphase(lv, v) { mo('aphase'); var i = levelIndex(lv); if (i < 0) return; levelPhase[i] = clampInt(v, 0, 15); uiEcho("aphase" + (i + 1), levelPhase[i]); }
+function setgroupvelmin(g, v) { g = Math.round(g); mo(g ? 'avmin' : 'nvmin'); if (g === 0 || g === 1) { groupVelMin[g] = clampInt(v, 1, 127); uiEcho((g ? "av" : "nv") + "min", groupVelMin[g]); } }
+function setgroupvelmax(g, v) { g = Math.round(g); mo(g ? 'avmax' : 'nvmax'); if (g === 0 || g === 1) { groupVelMax[g] = clampInt(v, 1, 127); uiEcho((g ? "av" : "nv") + "max", groupVelMax[g]); } }
+function setgroupfigura(g, v) { g = Math.round(g); mo(g ? 'afig' : 'nfig'); if (g === 0 || g === 1) { groupFigura[g] = clampInt(v, 1, 32); uiEcho((g ? "af" : "nf") + "ig", groupFigura[g]); } }
+function setgroupsilence(g, v) { g = Math.round(g); mo(g ? 'asil' : 'nsil'); if (g === 0 || g === 1) { groupSilence[g] = clampInt(v, 0, 100); uiEcho((g ? "as" : "ns") + "il", groupSilence[g]); } }
 
 // Regenerate the accent grid from the Euclidean control trio and echo it back to the toggles.
 // Only fires while Euclid is on; the "accentgrid" tag rides wf_engine's single outlet like the
@@ -1014,6 +1062,8 @@ function applyConfig(c) {
 	groupVelMin[1] = clampInt(c.avmin, 1, 127); groupVelMax[1] = clampInt(c.avmax, 1, 127);
 	groupFigura[1] = clampInt(c.afig, 1, 32);   groupSilence[1] = clampInt(c.asil, 0, 100);
 	if (syncTempo) recomputeSyncedPeriod();
+	// m/n may have changed -- the "Ritmos" catalog is (m,n)-dependent, so refresh it if open.
+	if (vizActive) emitCatalog();
 }
 
 // Push a config out to the visible controls after a recall. `set` (not the raw value) so each
@@ -1089,10 +1139,12 @@ function sendPresetName(s) {
 	outlet(0, "presetname", (c && c.__name) ? c.__name : "-");
 }
 
+// Compact "which slots are filled" for the readout comment -- at 64 slots a fixed "- - - -" grid
+// no longer fits, so list the occupied slot numbers instead. Nothing parses this string.
 function sendPresetList() {
-	var s = "";
-	for (var i = 1; i <= PRESET_SLOTS; i++) s += (i > 1 ? " " : "") + (presetBank[i] ? i : "-");
-	outlet(0, "presetslots", s);
+	var filled = [];
+	for (var i = 1; i <= PRESET_SLOTS; i++) if (presetBank[i]) filled.push(i);
+	outlet(0, "presetslots", filled.length ? ("llenos (" + filled.length + "): " + filled.join(" ")) : "(vacio)");
 }
 
 function setpresetname(slot, name) {
@@ -1107,13 +1159,17 @@ function setpresetname(slot, name) {
 function storepreset(slot) {
 	var s = presetSlotOf(slot);
 	if (s < 0) return;
-	var c = configFromCurrent();
+	// While morphing, capture what is actually SOUNDING (blend + any live overrides), not the
+	// pre-morph working vars -- "morph, tweak, then Store the result" works with no extra step.
+	var c = morphEngaged() ? activeConfig() : configFromCurrent();
+	delete c.__name;
 	var old = presetBank[s] && presetBank[s].__name;
 	if (old) c.__name = old;   // re-storing over a named slot keeps its label
 	presetBank[s] = c;
 	savepresets();
 	sendPresetList();
 	sendPresetName(s);
+	emitPresetSlots();
 	post("forteseqwf: slot " + s + " guardado\n");
 }
 
@@ -1124,6 +1180,10 @@ function recallpreset(slot) {
 	if (!c) { post("forteseqwf: slot " + s + " vacio\n"); return; }
 	applyConfig(c);
 	emitConfigUI(c);
+	// A plain recall replaces everything: drop any live morph overrides, and if Morph A/B were
+	// left pointed at slots, zero them (applyConfig already loaded the slot -- nothing to bake).
+	morphTouched = {};
+	if (morphA !== 0 || morphB !== 0) { morphA = 0; morphB = 0; outlet(0, "morpha", 0); outlet(0, "morphb", 0); restoreMetroPeriod(); }
 	post("forteseqwf: slot " + s + " cargado\n");
 }
 
@@ -1134,6 +1194,7 @@ function clearpreset(slot) {
 	savepresets();
 	sendPresetList();
 	sendPresetName(s);
+	emitPresetSlots();
 	post("forteseqwf: slot " + s + " borrado\n");
 }
 
@@ -1192,6 +1253,7 @@ function loadpresets() {
 	f.close();
 	sendPresetList();
 	sendPresetName(presetSlot);
+	emitPresetSlots();
 	post("forteseqwf: " + count + " slots leidos\n");
 }
 
@@ -1202,17 +1264,44 @@ function restoreMetroPeriod() {
 	else outlet(0, -1, periodMs);
 }
 
-function setmorph(x) { morphX = clampFloat(Number(x), 0, 1); }
+// morphTouched: while a morph is armed (Morph A or B non-zero), any generative field the user
+// edits is recorded here by name. activeConfig() then takes those fields from the LIVE vars
+// instead of the A<->B blend -- so tweaking R / M / a toggle while morphing adjusts exactly that
+// one thing and the morph keeps running underneath, instead of collapsing the morph. Cleared on
+// a full disengage (both selectors -> 0, which bakes the last blend) and on recall.
+var morphTouched = {};
+
+function morphArmed() { return !(morphA === 0 && morphB === 0); }
+function mo(field) { if (morphArmed()) morphTouched[field] = 1; }
+
+// Drop every per-field override -> the morph goes back to the pure A<->B blend. The popup calls
+// this from the "fijo, no morfea" readout; overrides otherwise persist until recall / full
+// disengage, so after a long editing pass they can pile up and freeze most of the morph.
+function clearmorphtouched() { morphTouched = {}; }
+
+function setmorph(x) {
+	morphX = clampFloat(Number(x), 0, 1);
+	outlet(0, "morphx", morphX);   // repaint the Live "Morph" knob (jsui wheel drives this too)
+}
 function setmorphrlinear(v) { morphRLinear = v ? 1 : 0; }
 function setquantizer(v) { quantizeR = v ? 1 : 0; if (quantizeR) setr(baseR); }
 
+// Setting BOTH selectors to 0 = deliberately ending the morph: bake the last sounding blend
+// (blend + any per-field overrides) into the live vars so nothing jumps, and drop the overrides.
+function disengageMorph(pre) {
+	if (pre) { applyConfig(pre); emitConfigUI(pre); }
+	morphTouched = {};
+	restoreMetroPeriod();
+}
 function setmorpha(v) {
+	var pre = morphEngaged() ? activeConfig() : null;
 	morphA = clampInt(v, 0, PRESET_SLOTS);
-	if (morphA === 0 && morphB === 0) restoreMetroPeriod();
+	if (morphA === 0 && morphB === 0) disengageMorph(pre);
 }
 function setmorphb(v) {
+	var pre = morphEngaged() ? activeConfig() : null;
 	morphB = clampInt(v, 0, PRESET_SLOTS);
-	if (morphA === 0 && morphB === 0) restoreMetroPeriod();
+	if (morphA === 0 && morphB === 0) disengageMorph(pre);
 }
 
 // Slot 0, or an empty slot, resolves to the current edited state -- so "morph from what I have now
@@ -1225,14 +1314,27 @@ function morphEngaged() {
 	return running && !(morphA === 0 && morphB === 0);
 }
 
-// The config a cycle actually plays when a morph is engaged, else null (startCycle falls back to
-// configFromCurrent). If the blended config wants Sync, its period is re-derived from the live
-// host tempo here, overriding whatever ms the two slots stored.
-function activeConfig() {
-	if (!morphEngaged()) return null;
+// The A<->B blend as it would sound right now: lerp the two slots, re-derive the sync period from
+// the host tempo (overriding whatever ms the slots stored), then overlay every field the user has
+// touched since the morph began from the live vars -- so a live edit pins exactly that one field
+// while the rest of the morph keeps moving. `emitMorphPreview` draws this same config for the
+// popup's blend ring, so what you see there matches what you hear, overrides included.
+function blendConfig() {
 	var c = lerpConfig(resolveMorphSlot(morphA), resolveMorphSlot(morphB), morphX, morphRLinear);
 	if (c.sync) c.period = clampInt(c.beats * (60000 / liveTempo), MIN_PERIOD_MS, MAX_PERIOD_MS);
+	var live = null;
+	for (var f in morphTouched) {
+		if (!morphTouched.hasOwnProperty(f)) continue;
+		if (!live) live = configFromCurrent();
+		c[f] = (live[f] && live[f].slice) ? live[f].slice() : live[f];
+	}
 	return c;
+}
+
+// What a cycle actually plays when a morph is engaged, else null (startCycle falls back to
+// configFromCurrent).
+function activeConfig() {
+	return morphEngaged() ? blendConfig() : null;
 }
 
 function stopAllTasks() {
@@ -1382,12 +1484,47 @@ function bang() { startCycle(); }
 
 function vizon(v) {
 	vizActive = v ? 1 : 0;
-	if (vizActive) querycycle();
+	if (vizActive) { querycycle(); querycatalog(); emitPresetSlots(); }
 }
 
 function querycycle() {
 	if (!vizActive) return;
 	emitVizFrame();
+}
+
+// The pulse-ordered MOS catalog for the popup's rhythm selector. Rides the same `route viz` arm
+// as emitVizFrame; a pull (querycatalog message from the popup) plus a push whenever M/N change
+// (see setm/setn/applyConfig) -- the catalog depends ONLY on (m,n), so a per-frame recompute at
+// the ~8 Hz viz metro would be wasted work. Pure (buildCatalog is pure); never mutates engine
+// state.
+//   viz vcatmeta <count> <m> <n>      -- open a fresh catalog buffer; (m,n) the pulses are for
+//   viz vcat <idx> <r> <family> <isoLevel> <pulses> <capped> <mkLevel>   -- one sorted row
+//                                        family in n|phi|delta|sigma; isoLevel/pulses = -1 if capped
+//   viz vcatend <count>               -- swap the buffer in, redraw the strip, rebuild the umenu
+function emitCatalog() {
+	var cat = buildCatalog(baseM, baseN);
+	outlet(0, "viz", "vcatmeta", cat.length, baseM, baseN);
+	for (var i = 0; i < cat.length; i++) {
+		var e = cat[i];
+		outlet(0, "viz", "vcat", i, e.r, e.family, e.isoLevel, e.pulses, e.capped, e.mkLevel);
+	}
+	outlet(0, "viz", "vcatend", cat.length);
+}
+
+function querycatalog() {
+	if (!vizActive) return;
+	emitCatalog();
+}
+
+// Which slots hold a preset -> the popup's Morph A / Morph B slot pickers (so you can choose the
+// two ends of the morph from the visual). Rides `route viz`; pushed on popup open and after any
+// Store / Clear / disk load -- the filled set only changes then.
+//   viz vslots <count> <slot..>
+function emitPresetSlots() {
+	if (!vizActive) return;
+	var filled = [];
+	for (var i = 1; i <= PRESET_SLOTS; i++) if (presetBank[i]) filled.push(i);
+	outlet.apply(this, [0, "viz", "vslots", filled.length].concat(filled));
 }
 
 function vizEmit(sel, arr) { outlet.apply(this, [0, "viz", sel].concat(arr)); }
@@ -1406,6 +1543,16 @@ function vizEmit(sel, arr) { outlet.apply(this, [0, "viz", sel].concat(arr)); }
 //   vonsets <lv> 1 <nKept> <t0 a0 t1 a1..>   after U/C + Step; a = accent flag (0 Normal / 1 Accent)
 //   vonsets <lv> 2 <nDrop> <t0..>            onsets removed by Step -> ghosted
 //   vend    <levelCount>
+//   vcatmeta <count> <m> <n>                 catalog buffer open (see emitCatalog)
+//   vcat    <idx> <r> <family> <isoLevel> <pulses> <capped> <mkLevel>
+//   vcatend <count>
+//   vslots  <count> <slot..>                 slots holding a preset (Morph A/B pickers)
+//   vmorphprev off                           no morph engaged
+//   vmorphprev <0=A|1=B|2=blend> <r> <m> <n> <levels> <nOnsets> <t0..>   normalised onset ring
+//                                            (blend = the A<->B lerp WITH your per-field overrides)
+//   vmorphx <morphX> <linear 0|1> <slotA> <slotB>
+//   vmorphover <count> <field..>             fields you edited since the morph began -> held fixed
+//   vglob <m> <n> <levels> <gprob> <seed> <sync 0|1> <beats> <r>   editable globals for the popup
 function emitVizFrame() {
 	var cfg = activeConfig() || configFromCurrent();
 	var reverseFlags = cfg.lr.slice(0, Math.max(0, cfg.levels - 1));
@@ -1416,6 +1563,7 @@ function emitVizFrame() {
 
 	outlet(0, "viz", "vcycle", cycleIndex);
 	outlet(0, "viz", "vperiod", cfg.period);
+	outlet(0, "viz", "vglob", cfg.m, cfg.n, cfg.levels, cfg.gprob, cfg.seed, cfg.sync ? 1 : 0, cfg.beats, cfg.r);
 	outlet(0, "viz", "vmorph", morphEngaged() ? 1 : 0, morphA, morphB, morphX);
 	var ol = isochronyOutlook(cfg.m, cfg.n, cfg.r);
 	outlet(0, "viz", "viso", ol.level, ol.pulses, ol.capped ? 1 : 0);
@@ -1473,6 +1621,44 @@ function emitVizFrame() {
 		vizEmit("vonsets", [lv, 2, drop[lv].length].concat(drop[lv]));
 	}
 	outlet(0, "viz", "vend", h.length);
+	emitMorphPreview();
+}
+
+// A tiny "what am I about to morph" preview for the popup: an onset ring for slot A, slot B, and
+// the current blend, plus morphX. Uses a SHALLOW level (0, or 1 if level 0 is off) -- deep levels
+// of the n family converge to isochrony, so drawing one there makes every slot's ring look
+// identical and hides the morph. Reports the base r (c.r), not the level-local ratio, so the label
+// tracks the picked rhythm. Rides emitVizFrame's ~8 Hz refresh; pure (wfHierarchy / wfOnsets, no
+// scheduling). No-op unless a morph is engaged.
+function previewOf(c) {
+	var r = (isFinite(c.r) && c.r >= 1) ? c.r : 1.5;
+	var lv = 0;
+	for (var i = 0; i < c.levels && i < 2; i++) { if (c.on[i]) { lv = i; break; } }
+	var rev = c.lr.slice(0, Math.max(0, c.levels - 1));
+	var h = wfHierarchy(c.m, c.n, r, clampInt(c.levels, 1, MAX_LEVELS), rev);
+	if (lv >= h.length) lv = h.length - 1;
+	var ons = wfOnsets(h[lv], 1);                 // one normalised period
+	if (ons.length > 24) {
+		var thin = [];
+		for (var k = 0; k < 24; k++) thin.push(ons[Math.floor(k * ons.length / 24)]);
+		ons = thin;
+	}
+	return { r: r, m: c.m, n: c.n, levels: h.length, ons: ons };
+}
+
+function emitMorphPreview() {
+	if (morphA === 0 && morphB === 0) { outlet(0, "viz", "vmorphprev", "off"); return; }
+	// blend ring = blendConfig(), i.e. the A<->B lerp WITH the per-field overrides applied, so the
+	// popup's middle necklace is exactly what a cycle plays -- not the raw A<->B blend.
+	var trio = [resolveMorphSlot(morphA), resolveMorphSlot(morphB), blendConfig()];
+	for (var s = 0; s < 3; s++) {
+		var p = previewOf(trio[s]);
+		outlet.apply(this, [0, "viz", "vmorphprev", s, p.r, p.m, p.n, p.levels, p.ons.length].concat(p.ons));
+	}
+	outlet(0, "viz", "vmorphx", morphX, morphRLinear ? 1 : 0, morphA, morphB);
+	var ov = [];
+	for (var f in morphTouched) if (morphTouched.hasOwnProperty(f)) ov.push(f);
+	outlet.apply(this, [0, "viz", "vmorphover", ov.length].concat(ov));
 }
 
 // ================================================================================================
@@ -2014,19 +2200,26 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 
 			var hadOutlet = (typeof outlet !== 'undefined');
 			var savedOutlet = hadOutlet ? outlet : undefined;
-			var seen = {};
+			var seen = {}, lastV = {};
 			outlet = function () {
 				var a = Array.prototype.slice.call(arguments);
-				if (a[0] === 0 && a[1] === 'viz') seen[a[2]] = (seen[a[2]] || 0) + 1;
+				if (a[0] === 0 && a[1] === 'viz') { seen[a[2]] = (seen[a[2]] || 0) + 1; lastV[a[2]] = a; }
 			};
 			var before = configFromCurrent();
+			var savedBank = presetBank;
+			presetBank = []; presetBank[2] = defaultConfig(); presetBank[5] = defaultConfig();
 			vizActive = 1;
-			try { querycycle(); }
+			try { querycycle(); emitPresetSlots(); }
 			finally {
-				vizActive = 0;
+				vizActive = 0; presetBank = savedBank;
 				if (hadOutlet) outlet = savedOutlet; else { try { delete outlet; } catch (e) {} }
 			}
 			eq(!!seen.vcycle && !!seen.vlevel && !!seen.vend, true, 'emitVizFrame emits vcycle/vlevel/vend');
+			eq(!!seen.vglob, true, 'emitVizFrame emits vglob (editable globals for the popup)');
+			eq(lastV.vglob[3] === baseM && lastV.vglob[4] === baseN, true, 'vglob carries m / n');
+			eq(seen.vslots, 1, 'emitPresetSlots emits one vslots frame when the popup is open');
+			eq(lastV.vslots[3], 2, 'vslots count = number of filled slots');
+			eq(lastV.vslots.slice(4).join(','), '2,5', 'vslots lists the filled slot numbers');
 			if (!configEquals(configFromCurrent(), before)) { console.error('FAIL checkVizFrame: emitVizFrame perturbed engine state'); failures++; }
 
 			// Step partition: for a decimated level, kept + dropped == the full U/C onset list, once each.
@@ -2041,6 +2234,201 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			eq(kept.length + drop.length, ons.length, 'viz Step partition covers every onset once');
 
 			if (failures === f0) console.log('OK   checkVizFrame: querycycle no-ops while closed, one open frame emits vcycle/vlevel/vend without perturbing engine state, Step partition exact.');
+		}
+
+		// The pulse-ordered catalog: sorted most-isochronous first, every non-capped row's onset
+		// count cross-checks against a real hierarchy build, metallic rows report "never", the
+		// list is base-(m,n) dependent, and buildCatalog is pure (repeat calls agree, no rng touch).
+		function checkCatalog() {
+			var f0 = failures;
+			var bases = [[3, 5], [2, 7], [1, 1]];
+			for (var bi = 0; bi < bases.length; bi++) {
+				var m = bases[bi][0], n = bases[bi][1];
+				var cat = buildCatalog(m, n);
+				eq(cat.length, MARKERS.length, 'catalog(' + m + ',' + n + ') has one row per marker');
+				var fams = {};
+				for (var i = 0; i < cat.length; i++) {
+					var row = cat[i];
+					fams[row.family] = 1;
+					eq(isFinite(row.r) && row.r >= 1, true, 'catalog row r valid (' + m + ',' + n + ' #' + i + ')');
+					eq(nearestMarker(row.r, MARKERS).r, row.r, 'catalog row r round-trips through nearestMarker');
+					var ol = isochronyOutlook(m, n, row.r, 128);
+					if (row.capped) {
+						eq(ol.capped, true, 'catalog capped row really never reaches isochrony (' + m + ',' + n + ' #' + i + ')');
+						eq(row.pulses, -1, 'catalog capped row pulses -1');
+						eq(row.isoLevel, -1, 'catalog capped row isoLevel -1');
+					} else {
+						eq(ol.capped, false, 'catalog reachable row outlook agrees (' + m + ',' + n + ' #' + i + ')');
+						eq(ol.level, row.isoLevel, 'catalog row isoLevel matches outlook');
+						eq(ol.pulses, row.pulses, 'catalog row pulses matches outlook');
+						var hh = wfHierarchy(m, n, row.r, row.isoLevel + 3);
+						eq(wfIsIsochronous(hh[hh.length - 1]), true, 'catalog row builds to an isochronous level');
+						eq(hh[hh.length - 1].word.length, row.pulses, 'catalog row pulse count matches the built hierarchy');
+					}
+					if (i > 0) {
+						var prev = cat[i - 1];
+						if (prev.capped && !row.capped) { console.error('FAIL checkCatalog: a capped row sorts before a reachable one at #' + i); failures++; }
+						if (!prev.capped && !row.capped) {
+							if (prev.pulses > row.pulses) { console.error('FAIL checkCatalog: pulses not ascending at #' + i + ' (' + prev.pulses + ' > ' + row.pulses + ')'); failures++; }
+							else if (prev.pulses === row.pulses && prev.isoLevel > row.isoLevel) { console.error('FAIL checkCatalog: isoLevel not ascending within equal pulses at #' + i); failures++; }
+						}
+					}
+				}
+				eq(!!fams.n && !!(fams.phi || fams.delta || fams.sigma), true, 'catalog spans the n family plus at least one metallic family');
+			}
+			// pure: two calls agree exactly and the rng stream is untouched
+			var ci0 = cycleIndex;
+			eq(JSON.stringify(buildCatalog(3, 5)), JSON.stringify(buildCatalog(3, 5)), 'buildCatalog is deterministic');
+			eq(cycleIndex, ci0, 'buildCatalog does not advance the rng cycle');
+			// base dependence: the pulse counts (hence the order) really do move with (m, n)
+			eq(JSON.stringify(buildCatalog(1, 1)) !== JSON.stringify(buildCatalog(3, 5)), true, 'catalog is (m,n)-dependent');
+			if (failures === f0) console.log('OK   checkCatalog: ' + MARKERS.length + ' rows, sorted fewest-onsets first with metallic last, every reachable row cross-checked against a real hierarchy build, pure + base-dependent.');
+		}
+
+		// Live overrides under a morph: editing a generative param while Morph A/B point at real
+		// slots overrides just THAT field in activeConfig() (morph keeps running), a Store then
+		// captures the sounding blend+overrides, disengaging both selectors bakes the last blend
+		// into the live vars, and a recall wipes the overrides.
+		function checkMorphOverride() {
+			var f0 = failures;
+			var hadOutlet = (typeof outlet !== 'undefined'), savedOutlet = hadOutlet ? outlet : undefined;
+			var hadPost = (typeof post !== 'undefined'), savedPost = hadPost ? post : undefined;
+			var hadFile = (typeof File !== 'undefined'), savedFile = hadFile ? File : undefined;
+			var save = { cfg: cloneConfig(configFromCurrent()), bank: presetBank,
+				run: running, mA: morphA, mB: morphB, mX: morphX, touched: morphTouched };
+			outlet = function () {};
+			post = function () {};
+			File = undefined;   // Node 22 has a global File; make savepresets() a no-op here
+			try {
+				var a = defaultConfig();
+				var b = defaultConfig();
+				b.period = 4000; b.m = 5; b.gprob = 50;   // 0.5 blend -> 3000 / 4 / 75
+				var c3 = defaultConfig(); c3.period = 5000; c3.m = 2;
+				presetBank = []; presetBank[1] = a; presetBank[2] = b; presetBank[3] = c3;
+				morphTouched = {};
+				running = 1; morphA = 1; morphB = 2; morphX = 0.5;
+				applyConfig(defaultConfig());   // live vars = a known baseline
+				eq(activeConfig().period, 3000, 'blend before any override');
+
+				setr(3.14);
+				eq(morphA === 1 && morphB === 2, true, 'editing R under a morph does NOT drop the selectors');
+				eq(activeConfig().r, 3.14, 'the R override wins in the blend');
+				eq(activeConfig().period, 3000, 'untouched fields still come from the blend');
+
+				setlevelon(1, 1);
+				eq(activeConfig().on[0], 1, 'array-field override (level 1 on) applies');
+				eq(activeConfig().on[1], 0, 'other array indices still blended');
+
+				// Store while morphing captures the sounding blend+overrides
+				storepreset(4);
+				eq(presetBank[4].r, 3.14, 'Store under a morph keeps the R override');
+				eq(presetBank[4].period, 3000, 'Store under a morph keeps the blended period');
+
+				// clearmorphtouched() drops every override -> back to the pure A<->B blend
+				setperiod(1234);
+				eq(activeConfig().period, 1234, 'period override active before clear');
+				clearmorphtouched();
+				eq(morphA === 1 && morphB === 2, true, 'clearmorphtouched keeps the morph armed');
+				approxEq(activeConfig().r, defaultConfig().r, 'clearmorphtouched drops the R override', 1e-9);
+				eq(activeConfig().period, 3000, 'clearmorphtouched drops the period override (blend again)');
+				setr(3.14);   // re-arm one override for the disengage checks below
+
+				// disengage: dropping the last non-zero selector bakes what was sounding into the vars
+				setmorpha(0);                       // still engaged via B -- blends current <-> B now
+				var pre = activeConfig();
+				setmorphb(0);
+				eq(morphEngaged(), false, 'both selectors 0 -> morph disengaged');
+				approxEq(configFromCurrent().r, pre.r, 'disengage baked R into the live vars');
+				eq(configFromCurrent().period, pre.period, 'disengage baked the period into the live vars');
+
+				// touching a param with no morph armed is a plain live edit, no override bookkeeping
+				setm(9);
+				eq(configFromCurrent().m, 9, 'plain edit with no morph writes the live var');
+				eq(activeConfig(), null, 'still no morph');
+
+				// recall wipes overrides
+				morphTouched = {}; running = 1; morphA = 1; morphB = 2;
+				setr(2.71);
+				eq(activeConfig().r, 2.71, 'override set again');
+				recallpreset(3);
+				eq(morphA === 0 && morphB === 0, true, 'recall clears the selectors');
+				eq(configFromCurrent().period, 5000, 'recall loaded slot 3');
+				running = 1; morphA = 1; morphB = 2;
+				approxEq(activeConfig().r, defaultConfig().r, 'recall wiped the R override (blend value again)', 1e-9);
+			} finally {
+				presetBank = save.bank;
+				applyConfig(save.cfg);
+				running = save.run; morphA = save.mA; morphB = save.mB; morphX = save.mX;
+				morphTouched = save.touched;
+				if (hadOutlet) outlet = savedOutlet; else { try { delete outlet; } catch (e) {} }
+				if (hadPost) post = savedPost; else { try { delete post; } catch (e) {} }
+				if (hadFile) File = savedFile; else { try { delete File; } catch (e) {} }
+			}
+			if (failures === f0) console.log('OK   checkMorphOverride: a param edit under a morph overrides just that field (morph keeps running), Store captures blend+overrides, disengaging bakes the last blend, recall wipes overrides.');
+		}
+
+		// The morph preview feed: "off" while no morph is engaged, else 3 onset-ring frames
+		// (A / B / blend) + vmorphx, computed from pure fns and never perturbing engine state.
+		function checkMorphPreview() {
+			var f0 = failures;
+			var hadOutlet = (typeof outlet !== 'undefined'), savedOutlet = hadOutlet ? outlet : undefined;
+			var hadPost = (typeof post !== 'undefined'), savedPost = hadPost ? post : undefined;
+			var save = { bank: presetBank, mA: morphA, mB: morphB, mX: morphX, touched: morphTouched };
+			var seen = {}, last = {};
+			outlet = function () {
+				var a = Array.prototype.slice.call(arguments);
+				if (a[0] === 0 && a[1] === 'viz') { seen[a[2]] = (seen[a[2]] || 0) + 1; last[a[2]] = a; }
+			};
+			post = function () {};
+			try {
+				morphA = 0; morphB = 0; morphTouched = {};
+				var before = configFromCurrent();
+				emitMorphPreview();
+				eq(seen.vmorphprev, 1, 'no morph -> a single vmorphprev (off)');
+
+				var a = defaultConfig(), b = defaultConfig();
+				b.r = 3.303; b.m = 2; b.n = 7;
+				presetBank = []; presetBank[1] = a; presetBank[2] = b;
+				morphA = 1; morphB = 2; morphX = 0.4;
+				seen = {}; last = {};
+				emitMorphPreview();
+				eq(seen.vmorphprev, 3, 'engaged morph -> 3 vmorphprev frames (A / B / blend)');
+				eq(seen.vmorphx, 1, 'engaged morph -> one vmorphx');
+				eq(seen.vmorphover, 1, 'engaged morph -> one vmorphover');
+				eq(last.vmorphover[3], 0, 'vmorphover count is 0 with nothing touched');
+				if (!configEquals(configFromCurrent(), before)) { console.error('FAIL checkMorphPreview: emitMorphPreview perturbed engine state'); failures++; }
+
+				// a per-field override shows up in vmorphover AND moves the blend ring (r), not the raw A<->B lerp
+				morphTouched = { r: 1, m: 1 };
+				seen = {}; last = {};
+				emitMorphPreview();
+				eq(last.vmorphover[3], 2, 'vmorphover count follows morphTouched');
+				eq(last.vmorphover.slice(4).sort().join(','), 'm,r', 'vmorphover lists the touched field names');
+				var blendRing = last.vmorphprev;   // last one emitted is s = 2 (blend)
+				eq(blendRing[3], 2, 'the last vmorphprev frame is the blend (s=2)');
+				approxEq(blendRing[4], previewOf(blendConfig()).r, 'blend ring r == blendConfig r (override applied), not the raw lerp', 1e-9);
+
+				// previewOf tolerates a wide r and returns a bounded ring
+				var p = previewOf(b);
+				eq(p.ons.length > 0 && p.ons.length <= 24, true, 'previewOf returns a bounded onset ring');
+				eq(p.ons[0], 0, 'previewOf onsets start at 0 (normalised period)');
+			} finally {
+				presetBank = save.bank; morphA = save.mA; morphB = save.mB; morphX = save.mX;
+				morphTouched = save.touched;
+				if (hadOutlet) outlet = savedOutlet; else { try { delete outlet; } catch (e) {} }
+				if (hadPost) post = savedPost; else { try { delete post; } catch (e) {} }
+			}
+			if (failures === f0) console.log('OK   checkMorphPreview: off when idle, 3 rings + vmorphx + vmorphover when engaged, blend ring carries the per-field overrides, pure.');
+		}
+
+		function dumpCatalog() {
+			var cat = buildCatalog(baseM, baseN);
+			console.log('# base m=' + baseM + ' n=' + baseN);
+			for (var i = 0; i < cat.length; i++) {
+				var e = cat[i];
+				console.log(i + '\t' + (e.capped ? 'INF' : e.pulses) + '\t' + e.family + '\tL' + e.isoLevel + '\tr=' + e.r);
+			}
+			console.log('# count=' + cat.length);
 		}
 
 		function main() {
@@ -2059,6 +2447,9 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 			checkArticulation();
 			checkVoiceGroups();
 			checkVizFrame();
+			checkCatalog();
+			checkMorphOverride();
+			checkMorphPreview();
 			if (failures === 0) {
 				console.log('ALL OK');
 				process.exitCode = 0;
@@ -2069,6 +2460,7 @@ if (typeof require !== 'undefined' && typeof process !== 'undefined') {
 		}
 
 		if (process.argv.indexOf('--dump-markers') !== -1) dumpMarkers();
+		if (process.argv.indexOf('--dump-catalog') !== -1) dumpCatalog();
 		if (process.argv.indexOf('--check') !== -1) main();
 	})();
 }
