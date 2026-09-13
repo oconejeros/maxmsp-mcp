@@ -107,17 +107,23 @@ var coprimeSkip = 2;    // degrees to skip in READ_COPRIMO; snapped to a coprime
 // fixed interval above (Slonimsky's "equal division of one or more octaves" -- always yields a
 // scale symmetric at that interval); ORN_BASE_DEGREES instead walks the DEGREES of the current
 // set, ornBaseStep at a time (1 = consecutive, 2 = thirds...), so the base can be any arpeggio and
-// the resulting scale need not be symmetric -- Slonimsky's Heptatonic Arpeggios / Cochrane Part III.
+// the resulting scale need not be symmetric -- Slonimsky's Heptatonic Arpeggios / Cochrane Part III;
+// ORN_BASE_QUADRITONE walks a flat 12-note partition of the chromatic total into 4 mutually
+// exclusive triads (Quadritonal Arpeggios, Thesaurus pp. 178-181 -- Liszt's Faust theme is 4
+// augmented triads, Slonimsky's own Moto Perpetuo No. 1255 walks this same idea), chosen by
+// ornQuadScheme -- see quadritonalPartition().
 var ORN_INTERP = 0, ORN_INFRA = 1, ORN_ULTRA = 2,
 	ORN_INFRA_INTER = 3, ORN_INFRA_ULTRA = 4, ORN_INFRA_INTER_ULTRA = 5;
 var ORN_TYPE_MAX = 5;
-var ORN_BASE_INTERVAL = 0, ORN_BASE_DEGREES = 1;
+var ORN_BASE_INTERVAL = 0, ORN_BASE_DEGREES = 1, ORN_BASE_QUADRITONE = 2;
+var ORN_BASE_MODE_MAX = ORN_BASE_QUADRITONE;
 var ornBaseInterval = 4;   // I, in semitones (1..14) -- used when ornBaseMode === ORN_BASE_INTERVAL
 var ornType = ORN_INTERP;
 var ornCount = 1;          // notes added per principal tone, per named component (1..4)
 var ornOffsets = [];       // derived: signed semitone offsets, one per added note (never the tone itself)
 var ornBaseMode = ORN_BASE_INTERVAL;
 var ornBaseStep = 1;       // degrees to advance per principal tone when ornBaseMode === ORN_BASE_DEGREES (1..4)
+var ornQuadScheme = 0;     // which 4-triad partition when ornBaseMode === ORN_BASE_QUADRITONE (0..2)
 var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
@@ -3395,15 +3401,16 @@ function emitMaskEcho() {
 
 // READ_ORNAMENT's resulting scale -- Slonimsky's Master Chord -- for the horizon window. The
 // signature is (baseMode, baseStep, interval, type, count); in Base=Grados the scale also follows
-// the set and the root, so setIndex + effRoot() join it there. Outside Ornamento it sends one
-// "ornscale 0" to clear whatever the window was showing.
+// the set and the root, so setIndex + effRoot() join it there, and in Base=Cuarteto the scheme
+// joins it. Outside Ornamento it sends one "ornscale 0" to clear whatever the window was showing.
 function emitOrnScale() {
 	if (readMode !== READ_ORNAMENT) {
 		if (qnOrnScaleShown !== "") { qnOrnScaleShown = ""; outlet(3, ["ornscale", 0]); }
 		return;
 	}
 	var key = ornBaseMode + "," + ornBaseStep + "," + ornBaseInterval + "," + ornType + "," + ornCount +
-		((ornBaseMode === ORN_BASE_DEGREES) ? ("," + setIndex + "," + effRoot()) : "");
+		((ornBaseMode === ORN_BASE_DEGREES) ? ("," + setIndex + "," + effRoot()) : "") +
+		((ornBaseMode === ORN_BASE_QUADRITONE) ? ("," + ornQuadScheme) : "");
 	if (key === qnOrnScaleShown) return;
 	qnOrnScaleShown = key;
 	var u = ornamentUnionSet(sets[setIndex]);
@@ -3758,12 +3765,57 @@ function buildOrnOffsets() {
 	if (ornOffsets.length > 11) ornOffsets = ornOffsets.slice(0, 11);   // keep one cell <= 12 events
 }
 
+// Quadritonal Arpeggios (Thesaurus pp. 178-181): partition the twelve chromatic tones into four
+// MUTUALLY EXCLUSIVE triads, then arpeggiate them one after another. Three schemes are printed:
+// four augmented triads (Liszt's Faust theme), one each of augmented/major/minor/diminished, and
+// two diminished + one major + one minor. Found by backtracking over transpositions 0..11 for
+// each quality in turn -- deterministic (same solution every call) and cheap (a few thousand
+// tries at most), so it is cached rather than recomputed every note.
+var QUAD_SCHEME_NAMES = ["4 Aumentadas", "Aum+May+men+dim", "2dim+May+men"];
+var QUAD_SCHEMES = [
+	["aug", "aug", "aug", "aug"],
+	["aug", "maj", "min", "dim"],
+	["dim", "dim", "maj", "min"]
+];
+var QUAD_TRIAD_SHAPE = { aug: [0, 4, 8], maj: [0, 4, 7], min: [0, 3, 7], dim: [0, 3, 6] };
+var quadPartitionCache = [];
+
+function computeQuadritonalPartition(scheme) {
+	var qualities = QUAD_SCHEMES[scheme] || QUAD_SCHEMES[0];
+	var used = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+	var flat = [];
+	function rec(i) {
+		if (i === qualities.length) return true;
+		var shape = QUAD_TRIAD_SHAPE[qualities[i]];
+		for (var t = 0; t < 12; t++) {
+			var a = (shape[0] + t) % 12, b = (shape[1] + t) % 12, c = (shape[2] + t) % 12;
+			if (used[a] || used[b] || used[c]) continue;
+			used[a] = used[b] = used[c] = 1;
+			flat.push(a, b, c);
+			if (rec(i + 1)) return true;
+			flat.length -= 3;
+			used[a] = used[b] = used[c] = 0;
+		}
+		return false;
+	}
+	rec(0);   // a solution exists for all three schemes above; flat stays [] only for an unknown scheme
+	return flat;
+}
+
+function quadritonalPartition(scheme) {
+	scheme = ((Math.round(scheme) % QUAD_SCHEMES.length) + QUAD_SCHEMES.length) % QUAD_SCHEMES.length;
+	if (!quadPartitionCache[scheme]) quadPartitionCache[scheme] = computeQuadritonalPartition(scheme);
+	return quadPartitionCache[scheme];
+}
+
 // How many principal tones one pass visits before the pitch classes repeat.
 //   ORN_BASE_INTERVAL -- Slonimsky's "equal division of one or more octaves": I=4 gives 3
 //     (augmented), I=7 gives 12 (cycle of fifths), I=8 (Quadritone) also 3, I=14 (Septitone) 6.
 //   ORN_BASE_DEGREES -- one full turn of the set's degrees at ornBaseStep apart: n / gcd(step, n),
 //     so step 1 gives n, step 2 on a 7-note set also gives 7, step 3 on a 6-note set gives 2.
+//   ORN_BASE_QUADRITONE -- always 12: one full walk through the four-triad partition.
 function ornBaseTones(pcs) {
+	if (ornBaseMode === ORN_BASE_QUADRITONE) return 12;
 	if (ornBaseMode === ORN_BASE_DEGREES) {
 		var n = (pcs && pcs.length) ? pcs.length : 1;
 		var s = ((Math.round(ornBaseStep) % n) + n) % n || n;
@@ -3796,6 +3848,9 @@ function ornamentPitchAt(pos, pcs) {
 	var baseIdx = Math.floor(pos / S) % K;
 	var cellIdx = pos % S;
 	var off = (cellIdx === 0) ? 0 : ornOffsets[cellIdx - 1];
+	if (ornBaseMode === ORN_BASE_QUADRITONE) {
+		return quadritonalPartition(ornQuadScheme)[baseIdx] + off;
+	}
 	if (ornBaseMode === ORN_BASE_DEGREES && pcs && pcs.length) {
 		return pitchForDegree(pcs, baseIdx * Math.round(ornBaseStep)) + off;
 	}
@@ -4219,12 +4274,13 @@ function setorncount(c) {
 }
 
 // Base layout: 0 = step the root by ornBaseInterval (equal division), 1 = walk the set's degrees
-// ornBaseStep apart. These do not touch ornOffsets, but the base cycle length and the resulting
-// scale both change, so restart the walk, repaint the readouts and re-emit the ornament scale.
+// ornBaseStep apart, 2 = walk the ornQuadScheme four-triad partition. These do not touch
+// ornOffsets, but the base cycle length and the resulting scale both change, so restart the walk,
+// repaint the readouts and re-emit the ornament scale.
 function setornbasemode(m) {
 	ornBaseMode = Math.round(m);
 	if (!isFinite(ornBaseMode) || ornBaseMode < 0) ornBaseMode = 0;
-	if (ornBaseMode > ORN_BASE_DEGREES) ornBaseMode = ORN_BASE_DEGREES;
+	if (ornBaseMode > ORN_BASE_MODE_MAX) ornBaseMode = ORN_BASE_MODE_MAX;
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
@@ -4234,6 +4290,15 @@ function setornbasestep(s) {
 	ornBaseStep = Math.round(s);
 	if (!isFinite(ornBaseStep) || ornBaseStep < 1) ornBaseStep = 1;
 	if (ornBaseStep > 4) ornBaseStep = 4;
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
+}
+
+function setornquadscheme(s) {
+	ornQuadScheme = Math.round(s);
+	if (!isFinite(ornQuadScheme) || ornQuadScheme < 0) ornQuadScheme = 0;
+	if (ornQuadScheme > QUAD_SCHEMES.length - 1) ornQuadScheme = QUAD_SCHEMES.length - 1;
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";

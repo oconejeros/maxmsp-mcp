@@ -766,6 +766,28 @@ function runScenario(e) {
 	c.setornbasestep(1);
 	c.setlock(0);
 	c.setreadmode(0);
+
+	// Base = Cuarteto: la base recorre una particion de las 12 en 4 triadas mutuamente excluyentes
+	// (Quadritonal Arpeggios). Tambien al final, por la misma razon que el bloque de Grados.
+	c.setreadmode(7);
+	c.setornbasemode(2);
+	for (const [sch, ty, ct] of [[0, 0, 1], [1, 0, 1], [2, 1, 1], [0, 4, 1]]) {
+		c.setornquadscheme(sch);
+		c.setorntype(ty);
+		c.setorncount(ct);
+		mark('ornamento Base=Cuarteto esquema=' + sch + ' tipo=' + ty + ' n=' + ct);
+		run(20);
+	}
+	c.setreaddir(1);
+	mark('ornamento Base=Cuarteto en retrogrado');
+	run(16);
+	c.setreaddir(0);
+	c.setvoiceindep(1);
+	mark('ornamento Base=Cuarteto con voces independientes');
+	run(20);
+	c.setvoiceindep(0);
+	c.setornbasemode(0);
+	c.setreadmode(0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1054,6 +1076,43 @@ function checkSlonimsky() {
 	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))
 		fail('volver a Base=Intervalo deberia reproducir Ditone/Interp1 = {0,1,4,5,8,9}, dio ' + c.ornamentUnionSet());
 
+	// ORN_BASE_QUADRITONE: la base recorre una particion de las 12 en 4 triadas mutuamente excluyentes
+	// (Thesaurus pp. 178-181) en vez de un ciclo de intervalo o los grados del set. quadritonalPartition()
+	// es una busqueda por backtracking determinista -- fija los 3 esquemas impresos en el libro.
+	if (!eq(c.quadritonalPartition(0), [0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11]))
+		fail('particion "4 Aumentadas" deberia ser [0,4,8,1,5,9,2,6,10,3,7,11], dio ' + c.quadritonalPartition(0));
+	if (!eq(c.quadritonalPartition(1), [0, 4, 8, 3, 7, 10, 6, 9, 1, 11, 2, 5]))
+		fail('particion "Aum+May+men+dim" dio ' + c.quadritonalPartition(1));
+	if (!eq(c.quadritonalPartition(2), [0, 3, 6, 5, 8, 11, 9, 1, 4, 7, 10, 2]))
+		fail('particion "2dim+May+men" dio ' + c.quadritonalPartition(2));
+	for (let s = 0; s < 3; s++) {
+		const p = c.quadritonalPartition(s).slice().sort((a, b) => a - b);
+		if (!eq(p, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]))
+			fail('la particion cuadritonal ' + s + ' deberia cubrir las 12 clases sin repetir, dio ' + p);
+	}
+	c.setornbasemode(2);
+	c.setornquadscheme(0);
+	c.setorntype(0); c.setornbaseinterval(1); c.setorncount(1);   // sin offsets -- solo la particion
+	if (c.ornBaseTones() !== 12) fail('ornBaseTones en Base=Cuarteto deberia ser 12, dio ' + c.ornBaseTones());
+	const quadSeq = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((p) => c.ornamentPitchAt(p));
+	if (!eq(quadSeq, [0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11]))
+		fail('ornamentPitchAt en Base=Cuarteto (4 Aumentadas) deberia recorrer la particion en orden, dio ' + quadSeq);
+	// la particion ya cubre las 12 clases sola, asi que la union se queda en 12-1 con o sin ornamento
+	if (!eq(c.ornamentUnionSet(), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) || c.forteLabelOf(c.ornamentUnionSet()) !== '12-1')
+		fail('Base=Cuarteto sin ornamento deberia dar el total cromatico, dio ' + c.ornamentUnionSet());
+	c.setorntype(1); c.setornbaseinterval(4); c.setorncount(1);
+	if (!eq(c.ornamentUnionSet(), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]))
+		fail('Base=Cuarteto + ornamento deberia seguir dando el total cromatico, dio ' + c.ornamentUnionSet());
+	c.setornbasemode(0);   // sin regresion
+	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))
+		fail('volver a Base=Intervalo tras Cuarteto deberia reproducir Ditone/Interp1, dio ' + c.ornamentUnionSet());
+	c.setornbasemode(99);
+	if (c.ornBaseMode !== 2) fail('setornbasemode(99) deberia recortar a 2 (Cuarteto), quedo en ' + c.ornBaseMode);
+	c.setornbasemode(0);
+	c.setornquadscheme(99);
+	if (c.ornQuadScheme !== 2) fail('setornquadscheme(99) deberia recortar a 2, quedo en ' + c.ornQuadScheme);
+	c.setornquadscheme(0);
+
 	// setreadmode() clamps to the new ceiling; the legacy alias reaches it too.
 	c.setreadmode(7);
 	if (c.readMode !== 7) fail('setreadmode(7) no quedo en 7');
@@ -1069,6 +1128,12 @@ function checkSlonimsky() {
 		c.setvoiceindep(1);
 		for (let i = 0; i < 16; i++) c.bang();
 		c.setvoiceindep(0);
+		c.setornbasemode(2); c.setornquadscheme(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(0);
+		c.setornbasemode(0);
 		c.setreadmode(0);
 	} catch (err) {
 		fail('READ_ORNAMENT dentro de bang() tiro ' + err);
@@ -1597,6 +1662,30 @@ function checkQueryNext() {
 	if (ogr2.length !== 1) { console.error('QueryNext: Base=Grados deberia re-emitir ornscale al mover el set, salieron ' + ogr2.length); ok = false; }
 	if (ogr.length && ogr2.length && JSON.stringify(ogr2[0]) === JSON.stringify(ogr[0])) {
 		console.error('QueryNext: Base=Grados: mover el set deberia cambiar la escala emitida'); ok = false;
+	}
+
+	// Base=Cuarteto: la particion ya cubre las 12 clases, asi que ornscale siempre da el total
+	// cromatico (12-1, is12=1) sin importar el ornamento; cambiar el esquema re-emite igual.
+	const oq = setup(seed);
+	oq.c.setreadmode(7); oq.c.setreaddir(0);
+	oq.c.setornbasemode(2); oq.c.setornquadscheme(0);
+	oq.c.setorntype(1); oq.c.setornbaseinterval(4); oq.c.setorncount(1);
+	for (let i = 0; i < 4; i++) oq.c.bang();
+	const atOq = oq.e.log.length;
+	oq.c.querynext();
+	const oqr = rowsOf(oq.e.log, atOq, 'ornscale');
+	if (oqr.length !== 1) { console.error('QueryNext: Ornamento Base=Cuarteto deberia emitir 1 ornscale, salieron ' + oqr.length); ok = false; }
+	for (const a of oqr) {
+		const cnt = Number(a[0]), forte = a[1], is12 = Number(a[3]);
+		if (cnt !== 12 || forte !== '12-1' || is12 !== 1) {
+			console.error('QueryNext: ornscale Base=Cuarteto deberia ser 12 clases / 12-1 / is12=1, dio ' + JSON.stringify(a)); ok = false;
+		}
+	}
+	oq.c.setornquadscheme(1);
+	const atOq2 = oq.e.log.length;
+	oq.c.querynext();
+	if (rowsOf(oq.e.log, atOq2, 'ornscale').length !== 1) {
+		console.error('QueryNext: cambiar ornQuadScheme deberia re-emitir ornscale (aunque el pcset sea el mismo)'); ok = false;
 	}
 
 	// a voice that is turned OFF takes no notes: its deep history must scroll toward blank, one
