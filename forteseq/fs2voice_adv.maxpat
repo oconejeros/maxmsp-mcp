@@ -594,9 +594,10 @@
         "Modos",
         "Coprimo",
         "Zigzag",
-        "Urna"
+        "Urna",
+        "Ornamento"
        ],
-       "parameter_mmax": 6,
+       "parameter_mmax": 7,
        "parameter_modmode": 0,
        "parameter_initial": [
         0
