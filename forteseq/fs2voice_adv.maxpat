@@ -1219,6 +1219,193 @@
      ],
      "text": "prepend setvoiceornbase #1"
     }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "v_tonprop",
+     "annotation": "Si esta prendido, esta voz deja de mirar el Set/Raiz globales y toca en su PROPIA clave (Bitonal/Polytonal) -- solo tiene efecto bajo Voces Indep o disparo externo, igual que LecProp. Apagado (por defecto) es exactamente el comportamiento de siempre.",
+     "patching_rect": [
+      400.0,
+      1084.0,
+      15.0,
+      14.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      510.0,
+      3.0,
+      14.0,
+      14.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 TonProp",
+       "parameter_shortname": "TonProp",
+       "parameter_type": 2,
+       "parameter_modmode": 0,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-111"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_set",
+     "annotation": "Set propio (1-351) de esta voz, cuando esta voz tiene TonProp; el resto del tiempo esta voz sigue la armonia compartida (setIndex/Raiz globales).",
+     "patching_rect": [
+      400.0,
+      1110.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      528.0,
+      3.0,
+      32.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Set",
+       "parameter_shortname": "Set",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 351.0,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-112"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_raiz",
+     "annotation": "Transposicion cruda (semitonos) propia de esta voz, cuando esta voz tiene TonProp; el resto del tiempo esta voz sigue la armonia compartida (setIndex/Raiz globales).",
+     "patching_rect": [
+      400.0,
+      1136.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      564.0,
+      3.0,
+      26.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Raiz",
+       "parameter_shortname": "Raiz",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": -24.0,
+       "parameter_mmax": 24.0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-113"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-114",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voicekeyown_prep",
+     "patching_rect": [
+      500.0,
+      1700.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicekeyown #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-115",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voicesetindex_prep",
+     "patching_rect": [
+      500.0,
+      1730.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicesetindex #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-116",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voicerootoffset_prep",
+     "patching_rect": [
+      500.0,
+      1760.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicerootoffset #1"
+    }
    }
   ],
   "lines": [
@@ -1905,6 +2092,114 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-111",
+      0
+     ],
+     "destination": [
+      "obj-114",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-114",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-111",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-112",
+      0
+     ],
+     "destination": [
+      "obj-115",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-115",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-112",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-113",
+      0
+     ],
+     "destination": [
+      "obj-116",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-116",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-113",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -1997,6 +2292,21 @@
    "obj-107": [
     "V#1 OrnBase",
     "V#1 OrnBase",
+    0
+   ],
+   "obj-111": [
+    "V#1 TonProp",
+    "V#1 TonProp",
+    0
+   ],
+   "obj-112": [
+    "V#1 Set",
+    "V#1 Set",
+    0
+   ],
+   "obj-113": [
+    "V#1 Raiz",
+    "V#1 Raiz",
     0
    ]
   },

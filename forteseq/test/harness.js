@@ -834,6 +834,30 @@ function runScenario(e) {
 	c.setvoicereadmode(1, 0);
 	c.setvoiceorntype(1, 0); c.setvoiceorncount(1, 1); c.setvoiceornbase(1, 4);
 	c.setreadmode(0);
+
+	// Tonalidad por voz (TonProp/Set/Raiz): la voz 1 toca en su PROPIA clave -- otro set y otra
+	// transposicion cruda -- mientras el resto sigue la armonia compartida, fija (locked) para
+	// que el contraste se oiga limpio. Bitonal/Polytonal Scales & Arpeggios (Thesaurus, Level 2);
+	// ver voicePcsFor()/voiceRootFor(). Solo tiene efecto bajo Voces Indep o trigger externo
+	// (voiceSelfCursored()) -- el camino de reloj compartido sigue dando una sola linea a todas
+	// las voces por diseno (emitVoices()), asi que cada combo se prueba con Indep encendido.
+	c.setlock(1);
+	c.setlockindex(120);
+	c.setreadmode(0);
+	c.setvoicekeyown(1, 1);
+	for (const [si, ro] of [[60, 0], [200, 7], [60, -5]]) {
+		c.setvoicesetindex(1, si);
+		c.setvoicerootoffset(1, ro);
+		c.setvoiceindep(1);
+		mark('tonalidad por voz V1 set=' + si + ' raiz=' + ro);
+		run(20);
+		c.setvoiceindep(0);
+	}
+	c.setvoicekeyown(1, 0);
+	c.setvoicesetindex(1, 0);
+	c.setvoicerootoffset(1, 0);
+	c.setlock(0);
+	c.setreadmode(0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1241,6 +1265,16 @@ function checkSlonimsky() {
 		c.setvoiceindep(0);
 		c.setvoicereadown(1, 0); c.setvoicereadmode(1, 0);
 		c.setvoiceorntype(1, 0); c.setvoiceorncount(1, 1); c.setvoiceornbase(1, 4);
+		// Tonalidad por voz: voz 1 en su propia clave (set + raiz), bajo el reloj y bajo trigger
+		// externo -- ver checkVoiceKey() para la prueba de extremo a extremo.
+		c.setvoicekeyown(1, 1); c.setvoicesetindex(1, 25); c.setvoicerootoffset(1, 3);
+		c.setvoiceindep(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceexternal(1, 1);
+		for (let i = 0; i < 8; i++) c.triggervoice(1);
+		c.setvoiceexternal(1, 0);
+		c.setvoiceindep(0);
+		c.setvoicekeyown(1, 0); c.setvoicesetindex(1, 0); c.setvoicerootoffset(1, 0);
 		c.setreadmode(0);
 	} catch (err) {
 		fail('READ_ORNAMENT dentro de bang() tiro ' + err);
@@ -1525,6 +1559,72 @@ function checkVoiceOrnament() {
 	if (c.voiceOrnBase[0] !== 14) { console.error('setvoiceornbase(99) deberia recortar a 14, quedo en ' + c.voiceOrnBase[0]); ok = false; }
 
 	if (ok) console.log('OK   Ornamento por voz: Orn Tipo/Notas/Base propios aislan una voz bajo Propia + Patron Ornamento.');
+	return ok;
+}
+
+// Tonalidad por voz (TonProp/Set/Raiz -- Bitonal/Polytonal Scales & Arpeggios, Thesaurus Level 2):
+// con TonProp on, la voz ignora el setIndex/effRoot() compartido y toca su PROPIO set a su PROPIA
+// transposicion cruda -- voicePcsFor()/voiceRootFor() son los helpers compartidos, leidos en los
+// dos caminos con cursor propio (emitVoicesIndependent, triggervoice). El LAYOUT armonico global
+// (Sec Raiz, Filtro, etc.) sigue intacto para el resto del ensamble.
+function checkVoiceKey() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);   // solo la voz 1 no esta muda por defecto
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1);
+	c.setvoicediv(2, 1);
+	const setA = c.setForte.indexOf('7-35');   // armonia compartida (diatonica, 7 notas)
+	const setB = c.setForte.indexOf('4-28');   // clave propia de la voz 1 (dim7, 4 notas -- cardinalidad distinta a proposito)
+	c.setlockindex(setA + 1);
+	c.setlock(1);
+	c.setmode(1);        // Arpegio: el cursor de cada voz avanza
+	c.setreadmode(0);   // Recto global, para que la voz 2 (sin TonProp) sea la referencia
+
+	c.setvoicekeyown(1, 1);
+	c.setvoicesetindex(1, setB + 1);   // 1-based, como setlockindex()
+	c.setvoicerootoffset(1, 5);
+	for (let i = 0; i < 10; i++) c.bang();
+
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+	const v1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+
+	if (v1.length < 4 || JSON.stringify(v1) === JSON.stringify(v2)) {
+		console.error('Tonalidad por voz: voz 1 con set/raiz propios debia diferir de la voz 2 en la armonia compartida, ' +
+			'ambas dieron ' + JSON.stringify(v1));
+		ok = false;
+	}
+
+	// Con TonProp apagado, ambas voces deberian sonar identico (la misma armonia compartida).
+	const e2 = makeEngine(1);
+	const c2 = e2.ctx;
+	c2.setnumvoices(2); c2.setvoicemute(2, 0); c2.setvoiceindep(1);
+	c2.setvoicediv(1, 1); c2.setvoicediv(2, 1);
+	c2.setlockindex(setA + 1); c2.setlock(1); c2.setmode(1); c2.setreadmode(0);
+	for (let i = 0; i < 10; i++) c2.bang();
+	const v1b = e2.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2b = e2.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+	if (JSON.stringify(v1b) !== JSON.stringify(v2b)) {
+		console.error('Tonalidad por voz: con TonProp OFF ambas voces deberian sonar igual, dieron ' +
+			JSON.stringify(v1b) + ' vs ' + JSON.stringify(v2b));
+		ok = false;
+	}
+
+	// setvoicesetindex() recorta como setlockindex() (1-based, limites del catalogo).
+	c.setvoicesetindex(1, 0);
+	if (c.voiceSetIndex[0] !== 0) { console.error('setvoicesetindex(1,0) deberia recortar a indice 0, quedo en ' + c.voiceSetIndex[0]); ok = false; }
+	c.setvoicesetindex(1, 99999);
+	if (c.voiceSetIndex[0] !== c.sets.length - 1) { console.error('setvoicesetindex fuera de rango deberia recortar al ultimo set, quedo en ' + c.voiceSetIndex[0]); ok = false; }
+
+	// setvoicerootoffset() es cruda, sin recorte -- mismo criterio que setroot().
+	c.setvoicerootoffset(1, -7);
+	if (c.voiceRootOffset[0] !== -7) { console.error('setvoicerootoffset(-7) deberia guardar -7 tal cual, quedo en ' + c.voiceRootOffset[0]); ok = false; }
+
+	if (ok) console.log('OK   Tonalidad por voz: Set/Raiz propios instalan una segunda clave bajo TonProp (Bitonal/Polytonal).');
 	return ok;
 }
 
@@ -2059,6 +2159,7 @@ function main() {
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);
 	if (!checkVoiceOrnament()) process.exit(1);
+	if (!checkVoiceKey()) process.exit(1);
 	if (!checkRotation()) process.exit(1);
 	if (!checkQueryNext()) process.exit(1);
 	if (!checkFiltSets()) process.exit(1);

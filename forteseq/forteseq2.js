@@ -246,6 +246,21 @@ var voiceOrnCount = filled(MAX_VOICES, 1);
 var voiceOrnBase = filled(MAX_VOICES, 4);
 var voiceOrnOffsets = filled(MAX_VOICES, []);
 
+// Per-voice own key/tonality override -- Bitonal / Polytonal Scales & Arpeggios (Thesaurus,
+// Level 2): with TonProp on this voice ignores the shared setIndex/effRoot() and plays its OWN
+// set at its OWN crude root transpose, sounding in a genuinely different key while the rest of
+// the ensemble stays in the shared harmony. Off by default, same shape as every Propia override
+// above: with TonProp off a voice resolves exactly as it always did. Meaningful only when this
+// voice has its own cursor (voiceSelfCursored() -- external trigger, or Voces Indep): the
+// shared-clock Arpegio/Acordes path hands every voice the SAME already-resolved note by design
+// (see emitVoices()), so a second key there would mean resolving a second line, not retuning one
+// -- out of scope. See voicePcsFor()/voiceRootFor().
+var voiceKeyOwn = filled(MAX_VOICES, 0);
+var voiceSetIndex = filled(MAX_VOICES, 0);     // this voice's own Tn-class (0-based); read only when TonProp is on
+var voiceRootOffset = filled(MAX_VOICES, 0);   // crude semitone transpose, same units as the global Root -- NOT
+                                                // effRoot(): a second key stands apart from the shared root walk /
+                                                // listen-latch / mask-fit machinery, which belongs to the FIRST key
+
 // The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
 // k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
 // writes the same array the toggles write, so nothing downstream knows where the pattern came
@@ -1733,7 +1748,7 @@ function triggervoice(v) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	if (voiceMute[idx]) return;
-	var pcs = sets[setIndex];
+	var pcs = voicePcsFor(idx, sets[setIndex]);   // this voice's own set if TonProp is on
 	if (!pcs || pcs.length === 0) return;
 
 	var pos = voicePos[idx];
@@ -1756,7 +1771,7 @@ function triggervoice(v) {
 
 	var list = voiceOctaveList[idx];
 	var oct = list[pos % list.length];
-	var shift = oct * 12 + effRoot() + masterOctave * 12;
+	var shift = oct * 12 + voiceRootFor(idx) + masterOctave * 12;   // own crude root if TonProp is on
 	var vmin = voiceRangeMin[idx], vmax = voiceRangeMax[idx];
 	var shifted = drumOn ? padFor(pc) : foldToRange(MELODY_BASE + pc + shift, vmin, vmax);
 
@@ -1772,8 +1787,8 @@ function triggervoice(v) {
 	if (DEBUG_STEP) {
 		// NOTE: triggervoice() never advances setIndex -- only step() does. If notes are
 		// arriving here and STEP lines are absent, the PC set cannot change by design.
-		post("TRIG v" + (idx + 1) + " | set=" + (setIndex + 1) + " n=" + n +
-			" pos=" + pos + " -> note " + shifted +
+		post("TRIG v" + (idx + 1) + " | set=" + (voiceKeyOwn[idx] ? (voiceSetIndex[idx] + 1) + " own" : setIndex + 1) +
+			" n=" + n + " pos=" + pos + " -> note " + shifted +
 			" | grp=" + (art.group ? "ACC" : "nrm") + " vel=" + art.vel +
 			" dur=" + Math.round(art.dur) + (art.rest ? " REST" : "") + "\n");
 	}
@@ -2402,6 +2417,30 @@ function setvoicereaddir(v, d) {
 	d = Math.round(d);
 	if (d < 0 || d > 2) d = 0;
 	voiceReadDir[idx] = d;
+}
+
+// Per-voice own key/tonality (TonProp/Set/Raiz -- see voiceKeyOwn above). Same off-by-default
+// shape as setvoicereadown/mode/dir: no resetReadWalk, no rebuild -- there is nothing derived to
+// recompute here, unlike the ornament offsets below.
+function setvoicekeyown(v, flag) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	voiceKeyOwn[idx] = flag ? 1 : 0;
+}
+
+function setvoicesetindex(v, i) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	var si = Math.round(i) - 1;   // 1-based from the live.numbox, same convention as setlockindex()
+	if (si < 0) si = 0;
+	if (si > sets.length - 1) si = sets.length - 1;
+	voiceSetIndex[idx] = si;
+}
+
+function setvoicerootoffset(v, r) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	voiceRootOffset[idx] = Math.round(r);   // unclamped, same convention as setroot()
 }
 
 // Per-voice ornament shape (Orn Tipo/Notas/Base for this voice, when its own Patron is Ornamento
@@ -3135,19 +3174,23 @@ function peekSharedPc(v, pcs, n, j) {
 // The full MIDI note voice v plays j notes after its current one, in the independent-voice
 // walk -- mirrors the note calc in emitVoicesIndependent() (octave list + master shift + fold).
 function peekVoiceNote(v, pcs, n, j) {
+	// TonProp: mirrors emitVoicesIndependent()'s own-set/own-root resolution, so the horizon/colmon
+	// lookahead for an own-key voice shows what will actually sound, not the shared harmony.
+	var vPcs = voicePcsFor(v, pcs);
+	var vN = vPcs.length;
 	var base = (mode === 1) ? voicePos[v] : 0;
 	var vm = voiceReadModeOf(v);
 	var pc;
 	if (((vm === undefined) ? readMode : vm) === READ_ORNAMENT) {
-		pc = voiceOrnamentPitchAt(v, base + j, pcs);   // mirrors emitVoicesIndependent()'s ornament branch
+		pc = voiceOrnamentPitchAt(v, base + j, vPcs);   // mirrors emitVoicesIndependent()'s ornament branch
 	} else {
-		pc = pitchForDegree(pcs,
-			degreeAt(n, base + j, vm, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+		pc = pitchForDegree(vPcs,
+			degreeAt(vN, base + j, vm, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
 	}
 	if (drumOn) return padFor(pc);
 	var list = voiceOctaveList[v];
 	var oct = list[((base + j) % list.length + list.length) % list.length];
-	return foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
+	return foldToRange(MELODY_BASE + pc + oct * 12 + voiceRootFor(v) + masterOctave * 12,
 		voiceRangeMin[v], voiceRangeMax[v]);
 }
 
@@ -4075,6 +4118,16 @@ function voiceReadDirOf(idx) {
 	return voiceReadOwn[idx] ? voiceReadDir[idx] : undefined;
 }
 
+// This voice's own set if TonProp is on, the shared one otherwise -- the base pcs[] every
+// per-voice pitch calculation (ornament included, via its own pcs argument) resolves against.
+function voicePcsFor(idx, sharedPcs) {
+	return voiceKeyOwn[idx] ? (sets[voiceSetIndex[idx]] || sharedPcs) : sharedPcs;
+}
+// This voice's own crude transpose if TonProp is on, the shared effRoot() otherwise.
+function voiceRootFor(idx) {
+	return voiceKeyOwn[idx] ? voiceRootOffset[idx] : effRoot();
+}
+
 // How many steps one complete pass takes, direction included. It decides when the set is allowed
 // to change, so no reading order is ever cut off half way -- a superpermutation gets to finish,
 // and a pendulum gets to come back, before the harmony moves.
@@ -4127,25 +4180,30 @@ function emitVoicesIndependent(pcs, n) {
 		// Arpegio: the cursor walks, and the offset keeps the voices a fixed number of degrees apart.
 		var readIdx = (mode === 1) ? pos : 0;
 		var vMode = voiceReadModeOf(v);
+		// TonProp: this voice's own set/root (Bitonal/Polytonal), the shared harmony otherwise --
+		// see voicePcsFor()/voiceRootFor(). Everything below (ornament, degreeAt, accent-cycle tie
+		// to n) reads vPcs/vN, so an own-key voice with a differently-sized set is fully consistent.
+		var vPcs = voicePcsFor(v, pcs);
+		var vN = vPcs.length;
 		var pc;
 		if (((vMode === undefined) ? readMode : vMode) === READ_ORNAMENT) {
 			// This voice's own shape (Orn Tipo/Notas/Base) if Propia is on, the shared ornament
 			// otherwise; each voice runs it from its own cursor either way. Grado / modDeg fold the
 			// SET as a degree offset, which the ornament base does not take -- so ignored here
 			// (Base=Grados still reads the set through ornamentPitchAt).
-			pc = voiceOrnamentPitchAt(v, readIdx, pcs);
+			pc = voiceOrnamentPitchAt(v, readIdx, vPcs);
 		} else {
-			pc = pitchForDegree(pcs,
-				degreeAt(n, readIdx, vMode, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+			pc = pitchForDegree(vPcs,
+				degreeAt(vN, readIdx, vMode, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
 		}
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];
 		var note = drumOn ? padFor(pc)
-			: foldToRange(MELODY_BASE + pc + oct * 12 + effRoot() + masterOctave * 12,
+			: foldToRange(MELODY_BASE + pc + oct * 12 + voiceRootFor(v) + masterOctave * 12,
 				voiceRangeMin[v], voiceRangeMax[v]);
 		// the accent grid is read at this voice's own cursor for the same reason triggervoice()
 		// does it: a voice on a divider advances slower, and its accents have to follow its notes
-		var art = articulationFor(v, pos, n);
+		var art = articulationFor(v, pos, vN);
 		voicePos[v] = pos + 1;
 		soundPosV[v] = pos;
 
