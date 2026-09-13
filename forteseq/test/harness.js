@@ -2020,7 +2020,41 @@ function checkQueryNext() {
 		console.error('QueryNext: al reencender la voz 2 su historia deberia volver a llenarse'); ok = false;
 	}
 
-	if (ok) console.log('OK   QueryNext: querynext() no mueve ni una nota ni la urna; hist de voz apagada se vacia; hpattern/hcursor/hist/hshape salen bien.');
+	// vkey <v> <forte> <tonica>: que set/raiz esta tocando REALMENTE cada voz. Compartida por
+	// defecto (misma para las 3 voces); con TonProp on la voz 1 se aparta a su propia clave y debe
+	// traer su propio forte/tonica, distintos de las otras dos.
+	const vk = setup(seed);
+	vk.c.setvoicekeyown(1, 1);
+	vk.c.setvoicesetindex(1, vk.c.setForte.indexOf('4-28') + 1);
+	vk.c.setvoicerootoffset(1, 3);
+	for (let i = 0; i < 4; i++) vk.c.bang();
+	const atVk = vk.e.log.length;
+	vk.c.querynext();
+	const vkr = rowsOf(vk.e.log, atVk, 'vkey');
+	if (vkr.length !== 3) { console.error('QueryNext: vkey deberia traer 1 fila por voz (3), salieron ' + vkr.length); ok = false; }
+	const byV = {}; for (const a of vkr) byV[Number(a[0])] = { forte: a[1], tonica: a[2] };
+	if (!byV[0] || byV[0].forte !== '4-28' || byV[0].tonica !== 'D#') {
+		console.error('QueryNext: vkey voz 1 (TonProp) deberia ser 4-28/D#, dio ' + JSON.stringify(byV[0])); ok = false;
+	}
+	if (!byV[1] || !byV[2] || byV[1].forte !== byV[2].forte || byV[1].tonica !== byV[2].tonica ||
+		byV[1].forte === byV[0].forte) {
+		console.error('QueryNext: vkey voces 2/3 deberian compartir la armonia global, distinta de la voz 1: ' +
+			JSON.stringify(byV)); ok = false;
+	}
+	// re-querying without a change stays silent (debounce); moving the shared set re-emits 2/3 only
+	const atVkQ = vk.e.log.length;
+	vk.c.querynext();
+	if (rowsOf(vk.e.log, atVkQ, 'vkey').length !== 0) { console.error('QueryNext: vkey re-emitido sin cambio (debounce roto)'); ok = false; }
+	vk.c.setlockindex(200);
+	const atVk2 = vk.e.log.length;
+	vk.c.querynext();
+	const vkr2 = rowsOf(vk.e.log, atVk2, 'vkey').map((a) => Number(a[0]));
+	if (JSON.stringify(vkr2.sort()) !== JSON.stringify([1, 2])) {
+		console.error('QueryNext: mover el set compartido deberia re-emitir vkey solo para las voces 2/3, salio ' +
+			JSON.stringify(vkr2)); ok = false;
+	}
+
+	if (ok) console.log('OK   QueryNext: querynext() no mueve ni una nota ni la urna; hist de voz apagada se vacia; hpattern/hcursor/hist/hshape/vkey salen bien.');
 	return ok;
 }
 

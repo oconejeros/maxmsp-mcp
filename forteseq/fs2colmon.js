@@ -98,6 +98,7 @@ function filtclear() {}   // el panel fs2setpick.js del popup viaja por el mismo
 function filtinfo() {}
 function filtset() {}
 function maskecho() {}
+function vkey() {}   // fs2horizon.js del popup lo dibuja; este panel no
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 

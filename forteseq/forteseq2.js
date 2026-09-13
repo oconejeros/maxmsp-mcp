@@ -3327,6 +3327,8 @@ for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.pus
 var qnFiltShown = "";   // firma del ultimo emit de swatches; "" = forzar
 var qnMaskShown = "";   // firma del ultimo maskecho
 var qnOrnScaleShown = "";   // firma (I,tipo,conteo) de la ultima escala resultante emitida; "" = forzar
+var qnVKeyShown = [];   // firma "forte,tonica" por voz del ultimo emitVoiceKeyReadouts(); "" = forzar
+for (var _vki = 0; _vki < MAX_VOICES; _vki++) qnVKeyShown.push("");
 var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
 
 // Largo de un ciclo de la forma para la grilla (con el doblado de la pendular), o -1 para
@@ -3341,7 +3343,7 @@ function shapeGridCols(rm, rd, card) {
 function querynext() {
 	if (NUM_VOICES !== qnVoicesShown) {
 		qnVoicesShown = NUM_VOICES;
-		for (var r = 0; r < MAX_VOICES; r++) { qnPatShown[r] = ""; qnCurShown[r] = ""; qnHistShown[r] = ""; }
+		for (var r = 0; r < MAX_VOICES; r++) { qnPatShown[r] = ""; qnCurShown[r] = ""; qnHistShown[r] = ""; qnVKeyShown[r] = ""; }
 		outlet(3, ["colvoices", NUM_VOICES]);   // ambos jsui de outlet 3 lo entienden
 	}
 
@@ -3447,6 +3449,7 @@ function querynext() {
 	emitOrnScale();
 	emitFiltSets();
 	emitMaskEcho();
+	emitVoiceKeyReadouts();
 }
 
 // La transposicion a la que sonara el set i si se fija ahora. effRoot() responde por setIndex;
@@ -3519,11 +3522,31 @@ function emitOrnScale() {
 	outlet(3, row);
 }
 
+// Que set/raiz esta tocando REALMENTE cada voz -- el compartido (setIndex/effRoot()), o el propio
+// si TonProp esta on (voicePcsFor()/voiceRootFor() resuelven lo mismo del lado del audio). Sin
+// esto no hay forma de ver de un vistazo si una voz en su propia clave (Bitonal/Polytonal) quedo
+// donde se penso, sin entrar a su pestana Voces. PURA, bajo demanda como el resto de este outlet
+// -- ver querynext(). Debounce por voz: "forte,tonica".
+function emitVoiceKeyReadouts() {
+	for (var v = 0; v < NUM_VOICES; v++) {
+		var own = voiceKeyOwn[v];
+		var si = own ? voiceSetIndex[v] : setIndex;
+		var forte = setForte[si] || "-";
+		var tonic = NOTE_NAMES[pc12(own ? voiceRootOffset[v] : effRoot())];
+		var sig = forte + "," + tonic;
+		if (sig === qnVKeyShown[v]) continue;
+		qnVKeyShown[v] = sig;
+		outlet(3, ["vkey", v, forte, tonic]);
+	}
+}
+
 function queryfiltsets() {   // mensaje: refresco forzado desde el boton "Proximos 16"
 	qnFiltShown = ""; qnMaskShown = ""; qnOrnScaleShown = "";
+	for (var _vkr = 0; _vkr < MAX_VOICES; _vkr++) qnVKeyShown[_vkr] = "";
 	emitFiltSets();
 	emitMaskEcho();
 	emitOrnScale();
+	emitVoiceKeyReadouts();
 }
 
 function setmonitor(x) {

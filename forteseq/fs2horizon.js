@@ -23,6 +23,10 @@
 //   ornscale <count> <forte> <vec> <is12> <pc0..>  -- READ_ORNAMENT's resulting scale (Slonimsky's
 //            Master Chord): the pitch-class aggregate of one ornament pass. count 0 = clear (any
 //            other reading order). Drawn as a 12-chip strip + label above the status line.
+//   vkey <v> <forte> <tonica>  -- which set/root voice v is ACTUALLY sounding right now: the
+//            shared one, or its own if TonProp (Bitonal/Polytonal) is on. Drawn as a small label
+//            at the left of that voice's row, next to the "V<n>" tag this file otherwise never
+//            printed (rows were previously told apart only by top-to-bottom order).
 //   colvoices <n>   colbang <v>   color <0|1>   clear   colmon ...(ignored)
 //
 // solovoices <0|1> -- NOT from outlet 3: sent directly from the main device panel's "Solo Voces"
@@ -107,8 +111,9 @@ var pulse = [];          // bang flash amount per row
 var status = null;       // [readMode, readDir, setIdx1, mode] or null
 var shape = null;        // { n, cols, rawL, degs:[...] } -- the static reading-order strip
 var shapeCur = 0;        // cursor column within the shape strip
+var vkeyInfo = [];       // vkeyInfo[v] = { forte, tonic } from the last "vkey" message, or null
 var i;
-for (i = 0; i < MAXROWS; i++) { pat.push({ kind: 1, cols: 0, cells: [] }); cur.push(0); played.push([]); pulse.push(0); }
+for (i = 0; i < MAXROWS; i++) { pat.push({ kind: 1, cols: 0, cells: [] }); cur.push(0); played.push([]); pulse.push(0); vkeyInfo.push(null); }
 
 var PC_RGB = [];         // pitch class -> colour (the note grid)
 var DEG_RGB = [];        // degree index -> muted warm colour (the shape strip; deliberately unlike PC_RGB)
@@ -199,13 +204,23 @@ function ornscale() {
 	mgraphics.redraw();
 }
 
+// Which set/root voice v is ACTUALLY sounding: the shared one, or its own if TonProp (Bitonal/
+// Polytonal, see forteseq2.js's voicePcsFor()/voiceRootFor()) is on. Sent under demand, debounced
+// engine-side per voice.
+function vkey(v, forte, tonic) {
+	v = Math.round(v);
+	if (!(v >= 0 && v < MAXROWS)) return;
+	vkeyInfo[v] = { forte: String(forte), tonic: String(tonic) };
+	mgraphics.redraw();
+}
+
 function color(on) {
 	colorOn = on ? 1 : 0;
 	mgraphics.redraw();
 }
 
 function clear() {
-	for (var k = 0; k < MAXROWS; k++) { pat[k] = { kind: 1, cols: 0, cells: [] }; cur[k] = 0; played[k] = []; pulse[k] = 0; }
+	for (var k = 0; k < MAXROWS; k++) { pat[k] = { kind: 1, cols: 0, cells: [] }; cur[k] = 0; played[k] = []; pulse[k] = 0; vkeyInfo[k] = null; }
 	shape = null; shapeCur = 0; ornScale = null;
 	mgraphics.redraw();
 }
@@ -309,9 +324,10 @@ function paint() {
 	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
 
-	var histW = Math.round(Math.min(W * 0.28, HIST_MAX * 22));   // left zone for played notes
+	var keyW = 58;   // left zone: "V<n>" + the forte/tonica it is actually sounding (vkey)
+	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
 	var histCW = histW / HIST_MAX;
-	var gridX = histW + 4;
+	var gridX = keyW + histW + 4;
 	var gridW = Math.max(1, W - gridX);
 
 	// header ticks: a few 1-based indices across the grid, using row 0's column count
@@ -326,7 +342,7 @@ function paint() {
 	}
 	mgraphics.set_source_rgba([0.45, 0.45, 0.5, 1]);
 	mgraphics.set_font_size(8);
-	mgraphics.move_to(4, headH - 5);
+	mgraphics.move_to(keyW + 4, headH - 5);
 	mgraphics.show_text('tocado');
 
 	for (var v = 0; v < nRows; v++) {
@@ -334,13 +350,28 @@ function paint() {
 		var P = pat[v] || { kind: 1, cols: 0, cells: [] };
 		var hv = played[v] || [];
 
+		// voice tag + the set/root it is ACTUALLY sounding (vkey) -- its own key if TonProp is on,
+		// the shared harmony otherwise. The only place any row in this popup is labeled by voice
+		// number at all; previously only top-to-bottom order told them apart.
+		mgraphics.set_source_rgba([0.6, 0.6, 0.66, 1]);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(4, y + Math.min(rowH, 13));
+		mgraphics.show_text('V' + (v + 1));
+		var vk = vkeyInfo[v];
+		if (vk && rowH >= 22) {
+			mgraphics.set_font_size(7.5);
+			mgraphics.set_source_rgba([0.5, 0.5, 0.56, 1]);
+			mgraphics.move_to(4, y + Math.min(rowH - 4, 25));
+			mgraphics.show_text(vk.forte + ' ' + vk.tonic);
+		}
+
 		// history: newest is hv[0], drawn nearest the grid (rightmost slot)
 		for (var hslot = 0; hslot < HIST_MAX; hslot++) {
 			var hidx = hslot;                       // 0..HIST_MAX-1, oldest slot on the left
 			var age = HIST_MAX - 1 - hslot;         // -> hv index (older = higher)
 			var note = (age < hv.length) ? hv[age] : -1;
 			var dim = 0.40 + 0.15 * (hslot / (HIST_MAX - 1));   // older = dimmer
-			drawCell(hidx * histCW, y, histCW, rowH, note, dim, histCW >= 20);
+			drawCell(keyW + hidx * histCW, y, histCW, rowH, note, dim, histCW >= 20);
 		}
 
 		// pattern grid
