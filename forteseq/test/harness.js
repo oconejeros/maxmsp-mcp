@@ -788,6 +788,30 @@ function runScenario(e) {
 	c.setvoiceindep(0);
 	c.setornbasemode(0);
 	c.setreadmode(0);
+
+	// Base = Serie: el tamano del salto entre tonos principales crece y despues decrece
+	// aritmeticamente ("Increasing and Diminishing Intervals"). Tambien al final, misma razon.
+	c.setreadmode(7);
+	c.setornbasemode(3);
+	for (const [st, sp, pk, ty, ct] of [[1, 1, 2, 0, 1], [1, 1, 4, 0, 1], [2, 1, 3, 1, 1], [1, 2, 3, 4, 1]]) {
+		c.setornseriesstart(st);
+		c.setornseriesstep(sp);
+		c.setornseriespeak(pk);
+		c.setorntype(ty);
+		c.setorncount(ct);
+		mark('ornamento Base=Serie inicio=' + st + ' paso=' + sp + ' pico=' + pk + ' tipo=' + ty + ' n=' + ct);
+		run(20);
+	}
+	c.setreaddir(1);
+	mark('ornamento Base=Serie en retrogrado');
+	run(16);
+	c.setreaddir(0);
+	c.setvoiceindep(1);
+	mark('ornamento Base=Serie con voces independientes');
+	run(20);
+	c.setvoiceindep(0);
+	c.setornbasemode(0);
+	c.setreadmode(0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1106,12 +1130,46 @@ function checkSlonimsky() {
 	c.setornbasemode(0);   // sin regresion
 	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))
 		fail('volver a Base=Intervalo tras Cuarteto deberia reproducir Ditone/Interp1, dio ' + c.ornamentUnionSet());
-	c.setornbasemode(99);
-	if (c.ornBaseMode !== 2) fail('setornbasemode(99) deberia recortar a 2 (Cuarteto), quedo en ' + c.ornBaseMode);
 	c.setornbasemode(0);
 	c.setornquadscheme(99);
 	if (c.ornQuadScheme !== 2) fail('setornquadscheme(99) deberia recortar a 2, quedo en ' + c.ornQuadScheme);
 	c.setornquadscheme(0);
+
+	// ORN_BASE_SERIES: "Increasing and Diminishing Intervals" -- el tamano del salto entre tonos
+	// principales crece aritmeticamente y despues vuelve a bajar antes de repetir el arco; el tono
+	// sigue subiendo todo el tiempo (solo el TAMANO del salto sube y baja). Peak=1 degenera a un
+	// intervalo constante -- debe reproducir Base=Intervalo exacto, el caso borde correcto.
+	c.setornbasemode(3);
+	c.setornseriesstart(1); c.setornseriesstep(1); c.setornseriespeak(2);
+	if (!eq(c.ornSeriesIntervals, [1, 2, 1])) fail('buildOrnSeries start=1 step=1 peak=2 deberia dar [1,2,1], dio ' + c.ornSeriesIntervals);
+	if (c.ornSeriesPeriodSum !== 4) fail('ornSeriesPeriodSum deberia ser 4, es ' + c.ornSeriesPeriodSum);
+	c.setorntype(0); c.setornbaseinterval(1); c.setorncount(1);   // sin offsets -- solo el arco
+	if (c.ornBaseTones() !== 9) fail('ornBaseTones Base=Serie (1,1,2) deberia ser 9, dio ' + c.ornBaseTones());
+	const seriesSeq = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((p) => c.ornamentPitchAt(p));
+	if (!eq(seriesSeq, [0, 1, 3, 4, 5, 7, 8, 9, 11]))
+		fail('ornamentPitchAt Base=Serie (1,1,2) deberia dar 0,1,3,4,5,7,8,9,11, dio ' + seriesSeq);
+	if (c.forteLabelOf(c.ornamentUnionSet()) !== '9-12')
+		fail('Base=Serie (1,1,2) sin ornamento deberia clasificar 9-12, dio ' + c.forteLabelOf(c.ornamentUnionSet()));
+	c.setornseriesstart(1); c.setornseriesstep(1); c.setornseriespeak(4);   // el arco default (1,2,3,4,3,2,1)
+	if (!eq(c.ornSeriesIntervals, [1, 2, 3, 4, 3, 2, 1])) fail('arco default deberia ser [1,2,3,4,3,2,1], dio ' + c.ornSeriesIntervals);
+	if (c.ornBaseTones() !== 21) fail('ornBaseTones Base=Serie default deberia ser 21, dio ' + c.ornBaseTones());
+	if (!eq(c.ornamentUnionSet(), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]))
+		fail('Base=Serie default ya cubre las 12 clases solo con los tonos principales, dio ' + c.ornamentUnionSet());
+	c.setornseriesstart(5); c.setornseriesstep(3); c.setornseriespeak(1);   // degenera a intervalo constante
+	if (!eq(c.ornSeriesIntervals, [5])) fail('peak=1 deberia degenerar a [5], dio ' + c.ornSeriesIntervals);
+	if (c.ornBaseTones() !== 12) fail('peak=1 start=5 deberia dar el mismo ornBaseTones que Base=Intervalo I=5 (12), dio ' + c.ornBaseTones());
+	const degSeq = [0, 1, 2, 3, 4, 5].map((p) => c.ornamentPitchAt(p));
+	if (!eq(degSeq, [0, 5, 10, 15, 20, 25])) fail('peak=1 deberia caminar 5*baseIdx igual que Base=Intervalo, dio ' + degSeq);
+	c.setornbasemode(0);   // sin regresion
+	if (!eq(uni(4, 0, 1), [0, 1, 4, 5, 8, 9]))
+		fail('volver a Base=Intervalo tras Serie deberia reproducir Ditone/Interp1, dio ' + c.ornamentUnionSet());
+	c.setornbasemode(99);
+	if (c.ornBaseMode !== 3) fail('setornbasemode(99) deberia recortar a 3 (Serie), quedo en ' + c.ornBaseMode);
+	c.setornbasemode(0);
+	c.setornseriesstart(99); if (c.ornSeriesStart !== 6) fail('setornseriesstart(99) deberia recortar a 6, quedo en ' + c.ornSeriesStart);
+	c.setornseriesstep(99); if (c.ornSeriesStep !== 4) fail('setornseriesstep(99) deberia recortar a 4, quedo en ' + c.ornSeriesStep);
+	c.setornseriespeak(99); if (c.ornSeriesPeak !== 8) fail('setornseriespeak(99) deberia recortar a 8, quedo en ' + c.ornSeriesPeak);
+	c.setornseriesstart(1); c.setornseriesstep(1); c.setornseriespeak(4);   // vuelve al arco default
 
 	// setreadmode() clamps to the new ceiling; the legacy alias reaches it too.
 	c.setreadmode(7);
@@ -1129,6 +1187,11 @@ function checkSlonimsky() {
 		for (let i = 0; i < 16; i++) c.bang();
 		c.setvoiceindep(0);
 		c.setornbasemode(2); c.setornquadscheme(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceindep(0);
+		c.setornbasemode(3); c.setornseriesstart(2); c.setornseriesstep(2); c.setornseriespeak(3);
 		for (let i = 0; i < 16; i++) c.bang();
 		c.setvoiceindep(1);
 		for (let i = 0; i < 16; i++) c.bang();
@@ -1686,6 +1749,30 @@ function checkQueryNext() {
 	oq.c.querynext();
 	if (rowsOf(oq.e.log, atOq2, 'ornscale').length !== 1) {
 		console.error('QueryNext: cambiar ornQuadScheme deberia re-emitir ornscale (aunque el pcset sea el mismo)'); ok = false;
+	}
+
+	// Base=Serie: el arco (1,1,2) sin ornamento da 9 clases (9-12), no simetrico; cambiar el pico
+	// del arco re-emite otra escala.
+	const os2 = setup(seed);
+	os2.c.setreadmode(7); os2.c.setreaddir(0);
+	os2.c.setornbasemode(3); os2.c.setornseriesstart(1); os2.c.setornseriesstep(1); os2.c.setornseriespeak(2);
+	os2.c.setorntype(0); os2.c.setornbaseinterval(1); os2.c.setorncount(1);
+	for (let i = 0; i < 4; i++) os2.c.bang();
+	const atOs2v = os2.e.log.length;
+	os2.c.querynext();
+	const os2r = rowsOf(os2.e.log, atOs2v, 'ornscale');
+	if (os2r.length !== 1) { console.error('QueryNext: Ornamento Base=Serie deberia emitir 1 ornscale, salieron ' + os2r.length); ok = false; }
+	for (const a of os2r) {
+		const cnt = Number(a[0]), forte = a[1];
+		if (cnt !== 9 || forte !== '9-12') {
+			console.error('QueryNext: ornscale Base=Serie (1,1,2) deberia ser 9 clases / 9-12, dio ' + JSON.stringify(a)); ok = false;
+		}
+	}
+	os2.c.setornseriespeak(4);
+	const atOs2b = os2.e.log.length;
+	os2.c.querynext();
+	if (rowsOf(os2.e.log, atOs2b, 'ornscale').length !== 1) {
+		console.error('QueryNext: cambiar ornSeriesPeak deberia re-emitir ornscale'); ok = false;
 	}
 
 	// a voice that is turned OFF takes no notes: its deep history must scroll toward blank, one

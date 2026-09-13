@@ -111,12 +111,17 @@ var coprimeSkip = 2;    // degrees to skip in READ_COPRIMO; snapped to a coprime
 // ORN_BASE_QUADRITONE walks a flat 12-note partition of the chromatic total into 4 mutually
 // exclusive triads (Quadritonal Arpeggios, Thesaurus pp. 178-181 -- Liszt's Faust theme is 4
 // augmented triads, Slonimsky's own Moto Perpetuo No. 1255 walks this same idea), chosen by
-// ornQuadScheme -- see quadritonalPartition().
+// ornQuadScheme -- see quadritonalPartition(). ORN_BASE_SERIES instead grows the interval BETWEEN
+// principal tones arithmetically from ornSeriesStart by ornSeriesStep for ornSeriesPeak steps, then
+// mirrors back down to the start before repeating -- Slonimsky's "Increasing and Diminishing
+// Intervals" (Thesaurus, the series following the Quadritonal Arpeggios). Pitch keeps climbing the
+// whole time (only the SIZE of each leap grows then shrinks); the ornament stamps on top exactly
+// as in the other three base modes. See buildOrnSeries().
 var ORN_INTERP = 0, ORN_INFRA = 1, ORN_ULTRA = 2,
 	ORN_INFRA_INTER = 3, ORN_INFRA_ULTRA = 4, ORN_INFRA_INTER_ULTRA = 5;
 var ORN_TYPE_MAX = 5;
-var ORN_BASE_INTERVAL = 0, ORN_BASE_DEGREES = 1, ORN_BASE_QUADRITONE = 2;
-var ORN_BASE_MODE_MAX = ORN_BASE_QUADRITONE;
+var ORN_BASE_INTERVAL = 0, ORN_BASE_DEGREES = 1, ORN_BASE_QUADRITONE = 2, ORN_BASE_SERIES = 3;
+var ORN_BASE_MODE_MAX = ORN_BASE_SERIES;
 var ornBaseInterval = 4;   // I, in semitones (1..14) -- used when ornBaseMode === ORN_BASE_INTERVAL
 var ornType = ORN_INTERP;
 var ornCount = 1;          // notes added per principal tone, per named component (1..4)
@@ -124,6 +129,11 @@ var ornOffsets = [];       // derived: signed semitone offsets, one per added no
 var ornBaseMode = ORN_BASE_INTERVAL;
 var ornBaseStep = 1;       // degrees to advance per principal tone when ornBaseMode === ORN_BASE_DEGREES (1..4)
 var ornQuadScheme = 0;     // which 4-triad partition when ornBaseMode === ORN_BASE_QUADRITONE (0..2)
+var ornSeriesStart = 1;    // first interval, in semitones (1..6), when ornBaseMode === ORN_BASE_SERIES
+var ornSeriesStep = 1;     // growth per step (1..4)
+var ornSeriesPeak = 4;     // how many ascending steps before the size mirrors back down (1..8)
+var ornSeriesIntervals = [];   // derived: one arch of interval sizes, ascending then back down
+var ornSeriesPeriodSum = 0;    // derived: sum of ornSeriesIntervals, for the pitch-class repeat length
 var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
@@ -1620,6 +1630,7 @@ buildClassIndex();
 buildOrder();
 buildFilter();
 buildOrnOffsets();   // READ_ORNAMENT's offset list, so it is never empty if that mode is selected first
+buildOrnSeries();    // ORN_BASE_SERIES's interval arch, same reasoning
 
 function loadbang() {
 	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
@@ -3401,8 +3412,9 @@ function emitMaskEcho() {
 
 // READ_ORNAMENT's resulting scale -- Slonimsky's Master Chord -- for the horizon window. The
 // signature is (baseMode, baseStep, interval, type, count); in Base=Grados the scale also follows
-// the set and the root, so setIndex + effRoot() join it there, and in Base=Cuarteto the scheme
-// joins it. Outside Ornamento it sends one "ornscale 0" to clear whatever the window was showing.
+// the set and the root, so setIndex + effRoot() join it there, in Base=Cuarteto the scheme joins
+// it, and in Base=Serie the three series parameters join it. Outside Ornamento it sends one
+// "ornscale 0" to clear whatever the window was showing.
 function emitOrnScale() {
 	if (readMode !== READ_ORNAMENT) {
 		if (qnOrnScaleShown !== "") { qnOrnScaleShown = ""; outlet(3, ["ornscale", 0]); }
@@ -3410,7 +3422,8 @@ function emitOrnScale() {
 	}
 	var key = ornBaseMode + "," + ornBaseStep + "," + ornBaseInterval + "," + ornType + "," + ornCount +
 		((ornBaseMode === ORN_BASE_DEGREES) ? ("," + setIndex + "," + effRoot()) : "") +
-		((ornBaseMode === ORN_BASE_QUADRITONE) ? ("," + ornQuadScheme) : "");
+		((ornBaseMode === ORN_BASE_QUADRITONE) ? ("," + ornQuadScheme) : "") +
+		((ornBaseMode === ORN_BASE_SERIES) ? ("," + ornSeriesStart + "," + ornSeriesStep + "," + ornSeriesPeak) : "");
 	if (key === qnOrnScaleShown) return;
 	qnOrnScaleShown = key;
 	var u = ornamentUnionSet(sets[setIndex]);
@@ -3808,18 +3821,54 @@ function quadritonalPartition(scheme) {
 	return quadPartitionCache[scheme];
 }
 
+// Increasing and Diminishing Intervals: one arch of leap sizes, growing by ornSeriesStep from
+// ornSeriesStart for ornSeriesPeak steps, then mirroring back down to (but not repeating) the
+// start before the arch repeats. Peak 1 degenerates to a single constant interval -- the same
+// scale as ORN_BASE_INTERVAL with I = ornSeriesStart, which is the right edge case, not a bug.
+function buildOrnSeries() {
+	var start = Math.max(1, Math.round(ornSeriesStart));
+	var step = Math.max(1, Math.round(ornSeriesStep));
+	var peak = Math.max(1, Math.round(ornSeriesPeak));
+	var up = [], k;
+	for (k = 0; k < peak; k++) up.push(start + k * step);
+	var down = up.slice(0, peak - 1).reverse();
+	ornSeriesIntervals = up.concat(down);
+	var sum = 0;
+	for (k = 0; k < ornSeriesIntervals.length; k++) sum += ornSeriesIntervals[k];
+	ornSeriesPeriodSum = sum;
+}
+
+// The cumulative semitone displacement at principal tone index baseIdx: baseIdx steps through the
+// (possibly repeated) arch of ornSeriesIntervals, added up in order -- always growing, since every
+// interval is positive; only the SIZE of each leap grows then shrinks.
+function seriesPrincipalAt(baseIdx) {
+	var period = ornSeriesIntervals.length || 1;
+	var full = Math.floor(baseIdx / period);
+	var rem = baseIdx % period;
+	var sum = full * ornSeriesPeriodSum;
+	for (var i = 0; i < rem; i++) sum += ornSeriesIntervals[i];
+	return sum;
+}
+
 // How many principal tones one pass visits before the pitch classes repeat.
 //   ORN_BASE_INTERVAL -- Slonimsky's "equal division of one or more octaves": I=4 gives 3
 //     (augmented), I=7 gives 12 (cycle of fifths), I=8 (Quadritone) also 3, I=14 (Septitone) 6.
 //   ORN_BASE_DEGREES -- one full turn of the set's degrees at ornBaseStep apart: n / gcd(step, n),
 //     so step 1 gives n, step 2 on a 7-note set also gives 7, step 3 on a 6-note set gives 2.
 //   ORN_BASE_QUADRITONE -- always 12: one full walk through the four-triad partition.
+//   ORN_BASE_SERIES -- one arch (ornSeriesIntervals.length principal tones) repeated until the
+//     cumulative displacement is a multiple of 12: periodLen * 12/gcd(periodSum, 12).
 function ornBaseTones(pcs) {
 	if (ornBaseMode === ORN_BASE_QUADRITONE) return 12;
 	if (ornBaseMode === ORN_BASE_DEGREES) {
 		var n = (pcs && pcs.length) ? pcs.length : 1;
 		var s = ((Math.round(ornBaseStep) % n) + n) % n || n;
 		return n / gcd(s, n);
+	}
+	if (ornBaseMode === ORN_BASE_SERIES) {
+		var period = ornSeriesIntervals.length || 1;
+		var m = 12 / gcd(((ornSeriesPeriodSum % 12) + 12) % 12 || 12, 12);
+		return period * m;
 	}
 	return 12 / gcd(((ornBaseInterval % 12) + 12) % 12 || 12, 12);
 }
@@ -3850,6 +3899,9 @@ function ornamentPitchAt(pos, pcs) {
 	var off = (cellIdx === 0) ? 0 : ornOffsets[cellIdx - 1];
 	if (ornBaseMode === ORN_BASE_QUADRITONE) {
 		return quadritonalPartition(ornQuadScheme)[baseIdx] + off;
+	}
+	if (ornBaseMode === ORN_BASE_SERIES) {
+		return seriesPrincipalAt(baseIdx) + off;
 	}
 	if (ornBaseMode === ORN_BASE_DEGREES && pcs && pcs.length) {
 		return pitchForDegree(pcs, baseIdx * Math.round(ornBaseStep)) + off;
@@ -4274,9 +4326,10 @@ function setorncount(c) {
 }
 
 // Base layout: 0 = step the root by ornBaseInterval (equal division), 1 = walk the set's degrees
-// ornBaseStep apart, 2 = walk the ornQuadScheme four-triad partition. These do not touch
-// ornOffsets, but the base cycle length and the resulting scale both change, so restart the walk,
-// repaint the readouts and re-emit the ornament scale.
+// ornBaseStep apart, 2 = walk the ornQuadScheme four-triad partition, 3 = grow/shrink the leap
+// size along the ornSeriesStart/Step/Peak arch. These do not touch ornOffsets, but the base cycle
+// length and the resulting scale both change, so restart the walk, repaint the readouts and
+// re-emit the ornament scale.
 function setornbasemode(m) {
 	ornBaseMode = Math.round(m);
 	if (!isFinite(ornBaseMode) || ornBaseMode < 0) ornBaseMode = 0;
@@ -4299,6 +4352,39 @@ function setornquadscheme(s) {
 	ornQuadScheme = Math.round(s);
 	if (!isFinite(ornQuadScheme) || ornQuadScheme < 0) ornQuadScheme = 0;
 	if (ornQuadScheme > QUAD_SCHEMES.length - 1) ornQuadScheme = QUAD_SCHEMES.length - 1;
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
+}
+
+// Base=Serie ("Increasing and Diminishing Intervals"): these three rebuild the interval arch, so
+// -- unlike setornbasemode/setornbasestep/setornquadscheme -- they mirror buildOrnOffsets()'s
+// setters and call buildOrnSeries() rather than leaving it alone.
+function setornseriesstart(v) {
+	ornSeriesStart = Math.round(v);
+	if (!isFinite(ornSeriesStart) || ornSeriesStart < 1) ornSeriesStart = 1;
+	if (ornSeriesStart > 6) ornSeriesStart = 6;
+	buildOrnSeries();
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
+}
+
+function setornseriesstep(v) {
+	ornSeriesStep = Math.round(v);
+	if (!isFinite(ornSeriesStep) || ornSeriesStep < 1) ornSeriesStep = 1;
+	if (ornSeriesStep > 4) ornSeriesStep = 4;
+	buildOrnSeries();
+	resetReadWalk();
+	readoutInvalidate();
+	qnOrnScaleShown = "";
+}
+
+function setornseriespeak(v) {
+	ornSeriesPeak = Math.round(v);
+	if (!isFinite(ornSeriesPeak) || ornSeriesPeak < 1) ornSeriesPeak = 1;
+	if (ornSeriesPeak > 8) ornSeriesPeak = 8;
+	buildOrnSeries();
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
