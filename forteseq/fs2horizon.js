@@ -337,7 +337,7 @@ function paint() {
 	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
 
-	var keyW = 118;   // left zone: "V<n>" + forte/tonica + patron/dir + orn tipo (vkey), all it has
+	var keyW = 150;   // left zone: "V<n>" + forte/tonica + patron/dir + orn tipo (vkey), all it has
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
 	var histCW = histW / HIST_MAX;
 	var gridX = keyW + histW + 4;
@@ -372,25 +372,31 @@ function paint() {
 		var rowDim = (vk && vk.muted) ? 0.35 : 1.0;
 		var anyOwn = vk && (vk.keyOwn || vk.readOwn);
 
+		// Font sizes scale with the room this row actually has (a tall window like this one should
+		// use it) instead of staying pinned at the smallest legible size regardless of space.
+		var fsV = Math.max(11, Math.min(18, rowH * 0.11));
+		var fsInfo = Math.max(10, Math.min(14, rowH * 0.085));
+		var lh = fsInfo + 6;
+
 		mgraphics.set_source_rgba(anyOwn ? [1 * rowDim, 0.75 * rowDim, 0.3 * rowDim, 1] : [0.6 * rowDim, 0.6 * rowDim, 0.66 * rowDim, 1]);
-		mgraphics.set_font_size(9);
-		mgraphics.move_to(4, y + 11);
+		mgraphics.set_font_size(fsV);
+		mgraphics.move_to(4, y + fsV + 2);
 		mgraphics.show_text('V' + (v + 1) + (vk && vk.muted ? ' ·mute' : ''));
-		if (vk && rowH >= 20) {
-			mgraphics.set_font_size(7.5);
-			mgraphics.set_source_rgba([0.5 * rowDim, 0.5 * rowDim, 0.56 * rowDim, 1]);
-			var ky = y + 21;
+		if (vk && rowH >= 24) {
+			mgraphics.set_font_size(fsInfo);
+			mgraphics.set_source_rgba([0.68 * rowDim, 0.68 * rowDim, 0.74 * rowDim, 1]);
+			var ky = y + fsV + lh;
 			mgraphics.move_to(4, ky);
 			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : ''));
-			if (rowH >= 34) {
-				ky += 10;
+			if (rowH >= fsV + 2 * lh + 6) {
+				ky += lh;
 				var pname = READ_NAMES[vk.patron] || ('modo ' + vk.patron);
 				var dsuf = vk.dir ? (' ' + (DIR_NAMES[vk.dir] || vk.dir)) : '';
 				mgraphics.move_to(4, ky);
 				mgraphics.show_text(pname + dsuf + (vk.readOwn ? ' *' : ''));
 			}
-			if (rowH >= 44 && vk.ornT >= 0) {
-				ky += 10;
+			if (rowH >= fsV + 3 * lh + 6 && vk.ornT >= 0) {
+				ky += lh;
 				mgraphics.move_to(4, ky);
 				mgraphics.show_text(ORN_TYPE_NAMES[vk.ornT] || ('orn ' + vk.ornT));
 			}
