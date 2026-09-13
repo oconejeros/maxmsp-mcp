@@ -23,10 +23,17 @@
 //   ornscale <count> <forte> <vec> <is12> <pc0..>  -- READ_ORNAMENT's resulting scale (Slonimsky's
 //            Master Chord): the pitch-class aggregate of one ornament pass. count 0 = clear (any
 //            other reading order). Drawn as a 12-chip strip + label above the status line.
-//   vkey <v> <forte> <tonica>  -- which set/root voice v is ACTUALLY sounding right now: the
-//            shared one, or its own if TonProp (Bitonal/Polytonal) is on. Drawn as a small label
-//            at the left of that voice's row, next to the "V<n>" tag this file otherwise never
-//            printed (rows were previously told apart only by top-to-bottom order).
+//   vkey <v> <forte> <tonica> <keyOwn> <readOwn> <patron> <dir> <ornTipo> <muted>  -- everything
+//            about what voice v is ACTUALLY doing right now, all resolved own-vs-shared exactly
+//            like the audio path (voicePcsFor/voiceRootFor/voiceReadModeOf/voiceReadDirOf/
+//            voiceOrnamentPitchAt): forte/tonica (its set+root), patron/dir (its reading order,
+//            READ_NAMES/DIR_NAMES index), ornTipo (ORN_TYPE_NAMES index, -1 unless its effective
+//            patron is Ornamento), muted (voiceMute[v]). keyOwn/readOwn (0/1) just say whether
+//            that forte+tonica / patron+dir came from this voice's own override or the shared
+//            globals -- drawn as a small label at the left of the row, under the "V<n>" tag this
+//            file otherwise never printed (rows were previously told apart only by top-to-bottom
+//            order). A muted row is drawn dimmed throughout, so a glance tells sounding voices
+//            from silent ones.
 //   colvoices <n>   colbang <v>   color <0|1>   clear   colmon ...(ignored)
 //
 // solovoices <0|1> -- NOT from outlet 3: sent directly from the main device panel's "Solo Voces"
@@ -101,6 +108,7 @@ var PATTERN_MAX = 48;
 var NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 var READ_NAMES = ['Recto', 'Súper', 'SúperMín', 'Modos', 'Coprimo', 'Zigzag', 'Urna', 'Ornamento'];
 var DIR_NAMES = ['adelante', 'atrás', 'alterna'];
+var ORN_TYPE_NAMES = ['Interp', 'Infra', 'Ultra', 'Infra-Inter', 'Infra-Ultra', 'Inf-Int-Ult'];
 
 var voices = 4;
 var colorOn = 1;
@@ -111,7 +119,7 @@ var pulse = [];          // bang flash amount per row
 var status = null;       // [readMode, readDir, setIdx1, mode] or null
 var shape = null;        // { n, cols, rawL, degs:[...] } -- the static reading-order strip
 var shapeCur = 0;        // cursor column within the shape strip
-var vkeyInfo = [];       // vkeyInfo[v] = { forte, tonic } from the last "vkey" message, or null
+var vkeyInfo = [];       // vkeyInfo[v] = { forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted } or null
 var i;
 for (i = 0; i < MAXROWS; i++) { pat.push({ kind: 1, cols: 0, cells: [] }); cur.push(0); played.push([]); pulse.push(0); vkeyInfo.push(null); }
 
@@ -204,13 +212,18 @@ function ornscale() {
 	mgraphics.redraw();
 }
 
-// Which set/root voice v is ACTUALLY sounding: the shared one, or its own if TonProp (Bitonal/
-// Polytonal, see forteseq2.js's voicePcsFor()/voiceRootFor()) is on. Sent under demand, debounced
-// engine-side per voice.
-function vkey(v, forte, tonic) {
+// Everything about what voice v is ACTUALLY doing right now -- own key, own reading order, own
+// ornament shape if applicable, whether it's muted. See the message doc at the top of this file.
+// Sent under demand, debounced engine-side per voice.
+function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
-	vkeyInfo[v] = { forte: String(forte), tonic: String(tonic) };
+	vkeyInfo[v] = {
+		forte: String(forte), tonic: String(tonic),
+		keyOwn: !!Math.round(keyOwn), readOwn: !!Math.round(readOwn),
+		patron: Math.round(patron), dir: Math.round(dir), ornT: Math.round(ornT),
+		muted: !!Math.round(muted)
+	};
 	mgraphics.redraw();
 }
 
@@ -324,7 +337,7 @@ function paint() {
 	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
 
-	var keyW = 58;   // left zone: "V<n>" + the forte/tonica it is actually sounding (vkey)
+	var keyW = 118;   // left zone: "V<n>" + forte/tonica + patron/dir + orn tipo (vkey), all it has
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
 	var histCW = histW / HIST_MAX;
 	var gridX = keyW + histW + 4;
@@ -350,19 +363,37 @@ function paint() {
 		var P = pat[v] || { kind: 1, cols: 0, cells: [] };
 		var hv = played[v] || [];
 
-		// voice tag + the set/root it is ACTUALLY sounding (vkey) -- its own key if TonProp is on,
-		// the shared harmony otherwise. The only place any row in this popup is labeled by voice
-		// number at all; previously only top-to-bottom order told them apart.
-		mgraphics.set_source_rgba([0.6, 0.6, 0.66, 1]);
-		mgraphics.set_font_size(9);
-		mgraphics.move_to(4, y + Math.min(rowH, 13));
-		mgraphics.show_text('V' + (v + 1));
+		// voice tag + everything vkey knows about it: its own key / reading order / ornament if it
+		// has overrides, the shared ones otherwise. The only place any row in this popup is
+		// labeled by voice number at all; previously only top-to-bottom order told them apart.
+		// A muted voice is dimmed throughout its row -- categorically not sounding, so it should
+		// read as visually "off" next to the ones that are.
 		var vk = vkeyInfo[v];
-		if (vk && rowH >= 22) {
+		var rowDim = (vk && vk.muted) ? 0.35 : 1.0;
+		var anyOwn = vk && (vk.keyOwn || vk.readOwn);
+
+		mgraphics.set_source_rgba(anyOwn ? [1 * rowDim, 0.75 * rowDim, 0.3 * rowDim, 1] : [0.6 * rowDim, 0.6 * rowDim, 0.66 * rowDim, 1]);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(4, y + 11);
+		mgraphics.show_text('V' + (v + 1) + (vk && vk.muted ? ' ·mute' : ''));
+		if (vk && rowH >= 20) {
 			mgraphics.set_font_size(7.5);
-			mgraphics.set_source_rgba([0.5, 0.5, 0.56, 1]);
-			mgraphics.move_to(4, y + Math.min(rowH - 4, 25));
-			mgraphics.show_text(vk.forte + ' ' + vk.tonic);
+			mgraphics.set_source_rgba([0.5 * rowDim, 0.5 * rowDim, 0.56 * rowDim, 1]);
+			var ky = y + 21;
+			mgraphics.move_to(4, ky);
+			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : ''));
+			if (rowH >= 34) {
+				ky += 10;
+				var pname = READ_NAMES[vk.patron] || ('modo ' + vk.patron);
+				var dsuf = vk.dir ? (' ' + (DIR_NAMES[vk.dir] || vk.dir)) : '';
+				mgraphics.move_to(4, ky);
+				mgraphics.show_text(pname + dsuf + (vk.readOwn ? ' *' : ''));
+			}
+			if (rowH >= 44 && vk.ornT >= 0) {
+				ky += 10;
+				mgraphics.move_to(4, ky);
+				mgraphics.show_text(ORN_TYPE_NAMES[vk.ornT] || ('orn ' + vk.ornT));
+			}
 		}
 
 		// history: newest is hv[0], drawn nearest the grid (rightmost slot)
@@ -370,7 +401,7 @@ function paint() {
 			var hidx = hslot;                       // 0..HIST_MAX-1, oldest slot on the left
 			var age = HIST_MAX - 1 - hslot;         // -> hv index (older = higher)
 			var note = (age < hv.length) ? hv[age] : -1;
-			var dim = 0.40 + 0.15 * (hslot / (HIST_MAX - 1));   // older = dimmer
+			var dim = (0.40 + 0.15 * (hslot / (HIST_MAX - 1))) * rowDim;   // older = dimmer
 			drawCell(keyW + hidx * histCW, y, histCW, rowH, note, dim, histCW >= 20);
 		}
 
@@ -380,7 +411,7 @@ function paint() {
 		for (var p = 0; p < cols; p++) {
 			var n = P.cells[p];
 			var x = gridX + p * cellW;
-			var dim2 = (P.kind === 1) ? 1.0 : (1.0 - (p / Math.max(1, cols - 1)) * 0.45);
+			var dim2 = ((P.kind === 1) ? 1.0 : (1.0 - (p / Math.max(1, cols - 1)) * 0.45)) * rowDim;
 			drawCell(x, y, cellW, rowH, n, dim2, true);
 			// playhead box (full-cycle mode)
 			if (P.kind === 1 && p === (((cur[v] % cols) + cols) % cols)) {

@@ -2020,9 +2020,10 @@ function checkQueryNext() {
 		console.error('QueryNext: al reencender la voz 2 su historia deberia volver a llenarse'); ok = false;
 	}
 
-	// vkey <v> <forte> <tonica>: que set/raiz esta tocando REALMENTE cada voz. Compartida por
-	// defecto (misma para las 3 voces); con TonProp on la voz 1 se aparta a su propia clave y debe
-	// traer su propio forte/tonica, distintos de las otras dos.
+	// vkey <v> <forte> <tonica> <keyOwn> <readOwn> <patron> <dir> <ornTipo> <muted>: que esta
+	// tocando REALMENTE cada voz. forte/tonica compartidos por defecto (mismos para las 3 voces);
+	// con TonProp on la voz 1 se aparta a su propia clave y debe traer su propio forte/tonica,
+	// distintos de las otras dos.
 	const vk = setup(seed);
 	vk.c.setvoicekeyown(1, 1);
 	vk.c.setvoicesetindex(1, vk.c.setForte.indexOf('4-28') + 1);
@@ -2052,6 +2053,26 @@ function checkQueryNext() {
 	if (JSON.stringify(vkr2.sort()) !== JSON.stringify([1, 2])) {
 		console.error('QueryNext: mover el set compartido deberia re-emitir vkey solo para las voces 2/3, salio ' +
 			JSON.stringify(vkr2)); ok = false;
+	}
+
+	// patron/dir/ornTipo/muted: voz 1 con Propia (Lectura) + Patron=Ornamento propio (tipo Ultrapol);
+	// voz 2 muteada; voz 3 en el patron/dir compartidos (Recto/adelante), sin ornamento.
+	const vk2 = setup(seed);
+	vk2.c.setvoicereadown(1, 1); vk2.c.setvoicereadmode(1, 7); vk2.c.setvoicereaddir(1, 1);
+	vk2.c.setvoiceorntype(1, 2);
+	vk2.c.setvoicemute(2, 1);
+	for (let i = 0; i < 4; i++) vk2.c.bang();
+	const atVk3 = vk2.e.log.length;
+	vk2.c.querynext();
+	const vkr3 = rowsOf(vk2.e.log, atVk3, 'vkey');
+	const byV2 = {};
+	for (const a of vkr3) byV2[Number(a[0])] = { keyOwn: Number(a[3]), readOwn: Number(a[4]), patron: Number(a[5]), dir: Number(a[6]), ornT: Number(a[7]), muted: Number(a[8]) };
+	if (!byV2[0] || byV2[0].readOwn !== 1 || byV2[0].patron !== 7 || byV2[0].dir !== 1 || byV2[0].ornT !== 2) {
+		console.error('QueryNext: vkey voz 1 (Propia+Ornamento+Ultrapol) deberia dar readOwn=1 patron=7 dir=1 ornT=2, dio ' + JSON.stringify(byV2[0])); ok = false;
+	}
+	if (!byV2[1] || byV2[1].muted !== 1) { console.error('QueryNext: vkey voz 2 muteada deberia traer muted=1, dio ' + JSON.stringify(byV2[1])); ok = false; }
+	if (!byV2[2] || byV2[2].readOwn !== 0 || byV2[2].patron !== 0 || byV2[2].dir !== 0 || byV2[2].ornT !== -1 || byV2[2].muted !== 0) {
+		console.error('QueryNext: vkey voz 3 (compartida, Recto, sin ornamento) deberia dar readOwn=0 patron=0 dir=0 ornT=-1 muted=0, dio ' + JSON.stringify(byV2[2])); ok = false;
 	}
 
 	if (ok) console.log('OK   QueryNext: querynext() no mueve ni una nota ni la urna; hist de voz apagada se vacia; hpattern/hcursor/hist/hshape/vkey salen bien.');

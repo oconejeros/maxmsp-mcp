@@ -3522,21 +3522,30 @@ function emitOrnScale() {
 	outlet(3, row);
 }
 
-// Que set/raiz esta tocando REALMENTE cada voz -- el compartido (setIndex/effRoot()), o el propio
-// si TonProp esta on (voicePcsFor()/voiceRootFor() resuelven lo mismo del lado del audio). Sin
-// esto no hay forma de ver de un vistazo si una voz en su propia clave (Bitonal/Polytonal) quedo
-// donde se penso, sin entrar a su pestana Voces. PURA, bajo demanda como el resto de este outlet
-// -- ver querynext(). Debounce por voz: "forte,tonica".
+// Que esta tocando REALMENTE cada voz -- para el popup, sin tener que entrar a su pestana Voces.
+// set/raiz: el compartido (setIndex/effRoot()), o el propio si TonProp esta on (voicePcsFor()/
+// voiceRootFor() resuelven lo mismo del lado del audio). patron/dir: el compartido (readMode/
+// readDir), o el propio si Propia (Lectura) esta on (voiceReadModeOf()/voiceReadDirOf() resuelven
+// lo mismo). ornType: solo tiene sentido si el patron EFECTIVO de esta voz es Ornamento -- ahi es
+// el propio si Propia esta on (voiceOrnamentPitchAt() lee lo mismo), el compartido si no; -1 si el
+// patron efectivo no es Ornamento (el jsui no dibuja esa linea). muted: voiceMute[v] tal cual, para
+// que el popup pueda oscurecer del todo una fila que categoricamente no suena. PURA, bajo demanda
+// como el resto de este outlet -- ver querynext(). Debounce por voz, firma con los 6 campos.
 function emitVoiceKeyReadouts() {
 	for (var v = 0; v < NUM_VOICES; v++) {
-		var own = voiceKeyOwn[v];
-		var si = own ? voiceSetIndex[v] : setIndex;
+		var keyOwn = voiceKeyOwn[v];
+		var si = keyOwn ? voiceSetIndex[v] : setIndex;
 		var forte = setForte[si] || "-";
-		var tonic = NOTE_NAMES[pc12(own ? voiceRootOffset[v] : effRoot())];
-		var sig = forte + "," + tonic;
+		var tonic = NOTE_NAMES[pc12(keyOwn ? voiceRootOffset[v] : effRoot())];
+		var readOwn = voiceReadOwn[v];
+		var patron = readOwn ? voiceReadMode[v] : readMode;
+		var dir = readOwn ? voiceReadDir[v] : readDir;
+		var ornT = (patron === READ_ORNAMENT) ? (readOwn ? voiceOrnType[v] : ornType) : -1;
+		var muted = voiceMute[v] ? 1 : 0;
+		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," + muted;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
-		outlet(3, ["vkey", v, forte, tonic]);
+		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted]);
 	}
 }
 
