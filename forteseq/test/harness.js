@@ -812,6 +812,28 @@ function runScenario(e) {
 	c.setvoiceindep(0);
 	c.setornbasemode(0);
 	c.setreadmode(0);
+
+	// Ornamento por voz: la voz 1 corre su propia forma (Orn Tipo/Notas/Base) mientras el resto
+	// sigue el ornamento compartido. Tambien al final, misma razon que los bloques anteriores.
+	c.setreadmode(7);
+	c.setornbaseinterval(4); c.setorntype(0); c.setorncount(1);   // compartido: Ditone/Interp1
+	c.setvoicereadown(1, 1);
+	c.setvoicereadmode(1, 7);
+	for (const [ty, ct, bi] of [[2, 2, 7], [1, 1, 4], [4, 1, 5]]) {
+		c.setvoiceorntype(1, ty);
+		c.setvoiceorncount(1, ct);
+		c.setvoiceornbase(1, bi);
+		mark('ornamento por voz V1 tipo=' + ty + ' n=' + ct + ' base=' + bi);
+		run(20);
+	}
+	c.setvoiceindep(1);
+	mark('ornamento por voz con voces independientes');
+	run(20);
+	c.setvoiceindep(0);
+	c.setvoicereadown(1, 0);
+	c.setvoicereadmode(1, 0);
+	c.setvoiceorntype(1, 0); c.setvoiceorncount(1, 1); c.setvoiceornbase(1, 4);
+	c.setreadmode(0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1171,6 +1193,17 @@ function checkSlonimsky() {
 	c.setornseriespeak(99); if (c.ornSeriesPeak !== 8) fail('setornseriespeak(99) deberia recortar a 8, quedo en ' + c.ornSeriesPeak);
 	c.setornseriesstart(1); c.setornseriesstep(1); c.setornseriespeak(4);   // vuelve al arco default
 
+	// computeOrnOffsets(): la funcion pura detras de buildOrnOffsets/buildVoiceOrnOffsets --
+	// mismos valores del libro que offs() de mas arriba, pero sin tocar estado global.
+	if (!eq(c.computeOrnOffsets(0, 1, 4), [1])) fail('computeOrnOffsets Interp I=4 n=1 deberia dar [1], dio ' + c.computeOrnOffsets(0, 1, 4));
+	if (!eq(c.computeOrnOffsets(2, 2, 7), [8, 9])) fail('computeOrnOffsets Ultrapol I=7 n=2 deberia dar [8,9], dio ' + c.computeOrnOffsets(2, 2, 7));
+	// buildVoiceOrnOffsets(): el mismo calculo, cacheado por voz -- ver checkVoiceOrnament() para
+	// la prueba de extremo a extremo (voiceOrnamentPitchAt aislando una voz bajo Propia).
+	c.voiceOrnType[0] = 2; c.voiceOrnCount[0] = 2; c.voiceOrnBase[0] = 7;
+	c.buildVoiceOrnOffsets(0);
+	if (!eq(c.voiceOrnOffsets[0], [8, 9])) fail('buildVoiceOrnOffsets(0) Ultrapol I=7 n=2 deberia dar [8,9], dio ' + c.voiceOrnOffsets[0]);
+	c.voiceOrnType[0] = 0; c.voiceOrnCount[0] = 1; c.voiceOrnBase[0] = 4; c.buildVoiceOrnOffsets(0);   // vuelve al default
+
 	// setreadmode() clamps to the new ceiling; the legacy alias reaches it too.
 	c.setreadmode(7);
 	if (c.readMode !== 7) fail('setreadmode(7) no quedo en 7');
@@ -1197,6 +1230,17 @@ function checkSlonimsky() {
 		for (let i = 0; i < 16; i++) c.bang();
 		c.setvoiceindep(0);
 		c.setornbasemode(0);
+		// Ornamento por voz: voz 1 con forma propia, bajo el reloj y bajo trigger externo.
+		c.setvoicereadown(1, 1); c.setvoicereadmode(1, 7);
+		c.setvoiceorntype(1, 4); c.setvoiceorncount(1, 1); c.setvoiceornbase(1, 5);
+		c.setvoiceindep(1);
+		for (let i = 0; i < 16; i++) c.bang();
+		c.setvoiceexternal(1, 1);
+		for (let i = 0; i < 8; i++) c.triggervoice(1);
+		c.setvoiceexternal(1, 0);
+		c.setvoiceindep(0);
+		c.setvoicereadown(1, 0); c.setvoicereadmode(1, 0);
+		c.setvoiceorntype(1, 0); c.setvoiceorncount(1, 1); c.setvoiceornbase(1, 4);
 		c.setreadmode(0);
 	} catch (err) {
 		fail('READ_ORNAMENT dentro de bang() tiro ' + err);
@@ -1419,6 +1463,68 @@ function checkVoiceReadOrder() {
 	}
 
 	if (ok) console.log('OK   Lectura por voz: Patron/Dir propios aislan una voz bajo Voces Indep.');
+	return ok;
+}
+
+// Ornamento por voz: cuando el Patron propio de una voz es Ornamento, su FORMA (Orn Tipo/Notas/
+// Base) tambien puede ser propia -- voiceOrnType/Count/Base, via voiceOrnamentPitchAt(). El
+// LAYOUT de la base (Orn Base Modo/Paso/Cuarteto/Serie) sigue compartido, a proposito (fuera de
+// alcance -- ver la nota de Fase 2 en forteseq_slonimsky_ornament.md).
+function checkVoiceOrnament() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1);
+	c.setvoicediv(2, 1);
+	c.setlockindex(c.setForte.indexOf('5-35') + 1);
+	c.setlock(1);
+	c.setmode(1);
+	c.setreadmode(7);                                   // global Ornamento: Ditone/Interp1 (voz 2 = referencia compartida)
+	c.setornbaseinterval(4); c.setorntype(0); c.setorncount(1);
+
+	c.setvoicereadown(1, 1);
+	c.setvoicereadmode(1, 7);                           // Patron propio de la voz 1 tambien es Ornamento...
+	c.setvoiceornbase(1, 7); c.setvoiceorntype(1, 2); c.setvoiceorncount(1, 2);   // ...pero con forma propia: Diapente + Ultrapol x2
+	for (let i = 0; i < 10; i++) c.bang();
+
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+	const v1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+
+	if (v1.length < 4 || JSON.stringify(v1) === JSON.stringify(v2)) {
+		console.error('Ornamento por voz: voz 1 con forma propia debia diferir de la voz 2 con el ornamento compartido, ' +
+			'ambas dieron ' + JSON.stringify(v1));
+		ok = false;
+	}
+
+	// Con Propia apagado, ambas voces deberian sonar identico (el mismo ornamento compartido).
+	const e2 = makeEngine(1);
+	const c2 = e2.ctx;
+	c2.setnumvoices(2); c2.setvoicemute(2, 0); c2.setvoiceindep(1);
+	c2.setvoicediv(1, 1); c2.setvoicediv(2, 1);
+	c2.setlockindex(c2.setForte.indexOf('5-35') + 1); c2.setlock(1); c2.setmode(1);
+	c2.setreadmode(7); c2.setornbaseinterval(4); c2.setorntype(0); c2.setorncount(1);
+	for (let i = 0; i < 10; i++) c2.bang();
+	const v1b = e2.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2b = e2.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+	if (JSON.stringify(v1b) !== JSON.stringify(v2b)) {
+		console.error('Ornamento por voz: con Propia OFF ambas voces deberian sonar igual (ornamento compartido), dieron ' +
+			JSON.stringify(v1b) + ' vs ' + JSON.stringify(v2b));
+		ok = false;
+	}
+
+	c.setvoiceorntype(1, 99);
+	if (c.voiceOrnType[0] !== 5) { console.error('setvoiceorntype(99) deberia recortar a 5, quedo en ' + c.voiceOrnType[0]); ok = false; }
+	c.setvoiceorncount(1, 99);
+	if (c.voiceOrnCount[0] !== 4) { console.error('setvoiceorncount(99) deberia recortar a 4, quedo en ' + c.voiceOrnCount[0]); ok = false; }
+	c.setvoiceornbase(1, 99);
+	if (c.voiceOrnBase[0] !== 14) { console.error('setvoiceornbase(99) deberia recortar a 14, quedo en ' + c.voiceOrnBase[0]); ok = false; }
+
+	if (ok) console.log('OK   Ornamento por voz: Orn Tipo/Notas/Base propios aislan una voz bajo Propia + Patron Ornamento.');
 	return ok;
 }
 
@@ -1952,6 +2058,7 @@ function main() {
 	if (!checkPresetNames()) process.exit(1);
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);
+	if (!checkVoiceOrnament()) process.exit(1);
 	if (!checkRotation()) process.exit(1);
 	if (!checkQueryNext()) process.exit(1);
 	if (!checkFiltSets()) process.exit(1);

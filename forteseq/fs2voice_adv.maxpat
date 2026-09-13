@@ -1026,6 +1026,199 @@
       22.0
      ]
     }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_orntipo",
+     "annotation": "Tipo de ornamento propio de esta voz, cuando esta voz tiene Propia + Patron = Ornamento; el resto del tiempo se ignora.",
+     "patching_rect": [
+      400.0,
+      928.0,
+      30.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      412.0,
+      3.0,
+      24.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 OrnTipo",
+       "parameter_shortname": "OrnTipo",
+       "parameter_type": 2,
+       "parameter_unitstyle": 9,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_enum": [
+        "Interp",
+        "Infra",
+        "Ultra",
+        "Infra-Inter",
+        "Infra-Ultra",
+        "Inf-Int-Ult"
+       ],
+       "parameter_mmax": 5
+      }
+     },
+     "id": "obj-105"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_ornnotas",
+     "annotation": "Notas de ornamento (1-4) propias de esta voz, cuando esta voz tiene Propia + Patron = Ornamento; el resto del tiempo se ignora.",
+     "patching_rect": [
+      400.0,
+      954.0,
+      30.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      438.0,
+      3.0,
+      24.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 OrnNotas",
+       "parameter_shortname": "OrnNotas",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_initial": [
+        1
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 4.0
+      }
+     },
+     "id": "obj-106"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_ornbase",
+     "annotation": "Intervalo base (1-14 st) propio de esta voz, cuando esta voz tiene Propia + Patron = Ornamento; el resto del tiempo se ignora.",
+     "patching_rect": [
+      400.0,
+      980.0,
+      30.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      464.0,
+      3.0,
+      24.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 OrnBase",
+       "parameter_shortname": "OrnBase",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_initial": [
+        4
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 14.0
+      }
+     },
+     "id": "obj-107"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-108",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voiceorntype_prep",
+     "patching_rect": [
+      500.0,
+      1520.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoiceorntype #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-109",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voiceorncount_prep",
+     "patching_rect": [
+      500.0,
+      1550.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoiceorncount #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-110",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voiceornbase_prep",
+     "patching_rect": [
+      500.0,
+      1580.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoiceornbase #1"
+    }
    }
   ],
   "lines": [
@@ -1604,6 +1797,114 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-105",
+      0
+     ],
+     "destination": [
+      "obj-108",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-108",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-105",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-106",
+      0
+     ],
+     "destination": [
+      "obj-109",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-109",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-106",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-107",
+      0
+     ],
+     "destination": [
+      "obj-110",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-110",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-107",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -1681,6 +1982,21 @@
    "obj-21": [
     "V#1 Span",
     "Span",
+    0
+   ],
+   "obj-105": [
+    "V#1 OrnTipo",
+    "V#1 OrnTipo",
+    0
+   ],
+   "obj-106": [
+    "V#1 OrnNotas",
+    "V#1 OrnNotas",
+    0
+   ],
+   "obj-107": [
+    "V#1 OrnBase",
+    "V#1 OrnBase",
     0
    ]
   },

@@ -236,6 +236,16 @@ var voiceReadOwn = filled(MAX_VOICES, 0);
 var voiceReadMode = filled(MAX_VOICES, READ_RECTO);
 var voiceReadDir = filled(MAX_VOICES, 0);
 
+// Per-voice ornament shape override -- same off-by-default shape, one step narrower: only the
+// SHAPE (Orn Tipo x Orn Notas x Orn Base interval) is per-voice, not the base LAYOUT (Orn Base
+// Modo/Paso/Cuarteto/Serie stay shared -- a per-voice choice of layout was ruled out of scope,
+// see the Fase 2 backlog note in forteseq_slonimsky_ornament.md). Meaningful only when a voice's
+// own Patron (voiceReadMode, above) is READ_ORNAMENT; see voiceOrnamentPitchAt().
+var voiceOrnType = filled(MAX_VOICES, ORN_INTERP);
+var voiceOrnCount = filled(MAX_VOICES, 1);
+var voiceOrnBase = filled(MAX_VOICES, 4);
+var voiceOrnOffsets = filled(MAX_VOICES, []);
+
 // The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
 // k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
 // writes the same array the toggles write, so nothing downstream knows where the pattern came
@@ -1631,6 +1641,7 @@ buildOrder();
 buildFilter();
 buildOrnOffsets();   // READ_ORNAMENT's offset list, so it is never empty if that mode is selected first
 buildOrnSeries();    // ORN_BASE_SERIES's interval arch, same reasoning
+for (var _voi = 0; _voi < MAX_VOICES; _voi++) buildVoiceOrnOffsets(_voi);   // per-voice ornament shapes, same reasoning
 
 function loadbang() {
 	post("forteseq2: built " + sets.length + " Tn-classes over 224 Forte classes, bus " + busId +
@@ -1737,7 +1748,7 @@ function triggervoice(v) {
 	// the clock or an external trigger moved it -- unless this voice's own Patron/Dir is on.
 	var tMode = voiceReadModeOf(idx);
 	if (((tMode === undefined) ? readMode : tMode) === READ_ORNAMENT) {
-		pc = ornamentPitchAt(pos, pcs);   // shared offsets, this voice's own cursor -- see emitVoicesIndependent()
+		pc = voiceOrnamentPitchAt(idx, pos, pcs);   // this voice's own shape if Propia is on -- see emitVoicesIndependent()
 	} else {
 		pc = pitchForDegree(pcs, degreeAt(n, pos, tMode, voiceReadDirOf(idx)) +
 			voiceDegOffset[idx] + modDeg());
@@ -2391,6 +2402,39 @@ function setvoicereaddir(v, d) {
 	d = Math.round(d);
 	if (d < 0 || d > 2) d = 0;
 	voiceReadDir[idx] = d;
+}
+
+// Per-voice ornament shape (Orn Tipo/Notas/Base for this voice, when its own Patron is Ornamento
+// -- see voiceOrnamentPitchAt()). Each rebuilds this voice's own offset cache; none touch
+// resetReadWalk() or the shared ornOffsets, same as setvoicereadmode/dir above.
+function setvoiceorntype(v, t) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	t = Math.round(t);
+	if (!isFinite(t) || t < 0) t = 0;
+	if (t > ORN_TYPE_MAX) t = ORN_TYPE_MAX;
+	voiceOrnType[idx] = t;
+	buildVoiceOrnOffsets(idx);
+}
+
+function setvoiceorncount(v, c) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	c = Math.round(c);
+	if (!isFinite(c) || c < 1) c = 1;
+	if (c > 4) c = 4;
+	voiceOrnCount[idx] = c;
+	buildVoiceOrnOffsets(idx);
+}
+
+function setvoiceornbase(v, i) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	i = Math.round(i);
+	if (!isFinite(i) || i < 1) i = 1;
+	if (i > 14) i = 14;
+	voiceOrnBase[idx] = i;
+	buildVoiceOrnOffsets(idx);
 }
 
 // Folds a note into [min,max] by transposing whole octaves (never remaps pitch class), same
@@ -3095,7 +3139,7 @@ function peekVoiceNote(v, pcs, n, j) {
 	var vm = voiceReadModeOf(v);
 	var pc;
 	if (((vm === undefined) ? readMode : vm) === READ_ORNAMENT) {
-		pc = ornamentPitchAt(base + j, pcs);   // mirrors emitVoicesIndependent()'s ornament branch
+		pc = voiceOrnamentPitchAt(v, base + j, pcs);   // mirrors emitVoicesIndependent()'s ornament branch
 	} else {
 		pc = pitchForDegree(pcs,
 			degreeAt(n, base + j, vm, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
@@ -3753,18 +3797,20 @@ function urnAt(n, i, pass) {
 
 // --- READ_ORNAMENT: Slonimsky's interval-cycle base + infra/inter/ultra ornament -------------
 
-// Build ornOffsets from (ornType, ornCount, ornBaseInterval). The cell played at each principal
-// tone is [0].concat(ornOffsets) -- the 0 is the principal tone itself, the rest are added notes.
+// The offset list for a (type, count, baseInterval) triple. The cell played at each principal
+// tone is [0].concat(offsets) -- the 0 is the principal tone itself, the rest are added notes.
 // Chromatic filling is the default, as in the printed patterns; Interpolation cannot place more
 // notes than the (I - 1) chromatic slots that fit strictly between one principal tone and the next.
-function buildOrnOffsets() {
-	var I = ornBaseInterval, N = ornCount;
-	var wantInfra = (ornType === ORN_INFRA || ornType === ORN_INFRA_INTER ||
-		ornType === ORN_INFRA_ULTRA || ornType === ORN_INFRA_INTER_ULTRA);
-	var wantInter = (ornType === ORN_INTERP || ornType === ORN_INFRA_INTER ||
-		ornType === ORN_INFRA_INTER_ULTRA);
-	var wantUltra = (ornType === ORN_ULTRA || ornType === ORN_INFRA_ULTRA ||
-		ornType === ORN_INFRA_INTER_ULTRA);
+// Pure -- shared by the global ornOffsets (buildOrnOffsets) and the per-voice override
+// (buildVoiceOrnOffsets) so the two can never drift apart in how a cell is shaped.
+function computeOrnOffsets(type, count, baseInterval) {
+	var I = baseInterval, N = count;
+	var wantInfra = (type === ORN_INFRA || type === ORN_INFRA_INTER ||
+		type === ORN_INFRA_ULTRA || type === ORN_INFRA_INTER_ULTRA);
+	var wantInter = (type === ORN_INTERP || type === ORN_INFRA_INTER ||
+		type === ORN_INFRA_INTER_ULTRA);
+	var wantUltra = (type === ORN_ULTRA || type === ORN_INFRA_ULTRA ||
+		type === ORN_INFRA_INTER_ULTRA);
 	var infra = [], inter = [], ultra = [], k;
 	if (wantInfra) for (k = 1; k <= N; k++) infra.push(-k);
 	if (wantInter) {
@@ -3774,8 +3820,15 @@ function buildOrnOffsets() {
 	}
 	if (wantUltra) for (k = 1; k <= N; k++) ultra.push(I + k);
 	// cell contour: dip below, climb between, overshoot the next -- the canonical zigzag order
-	ornOffsets = infra.concat(inter).concat(ultra);
-	if (ornOffsets.length > 11) ornOffsets = ornOffsets.slice(0, 11);   // keep one cell <= 12 events
+	var out = infra.concat(inter).concat(ultra);
+	if (out.length > 11) out = out.slice(0, 11);   // keep one cell <= 12 events
+	return out;
+}
+function buildOrnOffsets() {
+	ornOffsets = computeOrnOffsets(ornType, ornCount, ornBaseInterval);
+}
+function buildVoiceOrnOffsets(idx) {
+	voiceOrnOffsets[idx] = computeOrnOffsets(voiceOrnType[idx], voiceOrnCount[idx], voiceOrnBase[idx]);
 }
 
 // Quadritonal Arpeggios (Thesaurus pp. 178-181): partition the twelve chromatic tones into four
@@ -3858,7 +3911,9 @@ function seriesPrincipalAt(baseIdx) {
 //   ORN_BASE_QUADRITONE -- always 12: one full walk through the four-triad partition.
 //   ORN_BASE_SERIES -- one arch (ornSeriesIntervals.length principal tones) repeated until the
 //     cumulative displacement is a multiple of 12: periodLen * 12/gcd(periodSum, 12).
-function ornBaseTones(pcs) {
+// baseInterval defaults to the global ornBaseInterval -- voiceOrnamentPitchAt() passes a voice's
+// own override; every other caller keeps using the 1-arg ornBaseTones(pcs) wrapper unchanged.
+function ornBaseTonesFor(baseInterval, pcs) {
 	if (ornBaseMode === ORN_BASE_QUADRITONE) return 12;
 	if (ornBaseMode === ORN_BASE_DEGREES) {
 		var n = (pcs && pcs.length) ? pcs.length : 1;
@@ -3870,7 +3925,10 @@ function ornBaseTones(pcs) {
 		var m = 12 / gcd(((ornSeriesPeriodSum % 12) + 12) % 12 || 12, 12);
 		return period * m;
 	}
-	return 12 / gcd(((ornBaseInterval % 12) + 12) % 12 || 12, 12);
+	return 12 / gcd(((baseInterval % 12) + 12) % 12 || 12, 12);
+}
+function ornBaseTones(pcs) {
+	return ornBaseTonesFor(ornBaseInterval, pcs);
 }
 
 // Interval-mode base-cycle length, kept as a named helper for the harness and for callers that
@@ -3887,16 +3945,21 @@ function ornCycleSteps() {
 // The raw semitone value (relative to MELODY_BASE, before root/octave/range) at linear position
 // pos. In ORN_BASE_INTERVAL the principal tone is a raw interval multiple, so the result is
 // deliberately NOT a member of the set; in ORN_BASE_DEGREES the principal tone IS a set degree and
-// only the ornament offsets fall outside. pcs defaults to the current set.
-function ornamentPitchAt(pos, pcs) {
+// only the ornament offsets fall outside. pcs defaults to the current set. offsets/baseInterval
+// default to the global ornOffsets/ornBaseInterval; voiceOrnamentPitchAt() passes a voice's own
+// override for both when that voice's Patron is Propia + Ornamento -- every other caller keeps
+// using the 2-arg form unchanged, so this stays behaviour-preserving by default.
+function ornamentPitchAt(pos, pcs, offsets, baseInterval) {
 	if (pcs === undefined) pcs = sets[setIndex];
-	var S = ornOffsets.length + 1;
-	var K = ornBaseTones(pcs);
+	if (offsets === undefined) offsets = ornOffsets;
+	if (baseInterval === undefined) baseInterval = ornBaseInterval;
+	var S = offsets.length + 1;
+	var K = ornBaseTonesFor(baseInterval, pcs);
 	pos = Math.round(pos);
 	if (!isFinite(pos) || pos < 0) pos = 0;
 	var baseIdx = Math.floor(pos / S) % K;
 	var cellIdx = pos % S;
-	var off = (cellIdx === 0) ? 0 : ornOffsets[cellIdx - 1];
+	var off = (cellIdx === 0) ? 0 : offsets[cellIdx - 1];
 	if (ornBaseMode === ORN_BASE_QUADRITONE) {
 		return quadritonalPartition(ornQuadScheme)[baseIdx] + off;
 	}
@@ -3906,7 +3969,17 @@ function ornamentPitchAt(pos, pcs) {
 	if (ornBaseMode === ORN_BASE_DEGREES && pcs && pcs.length) {
 		return pitchForDegree(pcs, baseIdx * Math.round(ornBaseStep)) + off;
 	}
-	return ornBaseInterval * baseIdx + off;
+	return baseInterval * baseIdx + off;
+}
+
+// The per-voice entry point for the three call sites that can run a voice's own Patron: when a
+// voice has Propia on AND its own Patron is Ornamento, its shape (Orn Tipo x Notas x Base) is its
+// own, computed once by buildVoiceOrnOffsets() into voiceOrnOffsets[idx]; every other voice (and
+// every voice when Propia is off) keeps reading the shared ornament exactly as before. The base
+// LAYOUT (Orn Base Modo/Paso/Cuarteto/Serie) is not part of this override -- it stays global.
+function voiceOrnamentPitchAt(idx, pos, pcs) {
+	if (voiceReadOwn[idx]) return ornamentPitchAt(pos, pcs, voiceOrnOffsets[idx], voiceOrnBase[idx]);
+	return ornamentPitchAt(pos, pcs);
 }
 
 // The resulting scale Slonimsky tabulates beside each pattern as its Master Chord: the pitch-class
@@ -4056,10 +4129,11 @@ function emitVoicesIndependent(pcs, n) {
 		var vMode = voiceReadModeOf(v);
 		var pc;
 		if (((vMode === undefined) ? readMode : vMode) === READ_ORNAMENT) {
-			// Shared ornament (offsets are global in this phase); each voice runs it from its own
-			// cursor. Grado / modDeg fold the SET as a degree offset, which the ornament base does
-			// not take -- so ignored here (Base=Grados still reads the set through ornamentPitchAt).
-			pc = ornamentPitchAt(readIdx, pcs);
+			// This voice's own shape (Orn Tipo/Notas/Base) if Propia is on, the shared ornament
+			// otherwise; each voice runs it from its own cursor either way. Grado / modDeg fold the
+			// SET as a degree offset, which the ornament base does not take -- so ignored here
+			// (Base=Grados still reads the set through ornamentPitchAt).
+			pc = voiceOrnamentPitchAt(v, readIdx, pcs);
 		} else {
 			pc = pitchForDegree(pcs,
 				degreeAt(n, readIdx, vMode, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
