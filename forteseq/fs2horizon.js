@@ -311,22 +311,6 @@ function drawCell(x, y, w, h, note, dim, label) {
 	}
 }
 
-
-// Geometry of the last paint(), so onclick() can tell which voice row a click landed on -- same
-// "paint() records, onclick() reads" pattern fs2setpick.js already uses for its own `geo`.
-var rowGeo = null;
-
-// Click anywhere on a voice's row -> jump the main panel to that voice's "Voces N" tab. Pagina's
-// own restore/jump plumbing (obj-486's sel router) does the rest; see add_fs2_horizon_jump.py.
-var VOCES_PAGE = [6, 7, 9, 10];   // Pagina index for V1..V4
-function onclick(x, y, but) {
-	if (!but || !rowGeo) return;
-	if (y < rowGeo.headH) return;
-	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
-	if (v < 0 || v >= rowGeo.nRows || v >= VOCES_PAGE.length) return;
-	outlet(0, ['jumpvoice', v]);
-}
-
 function paint() {
 	var wh = viewportWH();
 	var W = wh[0], H = wh[1];
@@ -344,7 +328,6 @@ function paint() {
 	var nRows = Math.max(1, Math.min(MAXROWS, voices));
 	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
-	rowGeo = { headH: headH, rowH: rowH, nRows: nRows };   // read by onclick() to find the row hit
 
 	var keyW = 150;   // left zone: "V<n>" + forte/tonica + patron/dir + orn tipo (vkey), all it has
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
