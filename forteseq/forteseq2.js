@@ -3425,10 +3425,10 @@ function querynext() {
 	}
 
 	if (HORIZON_STATUS) {
-		var skey = readMode + "," + readDir + "," + (setIndex + 1) + "," + mode;
+		var skey = readMode + "," + readDir + "," + (setIndex + 1) + "," + mode + "," + locked;
 		if (skey !== qnStatusShown) {
 			qnStatusShown = skey;
-			outlet(3, ["hstatus", readMode, readDir, setIndex + 1, mode]);
+			outlet(3, ["hstatus", readMode, readDir, setIndex + 1, mode, locked ? 1 : 0]);
 		}
 	}
 
@@ -3626,10 +3626,13 @@ function emitVoiceKeyReadouts() {
 		var dir = readOwn ? voiceReadDir[v] : readDir;
 		var ornT = (patron === READ_ORNAMENT) ? (readOwn ? voiceOrnType[v] : ornType) : -1;
 		var muted = voiceMute[v] ? 1 : 0;
-		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," + muted;
+		// -1 = TonProp off (Fijar doesn't apply to anything), 0 = progresando (advanceVoiceKeys()
+		// steps it every harmony change), 1 = Fijar (voiceKeyLock skips it, see advanceVoiceKeys()).
+		var keyLock = keyOwn ? (voiceKeyLock[v] ? 1 : 0) : -1;
+		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," + muted + "," + keyLock;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
-		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted]);
+		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock]);
 	}
 }
 

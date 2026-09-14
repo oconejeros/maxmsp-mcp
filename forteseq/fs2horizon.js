@@ -167,8 +167,8 @@ function colbang(v) {
 	startDecay();
 }
 
-function hstatus(rm, rd, setIdx1, md) {
-	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md)];
+function hstatus(rm, rd, setIdx1, md, lockedFlag) {
+	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md), Math.round(lockedFlag || 0)];
 	mgraphics.redraw();
 }
 
@@ -204,14 +204,14 @@ function ornscale() {
 // Everything about what voice v is ACTUALLY doing right now -- own key, own reading order, own
 // ornament shape if applicable, whether it's muted. See the message doc at the top of this file.
 // Sent under demand, debounced engine-side per voice.
-function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted) {
+function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
 	vkeyInfo[v] = {
 		forte: String(forte), tonic: String(tonic),
 		keyOwn: !!Math.round(keyOwn), readOwn: !!Math.round(readOwn),
 		patron: Math.round(patron), dir: Math.round(dir), ornT: Math.round(ornT),
-		muted: !!Math.round(muted)
+		muted: !!Math.round(muted), keyLock: Math.round(keyLock === undefined ? -1 : keyLock)
 	};
 	mgraphics.redraw();
 }
@@ -274,6 +274,9 @@ function statusText() {
 	if (shape && shape.cols) {
 		shp += '   ·   forma ' + shape.rawL + (shape.rawL > shape.cols ? ' (submuestreada)' : '');
 	}
+	// El lock duro (fs2setpick.js) congela el setIndex COMPARTIDO para toda la ensamble -- afecta a
+	// todas las voces por igual, asi que va una sola vez aca y no repetido en cada fila de vkey.
+	if (status[4]) shp += '   ·   Fijado';
 	return md + '   ·   ' + rm + '   ·   ' + rd + '   ·   Set ' + status[2] + shp;
 }
 
@@ -308,6 +311,22 @@ function drawCell(x, y, w, h, note, dim, label) {
 	}
 }
 
+
+// Geometry of the last paint(), so onclick() can tell which voice row a click landed on -- same
+// "paint() records, onclick() reads" pattern fs2setpick.js already uses for its own `geo`.
+var rowGeo = null;
+
+// Click anywhere on a voice's row -> jump the main panel to that voice's "Voces N" tab. Pagina's
+// own restore/jump plumbing (obj-486's sel router) does the rest; see add_fs2_horizon_jump.py.
+var VOCES_PAGE = [6, 7, 9, 10];   // Pagina index for V1..V4
+function onclick(x, y, but) {
+	if (!but || !rowGeo) return;
+	if (y < rowGeo.headH) return;
+	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
+	if (v < 0 || v >= rowGeo.nRows || v >= VOCES_PAGE.length) return;
+	outlet(0, ['jumpvoice', v]);
+}
+
 function paint() {
 	var wh = viewportWH();
 	var W = wh[0], H = wh[1];
@@ -325,6 +344,7 @@ function paint() {
 	var nRows = Math.max(1, Math.min(MAXROWS, voices));
 	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
 	var rowH = gridH / nRows;
+	rowGeo = { headH: headH, rowH: rowH, nRows: nRows };   // read by onclick() to find the row hit
 
 	var keyW = 150;   // left zone: "V<n>" + forte/tonica + patron/dir + orn tipo (vkey), all it has
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
@@ -376,7 +396,10 @@ function paint() {
 			mgraphics.set_source_rgba([0.68 * rowDim, 0.68 * rowDim, 0.74 * rowDim, 1]);
 			var ky = y + fsV + lh;
 			mgraphics.move_to(4, ky);
-			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : ''));
+			// "*" ya marca TonProp (clave propia); "Fij" es la excepcion dentro de eso -- progresar
+			// (avanzar con cada cambio de armonia) es el estado por defecto y no necesita marca,
+			// solo la voz fijada (voiceKeyLock) la necesita.
+			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : '') + (vk.keyLock === 1 ? ' ·Fij' : ''));
 			if (rowH >= fsV + 2 * lh + 6) {
 				ky += lh;
 				var pname = READ_NAMES[vk.patron] || ('modo ' + vk.patron);

@@ -2274,7 +2274,7 @@ function checkQueryNext() {
 	vk.c.querynext();
 	const vkr = rowsOf(vk.e.log, atVk, 'vkey');
 	if (vkr.length !== 3) { console.error('QueryNext: vkey deberia traer 1 fila por voz (3), salieron ' + vkr.length); ok = false; }
-	const byV = {}; for (const a of vkr) byV[Number(a[0])] = { forte: a[1], tonica: a[2] };
+	const byV = {}; for (const a of vkr) byV[Number(a[0])] = { forte: a[1], tonica: a[2], keyLock: Number(a[9]) };
 	if (!byV[0] || byV[0].forte !== '4-28' || byV[0].tonica !== 'D#') {
 		console.error('QueryNext: vkey voz 1 (TonProp) deberia ser 4-28/D#, dio ' + JSON.stringify(byV[0])); ok = false;
 	}
@@ -2282,6 +2282,22 @@ function checkQueryNext() {
 		byV[1].forte === byV[0].forte) {
 		console.error('QueryNext: vkey voces 2/3 deberian compartir la armonia global, distinta de la voz 1: ' +
 			JSON.stringify(byV)); ok = false;
+	}
+	// keyLock: -1 sin TonProp, 0 con TonProp progresando (Fijar off, el estado por defecto aca)
+	if (byV[0] && byV[0].keyLock !== 0) {
+		console.error('QueryNext: vkey voz 1 (TonProp sin Fijar) deberia dar keyLock=0, dio ' + byV[0].keyLock); ok = false;
+	}
+	if (byV[1].keyLock !== -1 || byV[2].keyLock !== -1) {
+		console.error('QueryNext: vkey voces sin TonProp deberian dar keyLock=-1, dio ' +
+			JSON.stringify([byV[1].keyLock, byV[2].keyLock])); ok = false;
+	}
+	// Fijar (voiceKeyLock) tiene que reflejarse como keyLock=1 y re-emitir esa fila.
+	vk.c.setvoicekeylock(1, 1);
+	const atVkLock = vk.e.log.length;
+	vk.c.querynext();
+	const lockedRow = rowsOf(vk.e.log, atVkLock, 'vkey').find((a) => Number(a[0]) === 0);
+	if (!lockedRow || Number(lockedRow[9]) !== 1) {
+		console.error('QueryNext: tras Fijar, vkey voz 1 deberia dar keyLock=1, dio ' + JSON.stringify(lockedRow)); ok = false;
 	}
 	// re-querying without a change stays silent (debounce); moving the shared set re-emits 2/3 only
 	const atVkQ = vk.e.log.length;
@@ -2294,6 +2310,22 @@ function checkQueryNext() {
 	if (JSON.stringify(vkr2.sort()) !== JSON.stringify([1, 2])) {
 		console.error('QueryNext: mover el set compartido deberia re-emitir vkey solo para las voces 2/3, salio ' +
 			JSON.stringify(vkr2)); ok = false;
+	}
+
+	// hstatus lleva el lock DURO (global, fs2setpick.js) como 5to campo -- setup() ya deja locked=1.
+	const hst = setup(seed);
+	const atHst = hst.e.log.length;
+	hst.c.querynext();
+	const hstRows = rowsOf(hst.e.log, atHst, 'hstatus');
+	if (!hstRows.length || Number(hstRows[0][4]) !== 1) {
+		console.error('QueryNext: hstatus con lock duro activo deberia dar locked=1, dio ' + JSON.stringify(hstRows)); ok = false;
+	}
+	hst.c.setlock(0);
+	const atHst2 = hst.e.log.length;
+	hst.c.querynext();
+	const hstRows2 = rowsOf(hst.e.log, atHst2, 'hstatus');
+	if (!hstRows2.length || Number(hstRows2[0][4]) !== 0) {
+		console.error('QueryNext: al soltar el lock duro, hstatus deberia dar locked=0, dio ' + JSON.stringify(hstRows2)); ok = false;
 	}
 
 	// patron/dir/ornTipo/muted: voz 1 con Propia (Lectura) + Patron=Ornamento propio (tipo Ultrapol);
