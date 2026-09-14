@@ -1293,9 +1293,9 @@
       "valueof": {
        "parameter_longname": "V#1 Set",
        "parameter_shortname": "Set",
-       "parameter_type": 1,
+       "parameter_type": 0,
        "parameter_unitstyle": 0,
-       "parameter_modmode": 4,
+       "parameter_modmode": 3,
        "parameter_mmin": 1.0,
        "parameter_mmax": 351.0,
        "parameter_initial": [

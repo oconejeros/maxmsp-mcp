@@ -191,9 +191,9 @@
        "parameter_longname": "Set",
        "parameter_mmax": 351.0,
        "parameter_mmin": 1.0,
-       "parameter_modmode": 4,
+       "parameter_modmode": 3,
        "parameter_shortname": "Set",
-       "parameter_type": 1,
+       "parameter_type": 0,
        "parameter_unitstyle": 0
       }
      },
