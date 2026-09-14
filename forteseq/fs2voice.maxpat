@@ -438,6 +438,124 @@
      ],
      "text": "prepend setvoicetimeoffset #1"
     }
+   },
+   {
+    "box": {
+     "id": "obj-100",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_on_ui_recv",
+     "patching_rect": [
+      250.0,
+      20.0,
+      140.0,
+      22.0
+     ],
+     "text": "receive FS2_ON_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-101",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_on_setrx",
+     "patching_rect": [
+      250.0,
+      70.0,
+      70.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-102",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "v_on_ui_route1",
+     "patching_rect": [
+      250.0,
+      45.0,
+      60.0,
+      20.0
+     ],
+     "text": "route #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-103",
+     "maxclass": "newobj",
+     "numinlets": 4,
+     "numoutlets": 4,
+     "outlettype": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "varname": "v_ess_ui_route",
+     "patching_rect": [
+      240.0,
+      20.0,
+      160.0,
+      20.0
+     ],
+     "text": "route on grado div"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-104",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_grado_setrx",
+     "patching_rect": [
+      420.0,
+      400.0,
+      200.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-105",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_div_setrx",
+     "patching_rect": [
+      420.0,
+      430.0,
+      200.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -653,6 +771,102 @@
      ],
      "destination": [
       "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-2",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-100",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-102",
+      0
+     ],
+     "destination": [
+      "obj-103",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-103",
+      0
+     ],
+     "destination": [
+      "obj-101",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-103",
+      1
+     ],
+     "destination": [
+      "obj-104",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-104",
+      0
+     ],
+     "destination": [
+      "obj-30",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-103",
+      2
+     ],
+     "destination": [
+      "obj-105",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-105",
+      0
+     ],
+     "destination": [
+      "obj-32",
       0
      ]
     }

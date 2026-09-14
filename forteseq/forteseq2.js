@@ -1517,6 +1517,7 @@ function harmonyValueOf(i) {
 function setfilter(f) {
 	filterOn = f ? 1 : 0;
 	requestFilter();
+	outlet(4, ["gecho", "filtro", filterOn]);
 }
 
 // Two setters rather than one taking a pair: Live restores parameters one at a time on set
@@ -1720,6 +1721,7 @@ function setmode(m) {
 
 function setlock(l) {
 	locked = l ? 1 : 0;
+	outlet(4, ["gecho", "lock", locked]);
 }
 
 function setlockindex(i) {
@@ -2326,6 +2328,11 @@ function setvoicemute(v, m) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceMute[idx] = m ? 1 : 0;
+	// repaint the "On" live.toggle (inverted: On=1 means NOT muted) without re-firing it -- see
+	// fs2_echo (obj-403) -> send FS2_ON_ECHO -> fs2voice.maxpat's own route #1 -> route on grado
+	// div -> prepend set -> v_on. "on" token added alongside grado/div below -- this channel used
+	// to carry only mute, bare-value, no token; now shared the same way advecho already is.
+	outlet(4, ["onecho", idx + 1, "on", voiceMute[idx] ? 0 : 1]);
 }
 
 function setvoiceexternal(v, e) {
@@ -2336,6 +2343,9 @@ function setvoiceexternal(v, e) {
 	// its first trigger lands (monScratch starts at a sentinel that is neither a note nor
 	// MON_SILENT). Turning it back off costs nothing: the next clock step overwrites it.
 	monScratch[idx] = MON_SILENT;
+	// repaint the "Ext" live.toggle without re-firing it -- see fs2_echo -> this voice's advanced
+	// bpatcher inlet 2 -> route ext/art/lec/ton/fij -> prepend set -> the matching v_* toggle.
+	outlet(4, ["advecho", idx + 1, "ext", voiceExternal[idx]]);
 }
 
 // 0 = every clock-driven voice gets the same note and can differ only by octave and register
@@ -2345,6 +2355,7 @@ function setvoiceexternal(v, e) {
 // so a per-voice switch would only be a second way of saying the same thing.
 function setvoiceindep(x) {
 	voiceIndep = x ? 1 : 0;
+	outlet(4, ["gecho", "indep", voiceIndep]);
 }
 
 // How many degrees of the CURRENT set this voice sits above its own reading. Degrees, not
@@ -2359,6 +2370,7 @@ function setvoicedegoffset(v, d) {
 	d = Math.round(d);
 	if (!isFinite(d)) return;
 	voiceDegOffset[idx] = d;
+	outlet(4, ["onecho", idx + 1, "grado", voiceDegOffset[idx]]);
 }
 
 // Writes Grado = 0, step, 2*step ... across the live voices in one go: with step 1 the four of
@@ -2420,6 +2432,7 @@ function setvoicediv(v, d) {
 	d = Math.round(d);
 	if (d < 1) d = 1;
 	voiceDiv[idx] = d;
+	outlet(4, ["onecho", idx + 1, "div", voiceDiv[idx]]);
 }
 
 // Register clamp per voice: min + span (like Tritonet's Min/Range), so max is always >= min.
@@ -2440,6 +2453,7 @@ function setvoiceartown(v, flag) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceArtOwn[idx] = flag ? 1 : 0;
+	outlet(4, ["advecho", idx + 1, "art", voiceArtOwn[idx]]);
 }
 
 function setvoicearticulation(v, min, max, div, sil) {
@@ -2460,6 +2474,10 @@ function setvoicearticulation(v, min, max, div, sil) {
 	voiceVelMax[idx] = max;
 	voiceDurDiv[idx] = div;
 	voiceSilence[idx] = sil;
+	outlet(4, ["advecho", idx + 1, "artvmin", voiceVelMin[idx]]);
+	outlet(4, ["advecho", idx + 1, "artvmax", voiceVelMax[idx]]);
+	outlet(4, ["advecho", idx + 1, "artdur", voiceDurDiv[idx]]);
+	outlet(4, ["advecho", idx + 1, "artsil", voiceSilence[idx]]);
 }
 
 // Off by default, same reasoning as Propia above: a device with every voice on Global sounds
@@ -2468,6 +2486,7 @@ function setvoicereadown(v, flag) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceReadOwn[idx] = flag ? 1 : 0;
+	outlet(4, ["advecho", idx + 1, "lec", voiceReadOwn[idx]]);
 }
 
 function setvoicereadmode(v, m) {
@@ -2477,6 +2496,7 @@ function setvoicereadmode(v, m) {
 	if (!isFinite(m) || m < 0) m = 0;
 	if (m > READ_MAX) m = READ_MAX;
 	voiceReadMode[idx] = m;
+	outlet(4, ["advecho", idx + 1, "patron", voiceReadMode[idx]]);
 }
 
 function setvoicereaddir(v, d) {
@@ -2485,6 +2505,7 @@ function setvoicereaddir(v, d) {
 	d = Math.round(d);
 	if (d < 0 || d > 2) d = 0;
 	voiceReadDir[idx] = d;
+	outlet(4, ["advecho", idx + 1, "dir", voiceReadDir[idx]]);
 }
 
 // Per-voice own key/tonality (TonProp/Set/Raiz -- see voiceKeyOwn above). Same off-by-default
@@ -2494,6 +2515,15 @@ function setvoicekeyown(v, flag) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceKeyOwn[idx] = flag ? 1 : 0;
+	outlet(4, ["advecho", idx + 1, "ton", voiceKeyOwn[idx]]);
+	// Fijar has no meaning without TonProp (see setvoicekeylock below); clearing it here whenever
+	// TonProp goes off stops a leftover voiceKeyLock from "reappearing" as already-on the next time
+	// TonProp is switched back on -- the Horizonte popup's readout masks keyLock to -1 while
+	// keyOwn is off (emitVoiceKeyReadouts()), so an unset Fijar was invisible, not actually off.
+	if (!voiceKeyOwn[idx] && voiceKeyLock[idx]) {
+		voiceKeyLock[idx] = 0;
+		outlet(4, ["advecho", idx + 1, "fij", 0]);
+	}
 }
 
 function setvoicesetindex(v, i) {
@@ -2503,6 +2533,7 @@ function setvoicesetindex(v, i) {
 	if (si < 0) si = 0;
 	if (si > sets.length - 1) si = sets.length - 1;
 	voiceSetIndex[idx] = si;
+	outlet(4, ["advecho", idx + 1, "setidx", voiceSetIndex[idx] + 1]);
 }
 
 function setvoicerootoffset(v, r) {
@@ -2519,6 +2550,7 @@ function setvoicekeylock(v, flag) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceKeyLock[idx] = flag ? 1 : 0;
+	outlet(4, ["advecho", idx + 1, "fij", voiceKeyLock[idx]]);
 }
 
 // Per-voice ornament shape (Orn Tipo/Notas/Base for this voice, when its own Patron is Ornamento
@@ -2532,6 +2564,7 @@ function setvoiceorntype(v, t) {
 	if (t > ORN_TYPE_MAX) t = ORN_TYPE_MAX;
 	voiceOrnType[idx] = t;
 	buildVoiceOrnOffsets(idx);
+	outlet(4, ["advecho", idx + 1, "ornt", voiceOrnType[idx]]);
 }
 
 function setvoiceorncount(v, c) {
@@ -2542,6 +2575,7 @@ function setvoiceorncount(v, c) {
 	if (c > 4) c = 4;
 	voiceOrnCount[idx] = c;
 	buildVoiceOrnOffsets(idx);
+	outlet(4, ["advecho", idx + 1, "ornn", voiceOrnCount[idx]]);
 }
 
 function setvoiceornbase(v, i) {
@@ -2552,6 +2586,7 @@ function setvoiceornbase(v, i) {
 	if (i > 14) i = 14;
 	voiceOrnBase[idx] = i;
 	buildVoiceOrnOffsets(idx);
+	outlet(4, ["advecho", idx + 1, "ornb", voiceOrnBase[idx]]);
 }
 
 // Folds a note into [min,max] by transposing whole octaves (never remaps pitch class), same
@@ -2640,8 +2675,10 @@ function setvoicelead(x) {
 }
 
 function setroot(r) {
-	root = Math.round(r);
+	var n = Math.round(r);
+	root = isFinite(n) ? n : 0;   // same NaN/undefined guard every other global setter already has
 	requestFilter();   // the mask is absolute, so what fits inside it changes when the root moves
+	outlet(4, ["gecho", "root", root]);
 }
 
 function setmasteroctave(o) {
@@ -3316,10 +3353,8 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg, onlyV) {
 		var cur = (monScratch[v] === MON_SILENT) ? -1 : monScratch[v];   // full MIDI note now
 		// history shifts only on a real change to a new sounding note; rests leave it be
 		if (cur !== -1 && cur !== colLastCur[v]) {
-			if (colLastCur[v] >= 0) {                     // deep history for fs2horizon.js, newest first
-				noteHist[v].unshift(colLastCur[v]);
-				if (noteHist[v].length > HIST_MAX) noteHist[v].pop();
-			}
+			noteHist[v].unshift(cur);                     // deep history for fs2horizon.js, newest first --
+			if (noteHist[v].length > HIST_MAX) noteHist[v].pop();   // the note sounding NOW, not the one before it
 			colHist[v][1] = colHist[v][0];
 			colHist[v][0] = colLastCur[v];
 			colLastCur[v] = cur;
@@ -3395,6 +3430,11 @@ var HORIZON_SHAPE = 1;                      // 0 = no emitir la tira "forma"
 var qnPatShown = [], qnCurShown = [], qnHistShown = [];
 var qnVoicesShown = -1;
 var qnStatusShown = "";
+var qnOrnBaseModeShown = -1;   // -1 forces the first querynext() to emit regardless of ornBaseMode's own default (0)
+var qnRootShown = null;        // null forces the first querynext() to emit regardless of root's own default (0)
+var qnOrnGlobalShown = "";     // firma "ornType,ornCount,ornBaseInterval"; "" = forzar
+var qnGFlagsShown = "";        // firma "indep,filter"; "" = forzar
+var qnHarmRateShown = -1;      // -1 forces the first querynext() to emit regardless of harmRate's own default (0)
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3410,9 +3450,17 @@ var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
 
 // Largo de un ciclo de la forma para la grilla (con el doblado de la pendular), o -1 para
 // "muy largo, usar ventana rodante" (Super / SuperMin: una pasada son n!-ish pasos).
-function shapeGridCols(rm, rd, card) {
+// ornTotal, when given, overrides shapeCycleLength()'s own READ_ORNAMENT branch (ornCycleSteps(),
+// which only ever reads the GLOBAL ornOffsets/ornBaseInterval/sets[setIndex]) with a total computed
+// against this specific voice's own offsets/base/pcs -- see the querynext() call site, which is the
+// only caller that ever passes it. Without this, a self-cursored voice with its own Patron=Ornamento
+// (or just its own key/TonProp while reading the shared ornament shape) got a grid sized to the
+// WRONG cycle length: each cell's own note was still individually correct (peekVoiceNote already
+// resolved everything per-voice), but the column count/wrap point the grid implied did not match
+// where the voice's real cursor actually wraps -- the lookahead visibly disagreeing with playback.
+function shapeGridCols(rm, rd, card, ornTotal) {
 	if (rm === READ_SUPER || rm === READ_SUPERMIN) return -1;
-	var L = shapeCycleLength(card, rm);
+	var L = (rm === READ_ORNAMENT && ornTotal !== undefined) ? ornTotal : shapeCycleLength(card, rm);
 	if (rd === 2 && L > 1 && rm !== READ_ORNAMENT) L = 2 * L - 2;   // ornament: no pendulum over the base
 	return L < 1 ? 1 : L;
 }
@@ -3429,6 +3477,36 @@ function querynext() {
 		if (skey !== qnStatusShown) {
 			qnStatusShown = skey;
 			outlet(3, ["hstatus", readMode, readDir, setIndex + 1, mode, locked ? 1 : 0]);
+		}
+		// ornBaseMode is global (no per-voice override), so one emit covers every row -- the
+		// Horizonte popup uses it to know whether a voice's Set actually feeds its Ornamento
+		// (ORN_BASE_DEGREES walks the set's degrees; every other base mode ignores the set
+		// entirely, same as ornamentPitchAt()'s own branches).
+		if (ornBaseMode !== qnOrnBaseModeShown) {
+			qnOrnBaseModeShown = ornBaseMode;
+			outlet(3, ["ornbasemode", ornBaseMode]);
+		}
+		// Global mirror for the Horizonte popup's fixed left sidebar (Patron/Dir/Set/mode already
+		// covered by hstatus above; ornBaseMode just above). None of these four have a per-voice
+		// override -- they ARE the shared value every voice falls back to -- so one emit each,
+		// same debounce shape as hstatus/ornbasemode.
+		if (root !== qnRootShown) {
+			qnRootShown = root;
+			outlet(3, ["groot", root]);
+		}
+		var gornKey = ornType + "," + ornCount + "," + ornBaseInterval;
+		if (gornKey !== qnOrnGlobalShown) {
+			qnOrnGlobalShown = gornKey;
+			outlet(3, ["gornament", ornType, ornCount, ornBaseInterval]);
+		}
+		var gflagsKey = (voiceIndep ? 1 : 0) + "," + (filterOn ? 1 : 0);
+		if (gflagsKey !== qnGFlagsShown) {
+			qnGFlagsShown = gflagsKey;
+			outlet(3, ["gflags", voiceIndep ? 1 : 0, filterOn ? 1 : 0]);
+		}
+		if (harmRate !== qnHarmRateShown) {
+			qnHarmRateShown = harmRate;
+			outlet(3, ["gharm", harmRate]);
 		}
 	}
 
@@ -3462,7 +3540,18 @@ function querynext() {
 		var cols, kind;
 		if (card === 0) { cols = 0; kind = 1; }
 		else {
-			var full = shapeGridCols(vrm, vrd, vCard);
+			// Same own-vs-shared resolution voiceOrnamentPitchAt() uses per note: offsets/base follow
+			// vOwn (Patron propio), pcs follows vCard's own self-cursored gate above -- so a voice that
+			// is self-cursored with its own key but is reading the SHARED ornament shape still sizes
+			// its grid against its own set's base-tone count (ORN_BASE_DEGREES), not the shared one's.
+			var vOrnTotal;
+			if (vrm === READ_ORNAMENT) {
+				var vOrnPcs = voiceSelfCursored(v) ? voicePcsFor(v, pcs) : pcs;
+				vOrnTotal = vOwn
+					? ornCycleStepsFor(voiceOrnOffsets[v], voiceOrnBase[v], vOrnPcs)
+					: ornCycleStepsFor(ornOffsets, ornBaseInterval, vOrnPcs);
+			}
+			var full = shapeGridCols(vrm, vrd, vCard, vOrnTotal);
 			if (full > 0 && full <= PATTERN_MAX) { cols = full; kind = 1; }
 			else { cols = HORIZON_MAX; kind = 0; }
 		}
@@ -3625,14 +3714,39 @@ function emitVoiceKeyReadouts() {
 		var patron = readOwn ? voiceReadMode[v] : readMode;
 		var dir = readOwn ? voiceReadDir[v] : readDir;
 		var ornT = (patron === READ_ORNAMENT) ? (readOwn ? voiceOrnType[v] : ornType) : -1;
+		var ornN = (ornT >= 0) ? (readOwn ? voiceOrnCount[v] : ornCount) : -1;
+		var ornB = (ornT >= 0) ? (readOwn ? voiceOrnBase[v] : ornBaseInterval) : -1;
 		var muted = voiceMute[v] ? 1 : 0;
 		// -1 = TonProp off (Fijar doesn't apply to anything), 0 = progresando (advanceVoiceKeys()
 		// steps it every harmony change), 1 = Fijar (voiceKeyLock skips it, see advanceVoiceKeys()).
 		var keyLock = keyOwn ? (voiceKeyLock[v] ? 1 : 0) : -1;
-		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," + muted + "," + keyLock;
+		var artOwn = voiceArtOwn[v] ? 1 : 0;
+		var ext = voiceExternal[v] ? 1 : 0;
+		// Mismas funciones que emitSetReadouts() ya usa para la pestana "Filtro" (outlet 7),
+		// aca indexadas por el set EFECTIVO de esta voz (si) en vez del set compartido.
+		var vec = vecString(si);
+		var diss = dissonancePercent(si).toFixed(2);
+		var zm = zMateOf(si);
+		var modality = modalityNameOf(si);
+		var mm = mirrorForteOf(si);
+		// Articulacion no tiene un "valor compartido" unico que resolver aca (a diferencia de
+		// forte/patron/ornamento arriba): lo compartido varia por paso segun el grupo Normal/
+		// Acento del accent grid, asi que -- igual que Set arriba, gateado por keyOwn -- esto se
+		// muestra siempre como el valor PROPIO de la voz (este o no en uso); el popup lo gatea
+		// visualmente solo por artOwn. Grado/Div van sin gate -- la tira esencial del panel no
+		// tiene un chip "Propia" que los condicione.
+		var velMin = voiceVelMin[v], velMax = voiceVelMax[v], durDiv = voiceDurDiv[v], silence = voiceSilence[v];
+		var grado = voiceDegOffset[v], div = voiceDiv[v];
+		var euLarg = voiceRhyLen[v], euPuls = voiceRhyK[v], euGir = voiceRhyRot[v];
+		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," +
+			ornN + "," + ornB + "," + muted + "," + keyLock + "," + artOwn + "," + ext + "," + vec + "," + diss + "," + si + "," +
+			velMin + "," + velMax + "," + durDiv + "," + silence + "," + grado + "," + div + "," +
+			euLarg + "," + euPuls + "," + euGir;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
-		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock]);
+		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
+			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
+			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir]);
 	}
 }
 
@@ -4118,15 +4232,21 @@ function ornCycleSteps() {
 // (2*total-2) -- so a pattern read as a pendulum turns instead of repeating the last note twice.
 function ornPosFor(pos, total, dir) {
 	pos = Math.round(pos);
-	if (!isFinite(pos) || pos < 0) pos = 0;
-	if (!(total > 0)) return pos;
-	if (dir === 1) return total - 1 - (pos % total);
+	if (!isFinite(pos)) pos = 0;
+	if (!(total > 0)) return pos < 0 ? 0 : pos;
+	// The Horizonte popup's grid peeks BEHIND the live cursor too (already-played columns), which
+	// hands this a negative pos -- JS's % keeps the sign of its left operand for those (-1 % total
+	// is negative, not total-1), so a plain `pos % total` would still be wrong. Wrap to [0,total)
+	// with the usual "+total, %total again" idiom instead of the old `pos < 0 -> 0` clamp, which
+	// collapsed every already-played cell to the very first one instead of its real wrapped-around
+	// position -- visible as repeated/wrong notes trailing the playhead in Ornamento's lookahead.
+	if (dir === 1) return total - 1 - (((pos % total) + total) % total);
 	if (dir === 2 && total > 1) {
 		var period = 2 * total - 2;
-		var q = pos % period;
+		var q = ((pos % period) + period) % period;
 		return (q < total) ? q : period - q;
 	}
-	return pos % total;
+	return ((pos % total) + total) % total;
 }
 
 // The raw semitone value (relative to MELODY_BASE, before root/octave/range) at linear position
@@ -4577,6 +4697,7 @@ function setreadmode(p) {
 	if (!isFinite(readMode) || readMode < 0) readMode = 0;
 	if (readMode > READ_MAX) readMode = READ_MAX;
 	resetReadWalk();
+	outlet(4, ["gecho", "patron", readMode]);
 }
 
 // The message name the device has been sending since the reading order had only three values.
@@ -4590,6 +4711,7 @@ function setreaddir(d) {
 	if (!isFinite(readDir) || readDir < 0) readDir = 0;
 	if (readDir > 2) readDir = 2;
 	resetReadWalk();
+	outlet(4, ["gecho", "dir", readDir]);
 }
 
 // Not a walk reset: changing the skip mid-pass is a change of interval, not of place.
@@ -4607,6 +4729,7 @@ function setornbaseinterval(v) {
 	if (ornBaseInterval > 14) ornBaseInterval = 14;
 	buildOrnOffsets();
 	resetReadWalk();
+	outlet(4, ["gecho", "ornbase", ornBaseInterval]);
 }
 
 function setorntype(t) {
@@ -4615,6 +4738,7 @@ function setorntype(t) {
 	if (ornType > ORN_TYPE_MAX) ornType = ORN_TYPE_MAX;
 	buildOrnOffsets();
 	resetReadWalk();
+	outlet(4, ["gecho", "orntype", ornType]);
 }
 
 function setorncount(c) {
@@ -4623,6 +4747,7 @@ function setorncount(c) {
 	if (ornCount > 4) ornCount = 4;
 	buildOrnOffsets();
 	resetReadWalk();
+	outlet(4, ["gecho", "orncount", ornCount]);
 }
 
 // Base layout: 0 = step the root by ornBaseInterval (equal division), 1 = walk the set's degrees
@@ -4637,6 +4762,7 @@ function setornbasemode(m) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornbasemode", ornBaseMode]);
 }
 
 function setornbasestep(s) {
@@ -4826,6 +4952,7 @@ function setvoiceeuclen(v, n) {
 	if (n > ACCENT_MAX) n = ACCENT_MAX;
 	voiceRhyLen[idx] = n;
 	rebuildVoiceRhythm(idx);
+	outlet(4, ["rtecho", idx + 1, "larg", voiceRhyLen[idx]]);
 }
 
 function setvoiceeuck(v, k) {
@@ -4836,6 +4963,7 @@ function setvoiceeuck(v, k) {
 	if (k > ACCENT_MAX) k = ACCENT_MAX;
 	voiceRhyK[idx] = k;
 	rebuildVoiceRhythm(idx);
+	outlet(4, ["rtecho", idx + 1, "puls", voiceRhyK[idx]]);
 }
 
 function setvoiceeucrot(v, r) {
@@ -4846,6 +4974,7 @@ function setvoiceeucrot(v, r) {
 	if (r > ACCENT_MAX - 1) r = ACCENT_MAX - 1;
 	voiceRhyRot[idx] = r;
 	rebuildVoiceRhythm(idx);
+	outlet(4, ["rtecho", idx + 1, "gir", voiceRhyRot[idx]]);
 }
 
 // group index for every setter below: 0 = normal, 1 = accent. Returns -1 for anything else

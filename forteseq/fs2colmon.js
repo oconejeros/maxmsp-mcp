@@ -99,6 +99,12 @@ function filtinfo() {}
 function filtset() {}
 function maskecho() {}
 function vkey() {}   // fs2horizon.js del popup lo dibuja; este panel no
+function ornscale() {}
+function ornbasemode() {}
+function groot() {}
+function gornament() {}
+function gflags() {}
+function gharm() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
