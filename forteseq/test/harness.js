@@ -1562,6 +1562,95 @@ function checkVoiceOrnament() {
 	return ok;
 }
 
+// El bug reportado: READ_ORNAMENT solo aplicaba Dir Lectura en step() (el reloj compartido), y ahi
+// nada mas que atras -- emitVoicesIndependent() y triggervoice() nunca tocaban la direccion del
+// ornamento, y pendulo (dir=2) era un no-op en todos lados. Confirma que ornamentPitchAtDir()/
+// voiceOrnamentPitchAt() ahora aplican Dir en los DOS caminos con cursor propio ademas del reloj
+// compartido, y que pendulo efectivamente da la vuelta en vez de seguir ascendiendo para siempre.
+function checkOrnamentDir() {
+	let ok = true;
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+
+	function setupOrnament(c) {
+		c.setlockindex(c.setForte.indexOf('7-35') + 1);
+		c.setlock(1);
+		c.setreadmode(7);   // READ_ORNAMENT
+		c.setornbaseinterval(4);
+		c.setorntype(0);
+		c.setorncount(1);
+	}
+
+	// --- Voces Indep: la direccion PROPIA de una voz en Ornamento tiene que cambiar sus notas
+	// contra otra voz que se queda en el Ornamento ascendente compartido.
+	const e = makeEngine(1);
+	const c = e.ctx;
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1); c.setvoicediv(2, 1);
+	c.setmode(1);
+	setupOrnament(c);
+	c.setvoicereadown(1, 1);
+	c.setvoicereadmode(1, 7);   // Ornamento tambien para la voz 1, pero con SU direccion
+	c.setvoicereaddir(1, 1);    // Atras
+	for (let i = 0; i < 8; i++) c.bang();
+	const indepV2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+	const indepV1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	if (indepV1.length < 4 || JSON.stringify(indepV1) === JSON.stringify(indepV2)) {
+		console.error('Ornamento Dir (Voces Indep): voz 1 con Dir propio=Atras debia diferir de la voz 2 ascendente, ' +
+			'ambas dieron ' + JSON.stringify(indepV1));
+		ok = false;
+	}
+
+	// --- triggervoice(): la voz externa cae al Dir Lectura COMPARTIDO cuando no tiene Propia --
+	// mismo chequeo, disparando a mano en vez de con el reloj.
+	const e2 = makeEngine(1);
+	const c2 = e2.ctx;
+	c2.setnumvoices(1);
+	c2.setvoicemute(1, 0);
+	c2.setvoiceexternal(1, 1);
+	setupOrnament(c2);
+	for (let i = 0; i < 6; i++) c2.triggervoice(1);
+	const trigFwd = e2.log.filter((l) => l[0] === '0').map(pitchOf);
+
+	const e3 = makeEngine(1);
+	const c3 = e3.ctx;
+	c3.setnumvoices(1);
+	c3.setvoicemute(1, 0);
+	c3.setvoiceexternal(1, 1);
+	setupOrnament(c3);
+	c3.setreaddir(1);   // Atras, compartido
+	for (let i = 0; i < 6; i++) c3.triggervoice(1);
+	const trigRev = e3.log.filter((l) => l[0] === '0').map(pitchOf);
+
+	if (trigFwd.length < 4 || JSON.stringify(trigFwd) === JSON.stringify(trigRev)) {
+		console.error('Ornamento Dir (trigger externo): Dir Lectura=Atras debia cambiar las notas de una voz ' +
+			'disparada externamente, dieron igual ' + JSON.stringify(trigFwd));
+		ok = false;
+	}
+
+	// --- Pendulo: la secuencia tiene que dar la vuelta (bajar en algun punto), no quedarse
+	// ascendiendo para siempre como antes del fix.
+	const e4 = makeEngine(1);
+	const c4 = e4.ctx;
+	c4.setnumvoices(1);
+	c4.setvoicemute(1, 0);
+	c4.setmode(1);
+	setupOrnament(c4);
+	c4.setreaddir(2);   // Pendulo
+	for (let i = 0; i < 16; i++) c4.bang();
+	const pend = e4.log.filter((l) => l[0] === '0').map(pitchOf);
+	let turned = false;
+	for (let i = 1; i < pend.length; i++) if (pend[i] < pend[i - 1]) { turned = true; break; }
+	if (!turned) {
+		console.error('Ornamento Dir (pendulo): la secuencia nunca descendio, se quedo ascendiendo -- ' + JSON.stringify(pend));
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Ornamento Dir: atras/pendulo se aplican bajo Voces Indep y trigger externo, no solo en el reloj compartido.');
+	return ok;
+}
+
 // Tonalidad por voz (TonProp/Set/Raiz -- Bitonal/Polytonal Scales & Arpeggios, Thesaurus Level 2):
 // con TonProp on, la voz ignora el setIndex/effRoot() compartido y toca su PROPIO set a su PROPIA
 // transposicion cruda -- voicePcsFor()/voiceRootFor() son los helpers compartidos, leidos en los
@@ -1625,6 +1714,158 @@ function checkVoiceKey() {
 	if (c.voiceRootOffset[0] !== -7) { console.error('setvoicerootoffset(-7) deberia guardar -7 tal cual, quedo en ' + c.voiceRootOffset[0]); ok = false; }
 
 	if (ok) console.log('OK   Tonalidad por voz: Set/Raiz propios instalan una segunda clave bajo TonProp (Bitonal/Polytonal).');
+	return ok;
+}
+
+// El bug reportado: voiceSetIndex[] (TonProp) era un pin puro sin ningun avance -- una voz con su
+// propio set quedaba pegada ahi para siempre. advanceVoiceKeys()/advanceVoiceOrder() la hacen
+// recorrer el MISMO order[]/allowed[] que advanceInOrder() usa para el setIndex compartido, asi
+// que sigue automaticamente el Orden elegido (Cardinal/Forte/.../McKay Natural). Se llama directo
+// a c.advanceVoiceKeys() -- el mismo punto que advanceSet() invoca en cada cambio de armonia -- en
+// vez de correr el reloj entero, para aislar el mecanismo del resto de step()/advanceSet(), mismo
+// criterio que checkRotation() usando c.chordFor() directamente.
+function checkVoiceKeyProgression() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);
+	const setA = c.setForte.indexOf('7-35');
+	c.setlockindex(setA + 1);
+	c.setlock(1);   // ancla el setIndex COMPARTIDO; advanceVoiceKeys() no lo toca de todos modos
+	c.setvoicekeyown(1, 1);
+	c.setvoicesetindex(1, setA + 1);
+
+	c.setorder(0);   // ORDER_CARD
+	const seenCard = [c.voiceSetIndex[0]];
+	for (let i = 0; i < 5; i++) { c.advanceVoiceKeys(); seenCard.push(c.voiceSetIndex[0]); }
+	if (new Set(seenCard).size < 3) {
+		console.error('Tonalidad por voz (progresion): con TonProp la voz deberia recorrer el orden, se quedo en ' +
+			JSON.stringify(seenCard));
+		ok = false;
+	}
+	if (c.setIndex !== setA) {
+		console.error('Tonalidad por voz (progresion): advanceVoiceKeys() no debe tocar el setIndex compartido, quedo en ' +
+			c.setIndex);
+		ok = false;
+	}
+
+	// Bajo un Orden distinto (McKay Natural) el recorrido tiene que ser DIFERENTE al de Cardinal --
+	// misma cantidad de pasos, mismo punto de partida.
+	c.setvoicesetindex(1, setA + 1);
+	c.setorder(5);   // ORDER_NAT
+	const seenNat = [c.voiceSetIndex[0]];
+	for (let i = 0; i < 5; i++) { c.advanceVoiceKeys(); seenNat.push(c.voiceSetIndex[0]); }
+	if (JSON.stringify(seenNat) === JSON.stringify(seenCard)) {
+		console.error('Tonalidad por voz (progresion): Cardinal y McKay Natural deberian dar recorridos ' +
+			'distintos, ambos dieron ' + JSON.stringify(seenCard));
+		ok = false;
+	}
+
+	// Con TonProp apagado, advanceVoiceKeys() no debe tocar voiceSetIndex en absoluto.
+	c.setvoicekeyown(1, 0);
+	const frozen = c.voiceSetIndex[0];
+	for (let i = 0; i < 5; i++) c.advanceVoiceKeys();
+	if (c.voiceSetIndex[0] !== frozen) {
+		console.error('Tonalidad por voz (progresion): con TonProp OFF voiceSetIndex no deberia moverse, paso de ' +
+			frozen + ' a ' + c.voiceSetIndex[0]);
+		ok = false;
+	}
+
+	// Fijar (voiceKeyLock) congela SOLO esta voz sin apagar TonProp -- otra voz TonProp sin Fijar
+	// sigue progresando en la misma pasada de advanceVoiceKeys().
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);
+	c.setvoicekeyown(1, 1);
+	c.setvoicesetindex(1, setA + 1);
+	c.setvoicekeyown(2, 1);
+	c.setvoicesetindex(2, setA + 1);
+	c.setvoicekeylock(1, 1);
+	const lockedStart = c.voiceSetIndex[0];
+	const otherStart = c.voiceSetIndex[1];
+	for (let i = 0; i < 5; i++) c.advanceVoiceKeys();
+	if (c.voiceSetIndex[0] !== lockedStart) {
+		console.error('Fijar por voz: la voz con voiceKeyLock deberia quedarse en ' + lockedStart +
+			', paso a ' + c.voiceSetIndex[0]);
+		ok = false;
+	}
+	if (c.voiceSetIndex[1] === otherStart) {
+		console.error('Fijar por voz: la OTRA voz TonProp (sin Fijar) deberia seguir progresando, se quedo en ' +
+			otherStart);
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Tonalidad por voz (progresion): una voz TonProp avanza su propio set siguiendo ' +
+		'Orden (Cardinal/McKay) sin tocar el setIndex compartido, y Fijar congela solo esa voz.');
+	return ok;
+}
+
+// Div y el ritmo euclidiano por voz (Larg/Puls/Gir) gatean el reloj compartido en
+// emitVoicesIndependent() contando contra patternStep; una voz disparada externamente no tiene
+// ese tick compartido, asi que triggervoice() cuenta contra voiceTrigCount, su propio tick privado.
+// Dos comportamientos distintos a proposito (ver el comentario en triggervoice()): un tick que
+// Div descarta NO mueve el cursor (no era el turno de la voz); una celda apagada del patron
+// euclidiano SI lo mueve (es un rest, no una pausa). Se verifica contra pitchForDegree/degreeAt
+// expuestos directamente, el mismo criterio que ya usa checkRotation() para no reinventar la
+// aritmetica de pitch adentro del test.
+function checkVoiceTrigGate() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(3);
+	c.setvoicemute(2, 0);
+	c.setvoicemute(3, 0);
+	c.setvoiceexternal(2, 1);
+	c.setvoiceexternal(3, 1);
+	c.setlockindex(c.setForte.indexOf('7-35') + 1);
+	c.setlock(1);
+	c.setreadmode(0);   // Recto: degreeAt(n,pos,0,0) === pos, asi las posiciones son predecibles
+	c.setvoicediv(2, 1);
+	c.setvoicediv(3, 1);
+
+	function expectedPitchAt(idx0, pos) {
+		const pcs = c.sets[c.setIndex];
+		const n = pcs.length;
+		const deg = c.degreeAt(n, pos, c.readMode, c.readDir) + c.voiceDegOffset[idx0] + c.modDeg();
+		const pc = c.pitchForDegree(pcs, deg);
+		const list = c.voiceOctaveList[idx0];
+		const oct = list[pos % list.length];
+		const shift = oct * 12 + c.voiceRootFor(idx0) + c.masterOctave * 12;
+		return c.foldToRange(c.MELODY_BASE + pc + shift, c.voiceRangeMin[idx0], c.voiceRangeMax[idx0]);
+	}
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+
+	// --- Div: voz 2, divisor 3, 6 triggers -> solo los ticks 0 y 3 son el turno de esta voz, y el
+	// cursor no debe avanzar en los 4 ticks descartados (pos se queda en 0 y despues en 1).
+	c.setvoicediv(2, 3);
+	for (let i = 0; i < 6; i++) c.triggervoice(2);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+	const wantDiv = [expectedPitchAt(1, 0), expectedPitchAt(1, 1)];
+	if (JSON.stringify(v2) !== JSON.stringify(wantDiv)) {
+		console.error('Div en trigger externo: con div=3 y 6 triggers esperaba ' + JSON.stringify(wantDiv) +
+			' (cursor congelado en los ticks descartados), dieron ' + JSON.stringify(v2));
+		ok = false;
+	}
+
+	// --- Euclidiano: voz 3, patron E(2,4) sin divisor -> tantas notas como onsets tenga el patron
+	// YA RESUELTO (no se asume la forma exacta que bjorklund elige), en las posiciones donde el
+	// patron vale 1; las celdas en 0 son un rest y el cursor las cuenta igual.
+	c.setvoiceeuclen(3, 4);
+	c.setvoiceeuck(3, 2);
+	c.setvoiceeucrot(3, 0);
+	const pat = c.voiceRhyPat[2].slice();
+	for (let i = 0; i < 4; i++) c.triggervoice(3);
+	const v3 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '3').map(pitchOf);
+	const wantEuc = pat.map((on, pos) => on ? expectedPitchAt(2, pos) : null).filter((x) => x !== null);
+	if (JSON.stringify(v3) !== JSON.stringify(wantEuc)) {
+		console.error('Euclidiano en trigger externo: patron ' + JSON.stringify(pat) +
+			' esperaba notas en las posiciones en 1, ' + JSON.stringify(wantEuc) + ', dieron ' + JSON.stringify(v3));
+		ok = false;
+	}
+
+	if (ok) console.log('OK   Trigger externo: Div y ritmo euclidiano por voz gatean triggervoice() igual que al reloj compartido.');
 	return ok;
 }
 
@@ -2075,6 +2316,43 @@ function checkQueryNext() {
 		console.error('QueryNext: vkey voz 3 (compartida, Recto, sin ornamento) deberia dar readOwn=0 patron=0 dir=0 ornT=-1 muted=0, dio ' + JSON.stringify(byV2[2])); ok = false;
 	}
 
+	// Grid width: a self-cursored voice (Voces Indep or external) with TonProp on has its OWN
+	// cardinality, and the hpattern grid has to size off THAT, not the shared harmony's -- otherwise
+	// a smaller own-key cycle visibly "repeats" its first notes to fill the shared set's wider grid,
+	// even though peekVoiceNote() always computed the right pitches (the bug the user actually saw).
+	const gw = setup(seed);   // shared set is locked to a 5-note set (see setup())
+	gw.c.setvoiceindep(1);
+	gw.c.setvoicekeyown(1, 1);
+	gw.c.setvoicesetindex(1, gw.c.setForte.indexOf('7-35') + 1);   // TonProp: a 7-note set of its own
+	for (let i = 0; i < 4; i++) gw.c.bang();
+	const atGw = gw.e.log.length;
+	gw.c.querynext();
+	const gwByV = {};
+	for (const a of rowsOf(gw.e.log, atGw, 'hpattern')) gwByV[Number(a[0])] = { kind: Number(a[1]), cols: Number(a[2]) };
+	if (!gwByV[0] || gwByV[0].cols !== 7) {
+		console.error('QueryNext: hpattern de una voz TonProp (7 notas propias) deberia dar cols=7, dio ' +
+			JSON.stringify(gwByV[0])); ok = false;
+	}
+	if (!gwByV[1] || gwByV[1].cols !== 5) {
+		console.error('QueryNext: la voz sin TonProp deberia seguir con cols=5 (armonia compartida), dio ' +
+			JSON.stringify(gwByV[1])); ok = false;
+	}
+	// TonProp on but NOT self-cursored (Voces Indep off, no external trigger): the voice's own key
+	// does not actually sound in that mode (emitVoices() never reads it), so its grid must keep the
+	// SHARED cardinality too -- otherwise the column count would drift from the notes actually
+	// shown, which still come from the shared harmony here.
+	const gw2 = setup(seed);
+	gw2.c.setvoicekeyown(1, 1);
+	gw2.c.setvoicesetindex(1, gw2.c.setForte.indexOf('7-35') + 1);
+	for (let i = 0; i < 4; i++) gw2.c.bang();
+	const atGw2 = gw2.e.log.length;
+	gw2.c.querynext();
+	const gw2Pats = rowsOf(gw2.e.log, atGw2, 'hpattern');
+	if (gw2Pats.some((a) => Number(a[2]) !== 5)) {
+		console.error('QueryNext: TonProp sin cursor propio (reloj compartido) no deberia cambiar cols, ' +
+			'deberian ser todas 5: ' + JSON.stringify(gw2Pats)); ok = false;
+	}
+
 	if (ok) console.log('OK   QueryNext: querynext() no mueve ni una nota ni la urna; hist de voz apagada se vacia; hpattern/hcursor/hist/hshape/vkey salen bien.');
 	return ok;
 }
@@ -2214,7 +2492,10 @@ function main() {
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);
 	if (!checkVoiceOrnament()) process.exit(1);
+	if (!checkOrnamentDir()) process.exit(1);
 	if (!checkVoiceKey()) process.exit(1);
+	if (!checkVoiceKeyProgression()) process.exit(1);
+	if (!checkVoiceTrigGate()) process.exit(1);
 	if (!checkRotation()) process.exit(1);
 	if (!checkQueryNext()) process.exit(1);
 	if (!checkFiltSets()) process.exit(1);

@@ -47,6 +47,9 @@ var voiceRangeMax = filled(MAX_VOICES, 127);     // per-voice register clamp, hi
 var voiceIndep = 0;                              // 0 = one shared note per step (historic behavior), 1 = every voice reads for itself
 var voiceDegOffset = filled(MAX_VOICES, 0);      // how many DEGREES of the current set this voice sits above its own reading
 var voiceDiv = filled(MAX_VOICES, 1);            // clock divider: this voice sounds on 1 of every N steps
+var voiceTrigCount = filled(MAX_VOICES, 0);      // external-trigger tick counter -- stands in for patternStep
+                                                  // in triggervoice(), which has no shared clock tick to count
+                                                  // against, so Div/rhythm-euclid can still gate it (see triggervoice())
 for (var initV = 0; initV < MAX_VOICES; initV++) voiceOctaveList[initV] = [0];
 voiceMute[0] = 0;
 
@@ -260,6 +263,11 @@ var voiceSetIndex = filled(MAX_VOICES, 0);     // this voice's own Tn-class (0-b
 var voiceRootOffset = filled(MAX_VOICES, 0);   // crude semitone transpose, same units as the global Root -- NOT
                                                 // effRoot(): a second key stands apart from the shared root walk /
                                                 // listen-latch / mask-fit machinery, which belongs to the FIRST key
+var voiceKeyLock = filled(MAX_VOICES, 0);      // 1 = this voice's own set stops advancing in advanceVoiceKeys(),
+                                                // without touching TonProp itself -- so the voice keeps sounding
+                                                // its own key (root, register, cursor all still its own), just
+                                                // pinned at whichever set it was on, while OTHER TonProp voices
+                                                // keep walking their own procession
 
 // The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
 // k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
@@ -1173,6 +1181,45 @@ function advanceInOrder() {
 	return 0;
 }
 
+// Like advanceInOrder(), but for a voice's own pinned Forte set (TonProp) instead of the shared
+// setIndex -- walks the SAME order[]/allowed[], so a TonProp voice automatically follows whichever
+// cardinal/Forte/consonancia/disonancia/McKay-Natural/Modal order is globally selected (Orden) and
+// honors the Filtro mask, exactly like the main harmony. Before this, voiceSetIndex[] was a pure
+// pin with no advance anywhere -- a voice with TonProp on never moved once set. No separate
+// per-voice cursor is needed: orderPosOf is a pure reverse lookup into order[] (rebuilt whenever
+// buildOrder() runs), so it already answers "where does this voice's own set sit in the order",
+// the same way it answers that question for the shared setIndex in advanceInOrder().
+function advanceVoiceOrder(idx) {
+	var total = order.length;
+	if (!total) return;
+	var cur = voiceSetIndex[idx];
+	var pos = orderPosOf[cur];
+	if (pos === undefined) pos = 0;
+	var cb = linkMin > 0 ? fittedBits(cur) : 0;
+	var fallback = -1;
+	for (var i = 1; i <= total; i++) {
+		var cand = order[(pos + i) % total];
+		if (!allowed[cand]) continue;
+		if (linkMin > 0) {
+			if (fallback < 0) fallback = cand;
+			if (popcount(cb & fittedBits(cand)) < linkMin) continue;
+		}
+		voiceSetIndex[idx] = cand;
+		return;
+	}
+	if (fallback >= 0) voiceSetIndex[idx] = fallback;
+}
+
+// Every TonProp voice steps its own procession here, once per shared-harmony change -- same
+// cadence as the main setIndex, just a different position in the same order. Called from the top
+// of advanceSet() so it runs (or is held, by the same listen/follow gates) regardless of which
+// sub-strategy (plain walk, Favoritos, Tension) the SHARED harmony below ends up using: those two
+// are main-harmony-only concepts (a favourites sequence or a consonance curve you picked by hand
+// for THIS device's harmony), not part of "el orden definido" a TonProp voice is meant to follow.
+function advanceVoiceKeys() {
+	for (var v = 0; v < NUM_VOICES; v++) if (voiceKeyOwn[v] && !voiceKeyLock[v]) advanceVoiceOrder(v);
+}
+
 // The curve: the harmony is asked to be about this consonant right now, and the closest allowed
 // set that also satisfies the common-tone rule gets it. Scanning all 351 is fine here -- this
 // runs once per set change, not once per note.
@@ -1220,6 +1267,7 @@ function advanceSet() {
 	// harmony, and an engine following the bus is being told one.
 	if (listenMode && heldBits) return 0;
 	if (followOn) return 0;
+	advanceVoiceKeys();
 	if (favSeqOn) return advanceFavSeq();
 	if (tensLen > 0) return advanceByTension();
 	return advanceInOrder();
@@ -1748,11 +1796,31 @@ function triggervoice(v) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	if (voiceMute[idx]) return;
+
+	// Div and the per-voice euclidean rhythm (Larg/Puls/Gir) gate the shared clock in
+	// emitVoicesIndependent() by counting against patternStep -- a raw tick shared by every voice.
+	// An externally triggered voice has no such shared tick, so voiceTrigCount stands in as this
+	// voice's own private tick count, one per incoming trigger, and the two gates are applied the
+	// same way: Div first (not this voice's turn at all -- nothing moves, not even the cursor),
+	// then the euclidean pattern (an off-cell is a rest -- the cursor still advances, matching the
+	// "mute is a gate, not a pause" rule used everywhere else in this file).
+	var tick = voiceTrigCount[idx]++;
+	var div = voiceDiv[idx] > 0 ? voiceDiv[idx] : 1;
+	if ((tick % div) !== 0) { monScratch[idx] = MON_SILENT; return; }
+
 	var pcs = voicePcsFor(idx, sets[setIndex]);   // this voice's own set if TonProp is on
 	if (!pcs || pcs.length === 0) return;
 
 	var pos = voicePos[idx];
 	var n = pcs.length;
+
+	if (!voiceSoundsAt(idx, tick / div)) {
+		voicePos[idx] = pos + 1;
+		soundPosV[idx] = pos;
+		monScratch[idx] = MON_SILENT;
+		return;
+	}
+
 	var pc;
 
 	// Walk the same permuted order the shared clock uses, so an externally triggered
@@ -2441,6 +2509,16 @@ function setvoicerootoffset(v, r) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceRootOffset[idx] = Math.round(r);   // unclamped, same convention as setroot()
+}
+
+// Freezes THIS voice's own procession (advanceVoiceKeys() skips it) without touching TonProp --
+// the voice keeps sounding its own key exactly where it is, while every other TonProp voice keeps
+// walking. Independent of the global hard lock (fs2setpick.js's Fijar/locked), which freezes the
+// SHARED setIndex and is unaffected by this flag either way.
+function setvoicekeylock(v, flag) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	voiceKeyLock[idx] = flag ? 1 : 0;
 }
 
 // Per-voice ornament shape (Orn Tipo/Notas/Base for this voice, when its own Patron is Ornamento
@@ -3148,10 +3226,9 @@ function peekSharedPc(v, pcs, n, j) {
 	var off = voiceDegOffset[v] || 0;
 	if (readMode === READ_ORNAMENT) {
 		// The ornament ignores the set, so the lookahead has to run the same interval-cycle + cell
-		// as the audio path in step(), not a walk over pcs[]. readDir 1 reverses the whole run.
-		var op = noteIndex + j;
-		if (readDir === 1) op = readCycleLength(n) - 1 - op;
-		return pc12(ornamentPitchAt(op, pcs) + effRoot());
+		// as the audio path in step(), not a walk over pcs[] -- via ornamentPitchAtDir(), so atras
+		// AND pendulo both preview correctly instead of only atras.
+		return pc12(ornamentPitchAtDir(noteIndex + j, pcs, undefined, undefined, readDir) + effRoot());
 	}
 	if (mode === 1 && readDir === 0 && readMode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) {
 		var seq = MINIMAL_SUPERPERMS[n];
@@ -3375,10 +3452,17 @@ function querynext() {
 		var cursor = voiceSelfCursored(v) ? voicePos[v] : noteIndex;   // for the rolling window peek
 		var soundPos = voiceSelfCursored(v) ? soundPosV[v] : sharedSoundPos;   // for the playhead box
 
+		// Grid width: a self-cursored voice with its own key (TonProp) has its own cardinality, and
+		// the horizon has to size its cycle off THAT, not the shared harmony's -- otherwise a 5-note
+		// own-key Recto cycle drawn in a 7-wide grid (the shared set's width) visibly "repeats" its
+		// first two notes in the last two columns, even though the notes themselves (peekVoiceNote)
+		// were always correct. voicePcsFor() already falls back to the shared pcs when TonProp is
+		// off, so this is a no-op change for every voice that isn't both self-cursored and TonProp.
+		var vCard = voiceSelfCursored(v) ? voicePcsFor(v, pcs).length : card;
 		var cols, kind;
 		if (card === 0) { cols = 0; kind = 1; }
 		else {
-			var full = shapeGridCols(vrm, vrd, card);
+			var full = shapeGridCols(vrm, vrd, vCard);
 			if (full > 0 && full <= PATTERN_MAX) { cols = full; kind = 1; }
 			else { cols = HORIZON_MAX; kind = 0; }
 		}
@@ -4012,9 +4096,34 @@ function ornBaseCycleLen() {
 	return 12 / gcd(((ornBaseInterval % 12) + 12) % 12 || 12, 12);
 }
 
-// One full pass: every principal tone, each carrying its cell of (1 + ornOffsets.length) notes.
+// One full pass: every principal tone, each carrying its cell of (1 + offsets.length) notes.
+// Named separately from ornCycleSteps() because ornamentPitchAtDir() needs this same length for
+// a VOICE's own offsets/baseInterval too, to keep its reversal/pendulum pivot self-consistent.
+function ornCycleStepsFor(offsets, baseInterval, pcs) {
+	return ornBaseTonesFor(baseInterval, pcs) * (offsets.length + 1);
+}
 function ornCycleSteps() {
-	return ornBaseTones(sets[setIndex]) * (ornOffsets.length + 1);
+	return ornCycleStepsFor(ornOffsets, ornBaseInterval, sets[setIndex]);
+}
+
+// Maps a raw, ever-growing linear position (noteIndex, a voice's own cursor, a lookahead peek...)
+// onto the position ornamentPitchAt() should actually read, for a pass of length `total`. dir 0
+// (ascendente) is a no-op modulo total -- ornamentPitchAt()'s own baseIdx/cellIdx math is already
+// periodic with period total, so wrapping here changes nothing it computes. dir 1 (atras) reverses
+// each pass in place, same pivot degreeAt() uses for every other reading mode. dir 2 (pendulo)
+// walks 0..total-1 then back down to 1 before repeating, mirroring degreeAt()'s own pendulum period
+// (2*total-2) -- so a pattern read as a pendulum turns instead of repeating the last note twice.
+function ornPosFor(pos, total, dir) {
+	pos = Math.round(pos);
+	if (!isFinite(pos) || pos < 0) pos = 0;
+	if (!(total > 0)) return pos;
+	if (dir === 1) return total - 1 - (pos % total);
+	if (dir === 2 && total > 1) {
+		var period = 2 * total - 2;
+		var q = pos % period;
+		return (q < total) ? q : period - q;
+	}
+	return pos % total;
 }
 
 // The raw semitone value (relative to MELODY_BASE, before root/octave/range) at linear position
@@ -4047,14 +4156,33 @@ function ornamentPitchAt(pos, pcs, offsets, baseInterval) {
 	return baseInterval * baseIdx + off;
 }
 
+// Applies Dir Lectura (0 ascendente, 1 atras, 2 pendulo) to the ornament's own periodic position --
+// the same job degreeAt() does for every other reading mode, kept as a separate wrapper because the
+// ornament's period depends on whichever offsets/baseInterval are actually in play (shared or a
+// voice's own), so the reversal/pendulum pivot has to match the exact ornamentPitchAt() call this
+// makes. Previously only step() (the shared-clock path) reversed the run, and only for dir=1 --
+// emitVoicesIndependent() and triggervoice() never applied direction to the ornament at all, and
+// pendulum (dir=2) was a no-op everywhere. Both gaps close here, once, for every caller.
+function ornamentPitchAtDir(pos, pcs, offsets, baseInterval, dir) {
+	if (offsets === undefined) offsets = ornOffsets;
+	if (baseInterval === undefined) baseInterval = ornBaseInterval;
+	if (pcs === undefined) pcs = sets[setIndex];
+	if (dir === undefined) dir = readDir;
+	var total = ornCycleStepsFor(offsets, baseInterval, pcs);
+	return ornamentPitchAt(ornPosFor(pos, total, dir), pcs, offsets, baseInterval);
+}
+
 // The per-voice entry point for the three call sites that can run a voice's own Patron: when a
 // voice has Propia on AND its own Patron is Ornamento, its shape (Orn Tipo x Notas x Base) is its
 // own, computed once by buildVoiceOrnOffsets() into voiceOrnOffsets[idx]; every other voice (and
 // every voice when Propia is off) keeps reading the shared ornament exactly as before. The base
-// LAYOUT (Orn Base Modo/Paso/Cuarteto/Serie) is not part of this override -- it stays global.
-function voiceOrnamentPitchAt(idx, pos, pcs) {
-	if (voiceReadOwn[idx]) return ornamentPitchAt(pos, pcs, voiceOrnOffsets[idx], voiceOrnBase[idx]);
-	return ornamentPitchAt(pos, pcs);
+// LAYOUT (Orn Base Modo/Paso/Cuarteto/Serie) is not part of this override -- it stays global. `dir`
+// defaults to this voice's own Dir Lectura override (undefined when Propia is off, which
+// ornamentPitchAtDir() then resolves to the shared Dir Lectura) -- same fallback degreeAt() uses.
+function voiceOrnamentPitchAt(idx, pos, pcs, dir) {
+	if (dir === undefined) dir = voiceReadDirOf(idx);
+	if (voiceReadOwn[idx]) return ornamentPitchAtDir(pos, pcs, voiceOrnOffsets[idx], voiceOrnBase[idx], dir);
+	return ornamentPitchAtDir(pos, pcs, undefined, undefined, dir);
 }
 
 // The resulting scale Slonimsky tabulates beside each pattern as its Master Chord: the pitch-class
@@ -4164,9 +4292,14 @@ function voiceRootFor(idx) {
 // to change, so no reading order is ever cut off half way -- a superpermutation gets to finish,
 // and a pendulum gets to come back, before the harmony moves.
 function readCycleLength(n) {
-	// readDir 1 (atras) reverses the whole ornamented run in step(); dir 2 (pendulum) is treated
-	// as plain ascending here -- a pendulum over the base is deferred, so the pass is not doubled.
-	if (readMode === READ_ORNAMENT) return ornCycleSteps();
+	// dir 1 (atras) reverses the whole ornamented run via ornamentPitchAtDir(); dir 2 (pendulo)
+	// doubles the pass the same way the non-ornament branch below does, so noteIndex does not wrap
+	// (and advance the harmony) halfway through the swing.
+	if (readMode === READ_ORNAMENT) {
+		var OL = ornCycleSteps();
+		if (readDir === 2 && OL > 1) return 2 * OL - 2;
+		return OL;
+	}
 	var L = shapeCycleLength(n);
 	if (readDir === 2 && L > 1) return 2 * L - 2;
 	return L;
@@ -4382,9 +4515,9 @@ function step() {
 			// The ornament plays one line for every voice (no ctxPcs), differing only by
 			// octave/register -- voice Grado harmonising it is Fase 2. Base=Intervalo notes are not
 			// set members; Base=Grados principal tones are, but ornamentPitchAt still owns that.
-			// dir 1 reverses the whole run; the base itself is otherwise read ascending.
-			var op = (readDir === 1) ? (readCycleLength(n) - 1 - noteIndex) : noteIndex;
-			emitVoices(MELODY_BASE + ornamentPitchAt(op, pcs));
+			// Dir Lectura (atras/pendulo) is applied by ornamentPitchAtDir(), same as every other
+			// caller now -- see its own comment for why the pivot has to be computed there.
+			emitVoices(MELODY_BASE + ornamentPitchAtDir(noteIndex, pcs, undefined, undefined, readDir));
 		} else if (readMode === READ_MODOS) {
 			emitVoices(MELODY_BASE + pitchForDegree(pcs, deg + modDeg()), pcs, deg + modDeg());
 		} else {

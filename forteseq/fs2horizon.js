@@ -36,11 +36,6 @@
 //            from silent ones.
 //   colvoices <n>   colbang <v>   color <0|1>   clear   colmon ...(ignored)
 //
-// solovoices <0|1> -- NOT from outlet 3: sent directly from the main device panel's "Solo Voces"
-//   toggle (tools/add_hide_picker.py), straight to this jsui's inlet. 1 = the set-picker
-//   (fs2setpick.js, drawn on top of this box's left edge) is hidden -- stop reserving it a
-//   margin and draw full-width. 0 = restore the margin.
-//
 // Colour = the circle-of-fifths wheel from pccolor.js, sat/lum matched to fs2colmon / tonnetz.
 
 include('pccolor.js');
@@ -57,17 +52,11 @@ var SELF = this;   // capturado para .patcher.wind (seguir a la ventana flotante
 // como bonus inerte, pero el tamano/posicion real de la caja quedan fijos desde que la ventana
 // abre, sea cual sea el valor que este archivo escriba.
 //
-// Por eso "Solo Voces" (tools/add_hide_picker.py) NO mueve NINGUNA caja: la caja de este jsui ya
-// arranca en x=8 (superpuesta con fs2setpick.js, que se dibuja encima por venir despues en la
-// lista de boxes) y esta funcion simplemente deja de reservarle margen a la izquierda cuando el
-// picker esta oculto. PICKER_W = ancho del picker (380) + gap (8); WPAD = margen del propio jsui.
-// pickerVisible arranca en 1 (estado por defecto del toggle) y cambia con el mensaje "solovoices".
-var WPAD = 8, PICKER_W = 388;
-var pickerVisible = 1;
-function solovoices(flag) {
-	pickerVisible = flag ? 0 : 1;
-	mgraphics.redraw();
-}
+// "Vista Popup" (tools/add_fs2_popup_tabs.py) hace a Horizonte y Selector EXCLUYENTES -- un
+// "script show/hide" real sobre la caja del que no se ve, ya no una superposicion con margen
+// reservado -- asi que este jsui ya no necesita reservarle espacio a nadie: cuando esta oculto,
+// fs2setpick.js no dibuja nada encima.
+var WPAD = 8;
 function windSize() {
 	try {
 		var s = SELF.patcher.wind.size;
@@ -75,13 +64,13 @@ function windSize() {
 	} catch (e) {}
 	return null;
 }
-function leftMargin() { return pickerVisible ? PICKER_W : 0; }
+function leftMargin() { return 0; }
 function viewportWH() {
 	var s = windSize();
 	var margin = leftMargin();
 	if (s) return [Math.max(300, Math.round(s[0]) - margin - WPAD * 2),
 		Math.max(140, Math.round(s[1]) - WPAD * 2)];
-	return [844 + (pickerVisible ? 0 : PICKER_W), 284];   // sin lectura de ventana
+	return [844, 284];   // sin lectura de ventana
 }
 function fitToWindow() {
 	var s = windSize();

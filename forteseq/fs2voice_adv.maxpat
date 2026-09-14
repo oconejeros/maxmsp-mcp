@@ -1406,6 +1406,69 @@
      ],
      "text": "prepend setvoicerootoffset #1"
     }
+   },
+   {
+    "box": {
+     "maxclass": "live.toggle",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "v_fijar",
+     "annotation": "Si esta prendido, esta voz deja de avanzar su propio set (TonProp) en cada cambio de armonia -- se queda sonando en el set que tiene ahora, en su propia clave, mientras las demas voces con TonProp siguen su procesion. No apaga TonProp: para volver a la armonia compartida hay que apagar TonProp, no Fijar. Independiente del lock global (Fijar/Set del popup selector), que congela el set COMPARTIDO.",
+     "patching_rect": [
+      400.0,
+      1240.0,
+      15.0,
+      14.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      712.0,
+      3.0,
+      14.0,
+      14.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 Fijar",
+       "parameter_shortname": "Fijar",
+       "parameter_type": 2,
+       "parameter_modmode": 0,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1
+      }
+     },
+     "id": "obj-117"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-118",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voicekeylock_prep",
+     "patching_rect": [
+      500.0,
+      1820.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicekeylock #1"
+    }
    }
   ],
   "lines": [
@@ -2200,6 +2263,42 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-117",
+      0
+     ],
+     "destination": [
+      "obj-118",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-118",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-117",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -2307,6 +2406,11 @@
    "obj-113": [
     "V#1 Raiz",
     "V#1 Raiz",
+    0
+   ],
+   "obj-117": [
+    "V#1 Fijar",
+    "V#1 Fijar",
     0
    ]
   },
