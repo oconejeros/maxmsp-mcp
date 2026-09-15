@@ -1497,6 +1497,7 @@ function setorder(m) {
 	if (m > 6) m = 6;
 	orderMode = m;
 	buildOrder();
+	outlet(4, ["gecho", "orden", orderMode]);
 }
 
 // 0 = Huron's empirical dyadic consonance (consonanceOf, high = consonant); 1 = McKay's diatonic
@@ -1528,6 +1529,7 @@ function setcardmin(n) {
 	if (n > 12) n = 12;
 	cardMin = n;
 	requestFilter();
+	outlet(4, ["gecho", "nmin", cardMin]);
 }
 
 function setcardmax(n) {
@@ -1536,6 +1538,7 @@ function setcardmax(n) {
 	if (n > 12) n = 12;
 	cardMax = n;
 	requestFilter();
+	outlet(4, ["gecho", "nmax", cardMax]);
 }
 
 // setmask <c1> ... <c12>: the whole mask arrives as one list, so a redraw can never leave it
@@ -1553,6 +1556,7 @@ function setmaskmode(m) {
 	if (m > 2) m = 2;
 	maskMode = m;
 	requestFilter();
+	outlet(4, ["gecho", "maskmode", maskMode]);
 }
 
 // 1 = a set that does not satisfy the mask where it sits may move to a transposition where it
@@ -1561,6 +1565,7 @@ function setmaskmode(m) {
 function setmaskfit(f) {
 	maskFit = f ? 1 : 0;
 	requestFilter();
+	outlet(4, ["gecho", "maskfit", maskFit]);
 }
 
 function setmaskk(k) {
@@ -1569,6 +1574,7 @@ function setmaskk(k) {
 	if (k > 12) k = 12;
 	maskK = k;
 	requestFilter();
+	outlet(4, ["gecho", "maskk", maskK]);
 }
 
 // setvecmin <ic> <n> / setvecmax <ic> <n>: the interval class travels with the value instead of
@@ -1639,6 +1645,7 @@ function setlink(n) {
 	if (!isFinite(n) || n < 0) n = 0;
 	if (n > 6) n = 6;
 	linkMin = n;
+	outlet(4, ["gecho", "enlace", linkMin]);
 }
 
 // Length of the tension cycle in set changes. Turning it on restarts the shape, so the curve
@@ -1738,6 +1745,11 @@ function setlockindex(i) {
 	// Only the set-level index/notes readouts preview immediately; the per-voice MIDI
 	// monitor only updates from an actual clock tick/trigger, same as real playback.
 	emitSetReadouts(sets[setIndex]);
+	// The panel's own Set numbox (fs2_set, inside fs2pages.maxpat's Armonia page) never got
+	// echoed before -- outlet(1, setIndex+1) in emitSetReadouts() only ever reached a readout
+	// COMMENT (fs2_disp_idx_top) and a bpatcher inlet that turned out unwired inside. This is
+	// the real fix, same gecho channel as the rest of the global sidebar.
+	outlet(4, ["gecho", "set", idx + 1]);
 }
 
 function setvoiceoctavelist() {
@@ -2618,11 +2630,15 @@ var RANGE_TEMPLATES = [
 
 // Writes a whole template into the per-voice clamps and echoes each pair back to its strip, so
 // the Min/Span boxes show what is actually in force. Nothing is locked: a voice can be nudged
-// afterwards, and then the menu is only a record of what was last applied.
+// afterwards, and then the menu is only a record of what was last applied -- rangeTemplateIndex
+// exists purely for that record (echoed back to the menu itself/the popup), the per-voice
+// v{n}range echoes above are what actually drives the Min/Span strips.
+var rangeTemplateIndex = 0;
 function setrangetemplate(t) {
 	t = Math.round(t);
 	var tpl = (t >= 0 && t < RANGE_TEMPLATES.length) ? RANGE_TEMPLATES[t] : null;
 	if (!tpl) return;
+	rangeTemplateIndex = t;
 	for (var v = 0; v < NUM_VOICES; v++) {
 		// More voices than the template names wraps back to the top rather than leaving the
 		// extra ones behind: the device caps at four, the engine allows sixteen.
@@ -2631,6 +2647,7 @@ function setrangetemplate(t) {
 		voiceRangeMax[v] = pair[1];
 		outlet(4, ["v" + (v + 1) + "range", pair[0], pair[1] - pair[0]]);
 	}
+	outlet(4, ["gecho", "rango", rangeTemplateIndex]);
 }
 
 function setdrum(x) {
@@ -3435,6 +3452,18 @@ var qnRootShown = null;        // null forces the first querynext() to emit rega
 var qnOrnGlobalShown = "";     // firma "ornType,ornCount,ornBaseInterval"; "" = forzar
 var qnGFlagsShown = "";        // firma "indep,filter"; "" = forzar
 var qnHarmRateShown = -1;      // -1 forces the first querynext() to emit regardless of harmRate's own default (0)
+var qnOrdenShown = -1;         // -1 forces the first querynext() to emit regardless of orderMode's own default (0)
+var qnRangoShown = -1;
+var qnSilpreShown = -1;
+var qnOrnQuadShown = -1;       // -1 forces the first querynext() to emit regardless of ornQuadScheme's own default (0)
+var qnOrnStepShown = -1;       // -1 forces the first querynext() to emit regardless of ornBaseStep's own default (1)
+var qnOrnSeriesShown = "";     // firma "ornSeriesStart,ornSeriesStep,ornSeriesPeak"; "" = forzar
+var qnSilenceShown = "";       // firma "groupSilence[NORMAL],groupSilence[ACCENT]"; "" = forzar
+var qnEnlaceShown = -1;        // -1 forces the first querynext() to emit regardless of linkMin's own default (0)
+var qnCardShown = "";          // firma "cardMin,cardMax"; "" = forzar
+var qnMaskModeShown = -1;      // -1 forces the first querynext() to emit regardless of maskMode's own default (0)
+var qnMaskKShown = -1;
+var qnMaskFitShown = -1;
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3486,6 +3515,26 @@ function querynext() {
 			qnOrnBaseModeShown = ornBaseMode;
 			outlet(3, ["ornbasemode", ornBaseMode]);
 		}
+		// Orn Base Cuarteto's own scheme (which of the 3 four-triad partitions) -- only meaningful
+		// while ornBaseMode === ORN_BASE_QUADRITONE, same as its real panel widget (fs2_obj_775,
+		// "Orn Base Cuarteto") which sits there regardless and simply has no effect otherwise. The
+		// Horizonte popup mirrors that: column 3 only shows this row while ornBaseMode is Cuarteto.
+		if (ornQuadScheme !== qnOrnQuadShown) {
+			qnOrnQuadShown = ornQuadScheme;
+			outlet(3, ["gornquad", ornQuadScheme]);
+		}
+		// Orn Base Paso's own step (ORN_BASE_DEGREES) and the three Orn Serie fields
+		// (ORN_BASE_SERIES) -- same "real widget exists regardless, only meaningful under its own
+		// base mode" story as ornQuadScheme just above; the popup gates each row by ornBaseMode.
+		if (ornBaseStep !== qnOrnStepShown) {
+			qnOrnStepShown = ornBaseStep;
+			outlet(3, ["gornstep", ornBaseStep]);
+		}
+		var gserKey = ornSeriesStart + "," + ornSeriesStep + "," + ornSeriesPeak;
+		if (gserKey !== qnOrnSeriesShown) {
+			qnOrnSeriesShown = gserKey;
+			outlet(3, ["gornseries", ornSeriesStart, ornSeriesStep, ornSeriesPeak]);
+		}
 		// Global mirror for the Horizonte popup's fixed left sidebar (Patron/Dir/Set/mode already
 		// covered by hstatus above; ornBaseMode just above). None of these four have a per-voice
 		// override -- they ARE the shared value every voice falls back to -- so one emit each,
@@ -3507,6 +3556,57 @@ function querynext() {
 		if (harmRate !== qnHarmRateShown) {
 			qnHarmRateShown = harmRate;
 			outlet(3, ["gharm", harmRate]);
+		}
+		// Orden/Rango/Preset Silencio -- setup-time globals, not per-voice, added to the sidebar's
+		// second column alongside Set/Root/R.Arm. rangeTemplateIndex/silencePresetIndex are pure
+		// records of what was last applied (see their setters) -- picking the same preset twice in
+		// a row is a no-op here same as everywhere else on outlet 3.
+		if (orderMode !== qnOrdenShown) {
+			qnOrdenShown = orderMode;
+			outlet(3, ["gorden", orderMode]);
+		}
+		if (rangeTemplateIndex !== qnRangoShown) {
+			qnRangoShown = rangeTemplateIndex;
+			outlet(3, ["grango", rangeTemplateIndex]);
+		}
+		if (silencePresetIndex !== qnSilpreShown) {
+			qnSilpreShown = silencePresetIndex;
+			outlet(3, ["gsilpre", silencePresetIndex]);
+		}
+		// Silencio Normal/Acento (groupSilence) -- also setup-time, second column: the per-group rest
+		// probability a Preset Silencio pick only OVERWRITES, so it is worth seeing/adjusting on its
+		// own the same way Orden already is.
+		var gsilKey = groupSilence[GROUP_NORMAL] + "," + groupSilence[GROUP_ACCENT];
+		if (gsilKey !== qnSilenceShown) {
+			qnSilenceShown = gsilKey;
+			outlet(3, ["gsilence", groupSilence[GROUP_NORMAL], groupSilence[GROUP_ACCENT]]);
+		}
+		// Enlace Tonos (linkMin) -- first column, alongside Ind/Flt/Lck: a common-tone constraint
+		// that layers on top of whichever of {plain walk, tension curve} is choosing the next set
+		// (Prog Favoritos bypasses it entirely -- see setfavseq's own comment).
+		if (linkMin !== qnEnlaceShown) {
+			qnEnlaceShown = linkMin;
+			outlet(3, ["genlace", linkMin]);
+		}
+		// Filtro cluster (cardMin/cardMax/maskMode/maskK/maskFit) -- fourth sidebar column, only
+		// shown while Flt (filterOn) is on. The raw 12-bit mask itself stays fs2setpick.js's piano
+		// UI territory; this is just the numeric/mode knobs around it.
+		var gcardKey = cardMin + "," + cardMax;
+		if (gcardKey !== qnCardShown) {
+			qnCardShown = gcardKey;
+			outlet(3, ["gcard", cardMin, cardMax]);
+		}
+		if (maskMode !== qnMaskModeShown) {
+			qnMaskModeShown = maskMode;
+			outlet(3, ["gmaskmode", maskMode]);
+		}
+		if (maskK !== qnMaskKShown) {
+			qnMaskKShown = maskK;
+			outlet(3, ["gmaskk", maskK]);
+		}
+		if (maskFit !== qnMaskFitShown) {
+			qnMaskFitShown = maskFit;
+			outlet(3, ["gmaskfit", maskFit]);
 		}
 	}
 
@@ -4772,6 +4872,7 @@ function setornbasestep(s) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornstep", ornBaseStep]);
 }
 
 function setornquadscheme(s) {
@@ -4781,6 +4882,7 @@ function setornquadscheme(s) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornquad", ornQuadScheme]);
 }
 
 // Base=Serie ("Increasing and Diminishing Intervals"): these three rebuild the interval arch, so
@@ -4794,6 +4896,7 @@ function setornseriesstart(v) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornserstart", ornSeriesStart]);
 }
 
 function setornseriesstep(v) {
@@ -4804,6 +4907,7 @@ function setornseriesstep(v) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornserstep", ornSeriesStep]);
 }
 
 function setornseriespeak(v) {
@@ -4814,6 +4918,7 @@ function setornseriespeak(v) {
 	resetReadWalk();
 	readoutInvalidate();
 	qnOrnScaleShown = "";
+	outlet(4, ["gecho", "ornserpeak", ornSeriesPeak]);
 }
 
 // --- articulation setters --------------------------------------------------------------
@@ -5034,6 +5139,10 @@ function setgroupsilence(g, pct) {
 	if (pct < 0) pct = 0;
 	if (pct > 100) pct = 100;
 	groupSilence[i] = pct;
+	// Reuses the SAME token/route setsilencepreset() already echoes with (g0silence/g1silence,
+	// obj-403 -> obj-740's `route g0silence g1silence` -> the real Silencio Normal/Acento
+	// widgets) -- no new .amxd wiring needed for a manual edit to reach the panel too.
+	outlet(4, [i === GROUP_NORMAL ? "g0silence" : "g1silence", pct]);
 }
 
 // The textures worth reaching for in one move, as [normal %, accent %]. Silencing a whole group
@@ -5049,14 +5158,17 @@ var SILENCE_PRESETS = [
 	[75, 75]     // Muy ralo: a scattering
 ];
 
+var silencePresetIndex = 0;   // record of what was last applied, same idea as rangeTemplateIndex
 function setsilencepreset(t) {
 	t = Math.round(t);
 	var pr = (t >= 0 && t < SILENCE_PRESETS.length) ? SILENCE_PRESETS[t] : null;
 	if (!pr) return;
+	silencePresetIndex = t;
 	groupSilence[GROUP_NORMAL] = pr[0];
 	groupSilence[GROUP_ACCENT] = pr[1];
 	outlet(4, ["g0silence", pr[0]]);
 	outlet(4, ["g1silence", pr[1]]);
+	outlet(4, ["gecho", "silpre", silencePresetIndex]);
 }
 
 // One metro tick. With subDiv = 1 that is one step, as it always was. Above that, only every

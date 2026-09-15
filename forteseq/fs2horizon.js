@@ -1,15 +1,49 @@
 // fs2horizon.js -- jsui: the "próximos pasos" panel for FORTESEQ2's floating window.
 //
 // A fixed GLOBAL sidebar (x=0..GLOBAL_W, drawn once, see paint()'s "fixed global sidebar" block)
-// sits to the left of everything, always visible: Ind/Flt/Lck toggles, then Patron/Dir/
-// Ornamento/Set/Root/R.Arm for the SHARED values every voice falls back to when its own "Propia"
-// override is off -- same chip/dropdown/drag-scrub language as the per-voice rows, populated by
-// hstatus/ornbasemode/groot/gornament/gflags/gharm (see those handlers) into `globalState`, and
+// sits to the left of everything, always visible, in up to FOUR columns, each with FIXED row
+// indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
+// happening in another:
+//   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace (Run first -- the transport; Dir above Patron on
+//     request; Enlace/linkMin -- the common-tone constraint on the next set -- appended last).
+//   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc (the last row -- groupSilence
+//     -- is what a Preset Silencio pick on the row above only OVERWRITES; worth its own row).
+//   col 3 -- the Ornamento cluster (Tipo/Notas+Base/BaseModo), drawn ONLY while Patron===Ornamento
+//     (`ornOpen`); GLOBAL_W itself grows to make room for it (see paint()'s GLOBAL_W formula) --
+//     the one thing that DOES move when Ornamento toggles is the lookahead grid getting narrower,
+//     never col 1/2's own content. Mode-specific rows appear at the BOTTOM of this same column,
+//     mutually exclusive since ornBaseMode is a single value -- costs nothing extra either way
+//     (nothing below them to push, GLOBAL_W already fixed by ornOpen alone): Esquema Cuarteto
+//     (QUAD_SCHEME_NAMES) while ornBaseMode is Cuarteto; Orn Base Paso while it's Grados; Orn Serie
+//     Inicio/Paso (one row) + Pico (another) while it's Serie. Orn Base Interval itself (col 3 row
+//     1's "ornbase" chip, alongside Notas) stays unconditional -- pre-existing, out of scope here.
+//   col 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k + Mask Fit), drawn ONLY while Flt is
+//     on (`filtOpen`) -- same GLOBAL_W-grows-not-reflows deal as col 3. Mask k only joins Mask Fit
+//     on its row while Modo Mask is Int (MASK_MODE_INT); every other mode ignores Mask k entirely,
+//     same as the engine's own maskOk() branches. The raw 12-bit chromatic mask stays out (that's
+//     fs2setpick.js's piano-UI territory, a click-grid rather than a knob), and so does the 6-pair
+//     Vector IC (interval-class min/max) -- composition-time fine-tuning, same call as leaving
+//     Tension/Curva/Modelo/Prog Favoritos out next to Enlace in col 1.
+//   Ornamento (col 3) and Filtro (col 4) pack into the sidebar's conditional slots left to right
+//     with no gap between them -- Ornamento always claims the first free slot when open, Filtro
+//     takes whichever is left -- so either, both, or neither can be showing at once.
+//   Run is the one field with no gecho/querynext mirror: obj-18 ("Run") bypasses forteseq2.js
+//     entirely, gating the metro straight at the Max-patching level, so it has its own independent
+//     read (hrun, tapped off obj-18's own outlet via send/receive FS2_RUN_STATE) and write (a plain
+//     `outlet(0, ['run', v])`, intercepted by a `route run` fed in parallel off the same source that
+//     feeds obj-819, NOT through the engine) -- see add_fs2_run_sync.py.
+// All for the SHARED values every voice falls back to when its own "Propia" override is off --
+// same chip/dropdown/drag-scrub language as the per-voice rows, populated by hstatus/ornbasemode/
+// groot/gornament/gflags/gharm/gorden/grango/gsilpre (see those handlers) into `globalState`, and
 // hit-tested in onclick() via `globalChipGeo` using the v=-1 sentinel throughout (openMenu,
-// dragBox, DRAG_SPECS' `global: true` entries). Modo (Acordes/Arpegio) is read into
-// globalState.mode (hstatus) and used internally (see keyMoot/readMoot below) but has NO chip
-// here -- setmode() has no existing panel-side control to cross-check against, unlike every other
-// global setter below, so it stayed engine-only for this wave.
+// dragBox, DRAG_SPECS' `global: true` entries). Orden/Rango/PresetSilencio are setup-time globals
+// (traversal order, voicing range template, articulation silence preset) rather than per-voice
+// performance ones, added anyway on request -- Rango/PresetSilencio are "apply this preset" fire-
+// and-forget actions engine-side (rangeTemplateIndex/silencePresetIndex just record what was last
+// picked, for this readout), unlike Orden which is real persistent state (orderMode). Modo
+// (Acordes/Arpegio) is read into globalState.mode (hstatus) and used internally (see keyMoot/
+// readMoot below) but has NO chip here -- setmode() has no existing panel-side control to
+// cross-check against, unlike every other global setter here, so it stayed engine-only.
 //
 // One ROW per voice, to the right of the global sidebar. Each row is:
 // [ label+toggles ]  [ pattern grid ]  [ history ]
@@ -32,8 +66,14 @@
 //   hstatus  <readMode> <readDir> <setIdx1> <mode> <locked>  -- the config line at the bottom;
 //            also mirrored into globalState (patron/dir/setIdx/mode/locked) for the sidebar.
 //   groot <root>  gornament <ornType> <ornCount> <ornBaseInterval>  gflags <indep> <filtered>
-//   gharm <harmRate>  -- the rest of globalState: none of these four have a per-voice override,
-//            so one debounced emit each covers every row equally (see querynext() in forteseq2.js).
+//   gharm <harmRate>  gorden <orderMode>  grango <rangeTemplateIndex>  gsilpre <silencePresetIndex>
+//   gornquad <ornQuadScheme>  gornstep <ornBaseStep>
+//   gornseries <ornSeriesStart> <ornSeriesStep> <ornSeriesPeak>
+//   gsilence <groupSilence[NORMAL]> <groupSilence[ACCENT]>  genlace <linkMin>
+//   gcard <cardMin> <cardMax>  gmaskmode <maskMode>  gmaskk <maskK>  gmaskfit <maskFit>
+//            -- the rest of globalState: none of these have a per-voice override, so one debounced
+//            emit each covers every row equally (see querynext() in forteseq2.js). hrun is the one
+//            exception -- NOT sent by forteseq2.js/querynext at all, see the sidebar note above.
 //   hshape   <n> <cols> <rawL> <d0..>  -- the STATIC reading-order strip: which degree index the
 //            shape reads at each position of one full cycle (downsampled if rawL > cols). One
 //            shared row under the grid. cols 0 = hide (chord mode). Sent only on shape change.
@@ -156,6 +196,23 @@ var READ_ORNAMENT = 7;   // same value as forteseq2.js's READ_ORNAMENT -- shows 
 var PATRON_ABBR = ['Recto', 'Súper', 'SMin', 'Modos', 'Coprim', 'Zigzag', 'Urna', 'Ornam'];
 var DIR_ABBR = ['Adel', 'Atrs', 'Alt'];
 var ORN_BASE_MODE_NAMES = ['Intervalo', 'Grados', 'Cuarteto', 'Serie'];
+var ORN_BASE_QUADRITONE = 2;   // same value as forteseq2.js's ORN_BASE_QUADRITONE
+var ORN_BASE_SERIES = 3;       // same value as forteseq2.js's ORN_BASE_SERIES
+// Orn Base Cuarteto's own scheme -- only meaningful (and only shown, col 3 row 3) while
+// globalState.ornBaseMode === ORN_BASE_QUADRITONE, same names as forteseq2.js's QUAD_SCHEME_NAMES
+// and the real panel widget (fs2_obj_775, "Orn Base Cuarteto").
+var QUAD_SCHEME_NAMES = ['4 Aumentadas', 'Aum+May+men+dim', '2dim+May+men'];
+// Second sidebar column (setup-time globals, not per-voice): same enum-index-to-label idiom as
+// everything above. Orden's index 0 ("Card") is a real value (ORDER_CARD in forteseq2.js);
+// Rango/Preset Silencio's index 0 is the menu's own category label / "nothing applied yet" --
+// same distinction the panel's own live.menu widgets already draw, nothing special to handle here.
+var ORDER_NAMES = ['Card', 'Forte', 'Cons', 'Vec', 'McKay', 'Natural', 'Modal'];
+var RANGE_NAMES = ['Rango', 'Libre', 'SATB', 'Cuerdas', 'Maderas', 'Metales', 'Teclado', 'Ancho', 'Cluster'];
+var SILPRE_NAMES = ['Silencio', 'Todo', 'Solo ac.', 'Solo norm.', 'Ralo', 'Muy ralo'];
+// Fourth sidebar column (the Filtro cluster), same idiom, names copied straight from the real
+// panel widget's own parameter_enum (fs2_maskmode) so the popup never disagrees with the panel.
+var MASK_MODE_NAMES = ['Sub', 'Con', 'Int'];
+var MASK_MODE_INT = 2;   // same value as forteseq2.js's maskMode===2 branch -- Mask k only matters here
 
 var voices = 4;
 var colorOn = 1;
@@ -230,7 +287,11 @@ function colbang(v) {
 // hstatus/ornbasemode (already sent for the status line/setMoot -- now also mirrored here) plus
 // the 3 new messages below (groot/gornament/gflags/gharm), all debounced engine-side the same way.
 var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
-	indep: false, filtered: false, harmRate: 0, ornType: 0, ornCount: 1, ornBase: 4, ornBaseMode: 0 };
+	indep: false, filtered: false, harmRate: 0, ornType: 0, ornCount: 1, ornBase: 4, ornBaseMode: 0,
+	orden: 0, rango: 0, silpre: 0, run: 0, ornQuad: 0,
+	ornStep: 1, ornSeriesStart: 1, ornSeriesStep: 1, ornSeriesPeak: 4,
+	silNorm: 0, silAcc: 0, enlace: 0,
+	cardMin: 1, cardMax: 12, maskMode: 0, maskK: 1, maskFit: 1 };
 
 function hstatus(rm, rd, setIdx1, md, lockedFlag) {
 	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md), Math.round(lockedFlag || 0)];
@@ -268,6 +329,29 @@ function gflags(ind, filt) {
 	mgraphics.redraw();
 }
 function gharm(r) { globalState.harmRate = Math.round(r); mgraphics.redraw(); }
+function gorden(m) { globalState.orden = Math.round(m); mgraphics.redraw(); }
+function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
+function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
+function gornquad(s) { globalState.ornQuad = Math.round(s); mgraphics.redraw(); }
+function gornstep(s) { globalState.ornStep = Math.round(s); mgraphics.redraw(); }
+function gornseries(a, b, c) {
+	globalState.ornSeriesStart = Math.round(a);
+	globalState.ornSeriesStep = Math.round(b);
+	globalState.ornSeriesPeak = Math.round(c);
+	mgraphics.redraw();
+}
+// Run (obj-18, "Arranca y detiene el motor") never goes through forteseq2.js at all -- it gates
+// the metro directly at the Max-patching level (see add_fs2_run_sync.py). This is the one global
+// sidebar field with no gecho/querynext mirror behind it: hrun() is fed straight from a second,
+// independent tap on obj-18's own outlet (send FS2_RUN_STATE), so it reflects a click on the panel
+// toggle exactly the same as a click here.
+function hrun(v) { globalState.run = Math.round(v) ? 1 : 0; mgraphics.redraw(); }
+function gsilence(a, b) { globalState.silNorm = Math.round(a); globalState.silAcc = Math.round(b); mgraphics.redraw(); }
+function genlace(n) { globalState.enlace = Math.round(n); mgraphics.redraw(); }
+function gcard(a, b) { globalState.cardMin = Math.round(a); globalState.cardMax = Math.round(b); mgraphics.redraw(); }
+function gmaskmode(m) { globalState.maskMode = Math.round(m); mgraphics.redraw(); }
+function gmaskk(k) { globalState.maskK = Math.round(k); mgraphics.redraw(); }
+function gmaskfit(f) { globalState.maskFit = Math.round(f) ? 1 : 0; mgraphics.redraw(); }
 
 function hshape() {
 	var a = arrayfromargs(arguments);
@@ -487,7 +571,31 @@ var DRAG_SPECS = {
 	gornbase: { min: 1, max: 14, field: 'ornBase', pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setornbaseinterval', nv]); } },
 	gharm: { min: 0, max: 64, field: 'harmRate', pxPerUnit: 6, global: true,
-		send: function (v, nv) { outlet(0, ['setharmrate', nv]); } }
+		send: function (v, nv) { outlet(0, ['setharmrate', nv]); } },
+	// Col 3's mode-specific rows (Grados/Serie), same global-sidebar idiom -- see paint()'s col 3
+	// block for which one is actually drawn (mutually exclusive, gated by globalState.ornBaseMode).
+	gornstep: { min: 1, max: 4, field: 'ornStep', pxPerUnit: 16, global: true,
+		send: function (v, nv) { outlet(0, ['setornbasestep', nv]); } },
+	gserstart: { min: 1, max: 6, field: 'ornSeriesStart', pxPerUnit: 12, global: true,
+		send: function (v, nv) { outlet(0, ['setornseriesstart', nv]); } },
+	gserstep: { min: 1, max: 4, field: 'ornSeriesStep', pxPerUnit: 16, global: true,
+		send: function (v, nv) { outlet(0, ['setornseriesstep', nv]); } },
+	gserpeak: { min: 1, max: 8, field: 'ornSeriesPeak', pxPerUnit: 8, global: true,
+		send: function (v, nv) { outlet(0, ['setornseriespeak', nv]); } },
+	// Col 1's Enlace and col 2's Silencio Normal/Acento -- same global-sidebar idiom, see paint().
+	genlace: { min: 0, max: 6, field: 'enlace', pxPerUnit: 14, global: true,
+		send: function (v, nv) { outlet(0, ['setlink', nv]); } },
+	gsilnorm: { min: 0, max: 100, field: 'silNorm', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupsilence', 0, nv]); } },
+	gsilacc: { min: 0, max: 100, field: 'silAcc', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupsilence', 1, nv]); } },
+	// Col 4 (Filtro cluster), same global-sidebar idiom, see paint()'s filtOpen block.
+	gnmin: { min: 1, max: 12, field: 'cardMin', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setcardmin', nv]); } },
+	gnmax: { min: 1, max: 12, field: 'cardMax', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setcardmax', nv]); } },
+	gmaskk: { min: 1, max: 12, field: 'maskK', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setmaskk', nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -536,6 +644,21 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'gornbasemode') {
 						globalState.ornBaseMode = mi;
 						outlet(0, ['setornbasemode', mi]);
+					} else if (openMenu.kind === 'gorden') {
+						globalState.orden = mi;
+						outlet(0, ['setorder', mi]);
+					} else if (openMenu.kind === 'grango') {
+						globalState.rango = mi;
+						outlet(0, ['setrangetemplate', mi]);
+					} else if (openMenu.kind === 'gsilpre') {
+						globalState.silpre = mi;
+						outlet(0, ['setsilencepreset', mi]);
+					} else if (openMenu.kind === 'gornquad') {
+						globalState.ornQuad = mi;
+						outlet(0, ['setornquadscheme', mi]);
+					} else if (openMenu.kind === 'gmaskmode') {
+						globalState.maskMode = mi;
+						outlet(0, ['setmaskmode', mi]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -560,6 +683,7 @@ function onclick(x, y, but) {
 	// The fixed global sidebar -- checked before the per-row lookup below since it isn't part of
 	// any voice row (x never overlaps a row's own chips, but checking explicitly here avoids
 	// wastefully falling through to the row-hit math on every sidebar click).
+	if (ptIn(globalChipGeo.run, x, y)) { globalState.run = globalState.run ? 0 : 1; outlet(0, ['run', globalState.run]); mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.ind, x, y)) { globalState.indep = !globalState.indep; outlet(0, ['setvoiceindep', globalState.indep ? 1 : 0]); mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.flt, x, y)) { globalState.filtered = !globalState.filtered; outlet(0, ['setfilter', globalState.filtered ? 1 : 0]); mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.lck, x, y)) { globalState.locked = globalState.locked ? 0 : 1; outlet(0, ['setlock', globalState.locked]); mgraphics.redraw(); return; }
@@ -572,6 +696,22 @@ function onclick(x, y, but) {
 	if (ptIn(globalChipGeo.set, x, y)) { dragBox = { v: -1, kind: 'gset', startY: y, startVal: globalState.setIdx }; return; }
 	if (ptIn(globalChipGeo.root, x, y)) { dragBox = { v: -1, kind: 'groot', startY: y, startVal: globalState.root }; return; }
 	if (ptIn(globalChipGeo.harm, x, y)) { dragBox = { v: -1, kind: 'gharm', startY: y, startVal: globalState.harmRate }; return; }
+	if (ptIn(globalChipGeo.orden, x, y)) { openMenu = { v: -1, kind: 'gorden' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.rango, x, y)) { openMenu = { v: -1, kind: 'grango' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.silpre, x, y)) { openMenu = { v: -1, kind: 'gsilpre' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.ornquad && ptIn(globalChipGeo.ornquad, x, y)) { openMenu = { v: -1, kind: 'gornquad' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.ornstep && ptIn(globalChipGeo.ornstep, x, y)) { dragBox = { v: -1, kind: 'gornstep', startY: y, startVal: globalState.ornStep }; return; }
+	if (globalChipGeo.serstart && ptIn(globalChipGeo.serstart, x, y)) { dragBox = { v: -1, kind: 'gserstart', startY: y, startVal: globalState.ornSeriesStart }; return; }
+	if (globalChipGeo.serstep && ptIn(globalChipGeo.serstep, x, y)) { dragBox = { v: -1, kind: 'gserstep', startY: y, startVal: globalState.ornSeriesStep }; return; }
+	if (globalChipGeo.serpeak && ptIn(globalChipGeo.serpeak, x, y)) { dragBox = { v: -1, kind: 'gserpeak', startY: y, startVal: globalState.ornSeriesPeak }; return; }
+	if (ptIn(globalChipGeo.enlace, x, y)) { dragBox = { v: -1, kind: 'genlace', startY: y, startVal: globalState.enlace }; return; }
+	if (ptIn(globalChipGeo.silnorm, x, y)) { dragBox = { v: -1, kind: 'gsilnorm', startY: y, startVal: globalState.silNorm }; return; }
+	if (ptIn(globalChipGeo.silacc, x, y)) { dragBox = { v: -1, kind: 'gsilacc', startY: y, startVal: globalState.silAcc }; return; }
+	if (globalChipGeo.nmin && ptIn(globalChipGeo.nmin, x, y)) { dragBox = { v: -1, kind: 'gnmin', startY: y, startVal: globalState.cardMin }; return; }
+	if (globalChipGeo.nmax && ptIn(globalChipGeo.nmax, x, y)) { dragBox = { v: -1, kind: 'gnmax', startY: y, startVal: globalState.cardMax }; return; }
+	if (globalChipGeo.maskmode && ptIn(globalChipGeo.maskmode, x, y)) { openMenu = { v: -1, kind: 'gmaskmode' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.maskk && ptIn(globalChipGeo.maskk, x, y)) { dragBox = { v: -1, kind: 'gmaskk', startY: y, startVal: globalState.maskK }; return; }
+	if (globalChipGeo.maskfit && ptIn(globalChipGeo.maskfit, x, y)) { globalState.maskFit = globalState.maskFit ? 0 : 1; outlet(0, ['setmaskfit', globalState.maskFit]); mgraphics.redraw(); return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -735,7 +875,21 @@ function paint() {
 	var rowH = gridH / nRows;
 	rowGeo = { headH: headH, rowH: rowH, nRows: nRows };   // read by onclick() to find the row hit
 
-	var GLOBAL_W = 96;  // barra fija de globales (Ind/Flt/Lck/Modo/Patron/Dir/Ornamento/Set/Root/R.Arm), siempre visible, dibujada una sola vez fuera del loop de filas
+	var G_COL_W = 86, G_GAP = 4;   // width of each of the (up to) 4 fixed sidebar columns, and the gap between them
+	var ornOpen = globalState.patron === READ_ORNAMENT;   // col 3 slot only exists while Patron IS Ornamento
+	var filtOpen = !!globalState.filtered;                // col 4 slot only exists while Flt is on
+	var extraCols = (ornOpen ? 1 : 0) + (filtOpen ? 1 : 0);   // how many of the 2 conditional slots are showing
+	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraCols * (G_GAP + G_COL_W);
+	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
+	// loop de filas. Las cuatro son de FILAS FIJAS (sin contador dinamico) para que nada dentro de una
+	// columna se corra por lo que pase en otra: col 1 = Ind/Flt/Lck/Dir/Patron/Enlace; col 2 = Set/
+	// Root/R.Arm/Orden/Rango/PresetSil/SilNorm+SilAcc; col 3 = el cluster de Ornamento (Tipo/Notas+
+	// Base/BaseModo + fila de sub-modo), SOLO mientras Patron===Ornamento; col 4 = el cluster de
+	// Filtro (n min/n max, Modo Mask, Mask k/Mask Fit), SOLO mientras Flt esta prendido. Los dos
+	// slots condicionales se empaquetan uno tras otro sin hueco -- Ornamento siempre se queda con el
+	// PRIMER slot libre si esta abierto, Filtro toma el que quede -- y GLOBAL_W crece en vez de
+	// reflowear col 1/2: el unico corrimiento cuando cualquiera de los dos aparece es el grid de
+	// lookahead achicandose.
 	var GATE_W = 72;    // On + Ext + Trig + Patron + Set, al inicio de la fila (deciden si la voz existe)
 	var DETAIL_W = 110; // Art/Lec/Ton/Fijar/Grado/Div/Ritmo/Dir/OrnTipo en cluster, en el borde etiqueta/grid -- ensanchado junto con GATE_W para que los textos mas grandes de los chips/dropdown entren comodos
 	var TXT_W = 118;    // bloque de texto vkey (V<n>/forte-tonica/patron-dir/orn/vector/Z-modalidad)
@@ -776,82 +930,209 @@ function paint() {
 	// gornament/gflags/gharm (see those handlers above).
 	globalChipGeo = {};
 	var gChipH = 18, gChipGap = 2;
-	var gx = 2, gw = GLOBAL_W - 6;
+	var g1x = 2, g1w = G_COL_W;
+	var g2x = g1x + g1w + G_GAP, g2w = G_COL_W;
+	var slot3x = g2x + g2w + G_GAP;                                            // first conditional slot
+	var g3x = slot3x, g3w = G_COL_W;                                           // Ornamento always claims it first
+	var g4x = slot3x + (ornOpen ? (G_GAP + G_COL_W) : 0), g4w = G_COL_W;       // Filtro takes whichever is free
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
 	mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
 	mgraphics.set_font_size(8);
-	mgraphics.move_to(gx, headH - 5);
+	mgraphics.move_to(g1x, headH - 5);
 	mgraphics.show_text('Global');
+	mgraphics.move_to(g2x, headH - 5);
+	mgraphics.show_text('Set/Setup');
+	if (ornOpen) {
+		mgraphics.move_to(g3x, headH - 5);
+		mgraphics.show_text('Ornamento');
+	}
+	if (filtOpen) {
+		mgraphics.move_to(g4x, headH - 5);
+		mgraphics.show_text('Filtro');
+	}
 
-	var gRowIdx = 0;
-	if (gFits(gRowIdx)) {
-		globalChipGeo.ind = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
+	// decides whether anything downstream plays at all); Dir sits ABOVE Patron per request -- none
+	// of these depend on each other's state so a fixed order costs nothing (unlike the old inline
+	// Ornamento sub-fields, which genuinely only exist conditionally -- those moved to col 3 below
+	// instead of growing this column, so col 1 never reflows regardless of what Patron is set to).
+	// Enlace (linkMin, common-tone constraint on the next set) sits last, appended rather than
+	// slotted between Lck and Dir -- it is independent of every other row here, so where exactly
+	// costs nothing either.
+	if (gFits(0)) {
+		globalChipGeo.run = { x: g1x, y: gRow(0), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.run, 'Run', !!globalState.run);
+	}
+	if (gFits(1)) {
+		globalChipGeo.ind = { x: g1x, y: gRow(1), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.ind, 'Ind', globalState.indep);
-		gRowIdx++;
 	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.flt = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+	if (gFits(2)) {
+		globalChipGeo.flt = { x: g1x, y: gRow(2), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.flt, 'Flt', globalState.filtered);
-		gRowIdx++;
 	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.lck = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+	if (gFits(3)) {
+		globalChipGeo.lck = { x: g1x, y: gRow(3), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.lck, 'Lck', !!globalState.locked);
-		gRowIdx++;
 	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.patron = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+	if (gFits(4)) {
+		globalChipGeo.dir = { x: g1x, y: gRow(4), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.dir, DIR_ABBR[Math.round(globalState.dir)] || '?', false);
+	}
+	if (gFits(5)) {
+		globalChipGeo.patron = { x: g1x, y: gRow(5), w: g1w, h: gChipH };
 		var gPatronOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gpatron';
 		drawChip(globalChipGeo.patron, PATRON_ABBR[Math.round(globalState.patron)] || '?', gPatronOpen);
 		if (gPatronOpen) pendingMenu = { v: -1, kind: 'gpatron', anchor: globalChipGeo.patron, items: READ_NAMES, cur: Math.round(globalState.patron) };
-		gRowIdx++;
 	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.dir = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
-		drawChip(globalChipGeo.dir, DIR_ABBR[Math.round(globalState.dir)] || '?', false);
-		gRowIdx++;
+	if (gFits(6)) {
+		globalChipGeo.enlace = { x: g1x, y: gRow(6), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.enlace, 'Enl ' + globalState.enlace, false);
 	}
-	if (globalState.patron === READ_ORNAMENT) {
-		if (gFits(gRowIdx)) {
-			globalChipGeo.ornt = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+
+	// Column 2 -- Set/Root/R.Arm/Orden/Rango/PresetSil/SilNorm+SilAcc, FIXED rows 0-6. Same
+	// drag-scrub DRAG_SPECS entries as before for Set/Root/R.Arm/SilNorm/SilAcc; Orden/Rango/
+	// PresetSil are dropdowns like Patron above.
+	if (gFits(0)) {
+		globalChipGeo.set = { x: g2x, y: gRow(0), w: g2w, h: gChipH };
+		drawChip(globalChipGeo.set, 'Set ' + globalState.setIdx, false);
+	}
+	if (gFits(1)) {
+		globalChipGeo.root = { x: g2x, y: gRow(1), w: g2w, h: gChipH };
+		drawChip(globalChipGeo.root, 'R' + (globalState.root > 0 ? '+' : '') + globalState.root, false);
+	}
+	if (gFits(2)) {
+		globalChipGeo.harm = { x: g2x, y: gRow(2), w: g2w, h: gChipH };
+		drawChip(globalChipGeo.harm, 'RA' + globalState.harmRate, false);
+	}
+	if (gFits(3)) {
+		globalChipGeo.orden = { x: g2x, y: gRow(3), w: g2w, h: gChipH };
+		var gOrdenOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gorden';
+		drawChip(globalChipGeo.orden, ORDER_NAMES[Math.round(globalState.orden)] || '?', gOrdenOpen);
+		if (gOrdenOpen) pendingMenu = { v: -1, kind: 'gorden', anchor: globalChipGeo.orden, items: ORDER_NAMES, cur: Math.round(globalState.orden) };
+	}
+	if (gFits(4)) {
+		globalChipGeo.rango = { x: g2x, y: gRow(4), w: g2w, h: gChipH };
+		var gRangoOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grango';
+		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen);
+		if (gRangoOpen) pendingMenu = { v: -1, kind: 'grango', anchor: globalChipGeo.rango, items: RANGE_NAMES, cur: Math.round(globalState.rango) };
+	}
+	if (gFits(5)) {
+		globalChipGeo.silpre = { x: g2x, y: gRow(5), w: g2w, h: gChipH };
+		var gSilpreOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gsilpre';
+		drawChip(globalChipGeo.silpre, SILPRE_NAMES[Math.round(globalState.silpre)] || '?', gSilpreOpen);
+		if (gSilpreOpen) pendingMenu = { v: -1, kind: 'gsilpre', anchor: globalChipGeo.silpre, items: SILPRE_NAMES, cur: Math.round(globalState.silpre) };
+	}
+	// Row 6 -- Silencio Normal/Acento (groupSilence), side by side like Notas/Base in col 3 -- a
+	// Preset Silencio pick (row 5) only OVERWRITES these two, so seeing/nudging them directly here
+	// is worth a row of its own rather than only being reachable through a preset.
+	if (gFits(6)) {
+		var g2dcw = (g2w - 2) / 2;
+		globalChipGeo.silnorm = { x: g2x, y: gRow(6), w: g2dcw, h: gChipH };
+		globalChipGeo.silacc = { x: g2x + g2dcw + 2, y: gRow(6), w: g2dcw, h: gChipH };
+		drawChip(globalChipGeo.silnorm, 'N' + globalState.silNorm, false);
+		drawChip(globalChipGeo.silacc, 'A' + globalState.silAcc, false);
+	}
+
+	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron
+	// IS Ornamento (ornOpen, computed above alongside GLOBAL_W). Not gated further by voice or
+	// panel state -- if col 3 is drawn at all it always has all three rows (FIXED 0-2), since
+	// GLOBAL_W already accounted for its width whenever ornOpen is true.
+	if (ornOpen) {
+		if (gFits(0)) {
+			globalChipGeo.ornt = { x: g3x, y: gRow(0), w: g3w, h: gChipH };
 			var gOrntOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornt';
 			drawChip(globalChipGeo.ornt, ORN_TYPE_NAMES[Math.round(globalState.ornType)] || '?', gOrntOpen);
 			if (gOrntOpen) pendingMenu = { v: -1, kind: 'gornt', anchor: globalChipGeo.ornt, items: ORN_TYPE_NAMES, cur: Math.round(globalState.ornType) };
-			gRowIdx++;
 		}
-		if (gFits(gRowIdx)) {
-			var gdcw = (gw - 2) / 2;
-			globalChipGeo.ornnotas = { x: gx, y: gRow(gRowIdx), w: gdcw, h: gChipH };
-			globalChipGeo.ornbase = { x: gx + gdcw + 2, y: gRow(gRowIdx), w: gdcw, h: gChipH };
+		if (gFits(1)) {
+			var gdcw = (g3w - 2) / 2;
+			globalChipGeo.ornnotas = { x: g3x, y: gRow(1), w: gdcw, h: gChipH };
+			globalChipGeo.ornbase = { x: g3x + gdcw + 2, y: gRow(1), w: gdcw, h: gChipH };
 			drawChip(globalChipGeo.ornnotas, '×' + globalState.ornCount, false);
 			drawChip(globalChipGeo.ornbase, 'I' + globalState.ornBase, false);
-			gRowIdx++;
 		}
-		if (gFits(gRowIdx)) {
-			globalChipGeo.ornbasemode = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
+		if (gFits(2)) {
+			globalChipGeo.ornbasemode = { x: g3x, y: gRow(2), w: g3w, h: gChipH };
 			var gObmOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornbasemode';
 			drawChip(globalChipGeo.ornbasemode, ORN_BASE_MODE_NAMES[Math.round(globalState.ornBaseMode)] || '?', gObmOpen);
 			if (gObmOpen) pendingMenu = { v: -1, kind: 'gornbasemode', anchor: globalChipGeo.ornbasemode, items: ORN_BASE_MODE_NAMES, cur: Math.round(globalState.ornBaseMode) };
-			gRowIdx++;
 		}
-	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.set = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
-		drawChip(globalChipGeo.set, 'Set ' + globalState.setIdx, false);
-		gRowIdx++;
-	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.root = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
-		drawChip(globalChipGeo.root, 'R' + (globalState.root > 0 ? '+' : '') + globalState.root, false);
-		gRowIdx++;
-	}
-	if (gFits(gRowIdx)) {
-		globalChipGeo.harm = { x: gx, y: gRow(gRowIdx), w: gw, h: gChipH };
-		drawChip(globalChipGeo.harm, 'RA' + globalState.harmRate, false);
-		gRowIdx++;
-	}
+		// Row 3 -- Orn Base Cuarteto's own scheme, ONLY while ornBaseMode IS Cuarteto (its real panel
+		// widget, fs2_obj_775, sits on the same page regardless but has no effect otherwise -- same
+		// rule the popup already applies elsewhere, e.g. setMoot). A conditional row at the BOTTOM of
+		// an already-conditional column costs nothing extra: nothing below it to push down, and col 3's
+		// width (part of GLOBAL_W) was already fixed by ornOpen alone, so this never resizes anything.
+		if (Math.round(globalState.ornBaseMode) === ORN_BASE_QUADRITONE && gFits(3)) {
+			globalChipGeo.ornquad = { x: g3x, y: gRow(3), w: g3w, h: gChipH };
+			var gOrnQuadOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornquad';
+			drawChip(globalChipGeo.ornquad, QUAD_SCHEME_NAMES[Math.round(globalState.ornQuad)] || '?', gOrnQuadOpen);
+			if (gOrnQuadOpen) pendingMenu = { v: -1, kind: 'gornquad', anchor: globalChipGeo.ornquad, items: QUAD_SCHEME_NAMES, cur: Math.round(globalState.ornQuad) };
+		}
+		// Row 3 -- Orn Base Paso, ONLY while ornBaseMode IS Grados (ORN_BASE_DEGREES). Same rule and
+		// same "costs nothing extra" reasoning as the Cuarteto row just above -- mutually exclusive
+		// with it (ornBaseMode can only be one value), so never both drawn at once.
+		if (Math.round(globalState.ornBaseMode) === ORN_BASE_DEGREES && gFits(3)) {
+			globalChipGeo.ornstep = { x: g3x, y: gRow(3), w: g3w, h: gChipH };
+			drawChip(globalChipGeo.ornstep, 'Paso ' + globalState.ornStep, false);
+		}
+		// Rows 3-4 -- the three Orn Serie fields, ONLY while ornBaseMode IS Serie (ORN_BASE_SERIES).
+		// Inicio/Paso share row 3 (same side-by-side layout as Notas/Base above); Pico gets its own
+		// row 4 since three fields across one 86px column is too tight to click reliably. Also
+		// mutually exclusive with the Cuarteto/Grados rows above -- ornBaseMode is a single value.
+		if (Math.round(globalState.ornBaseMode) === ORN_BASE_SERIES) {
+			if (gFits(3)) {
+				var sdcw = (g3w - 2) / 2;
+				globalChipGeo.serstart = { x: g3x, y: gRow(3), w: sdcw, h: gChipH };
+				globalChipGeo.serstep = { x: g3x + sdcw + 2, y: gRow(3), w: sdcw, h: gChipH };
+				drawChip(globalChipGeo.serstart, 'I' + globalState.ornSeriesStart, false);
+				drawChip(globalChipGeo.serstep, 'P' + globalState.ornSeriesStep, false);
+			}
+			if (gFits(4)) {
+				globalChipGeo.serpeak = { x: g3x, y: gRow(4), w: g3w, h: gChipH };
+				drawChip(globalChipGeo.serpeak, 'Pico ' + globalState.ornSeriesPeak, false);
+			}
+		}
+	}   // else: globalChipGeo.ornt/ornnotas/ornbase/ornbasemode/ornquad/ornstep/serstart/serstep/
+		// serpeak simply stay unset (fresh {} above), same as any other not-currently-applicable chip
+
+	// Column 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k/Mask Fit), only drawn while Flt
+	// is on (filtOpen, computed above alongside GLOBAL_W). The raw 12-bit pitch-class mask stays
+	// fs2setpick.js's piano-UI territory (a click-grid, not a knob); Vector IC (6 interval-class
+	// min/max pairs) stays out too -- composition-time fine-tuning, not a live-performance knob,
+	// same call as Tension/Curva/Modelo/Prog Favoritos next to Enlace. This is the shallow half:
+	// single numbers and one 3-way mode, each with a real panel widget already.
+	if (filtOpen) {
+		if (gFits(0)) {
+			var ndcw = (g4w - 2) / 2;
+			globalChipGeo.nmin = { x: g4x, y: gRow(0), w: ndcw, h: gChipH };
+			globalChipGeo.nmax = { x: g4x + ndcw + 2, y: gRow(0), w: ndcw, h: gChipH };
+			drawChip(globalChipGeo.nmin, 'n' + globalState.cardMin, false);
+			drawChip(globalChipGeo.nmax, 'n' + globalState.cardMax, false);
+		}
+		if (gFits(1)) {
+			globalChipGeo.maskmode = { x: g4x, y: gRow(1), w: g4w, h: gChipH };
+			var gMaskModeOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gmaskmode';
+			drawChip(globalChipGeo.maskmode, MASK_MODE_NAMES[Math.round(globalState.maskMode)] || '?', gMaskModeOpen);
+			if (gMaskModeOpen) pendingMenu = { v: -1, kind: 'gmaskmode', anchor: globalChipGeo.maskmode, items: MASK_MODE_NAMES, cur: Math.round(globalState.maskMode) };
+		}
+		// Row 2 -- Mask Fit always (the "let a set transpose to satisfy the mask" adjustment applies
+		// in every Modo Mask); Mask k joins it ONLY in Int mode -- every other mode ignores it, same
+		// as maskOk()'s own branches. Mutually exclusive with itself, so no extra cost either way.
+		if (gFits(2)) {
+			if (Math.round(globalState.maskMode) === MASK_MODE_INT) {
+				var mdcw = (g4w - 2) / 2;
+				globalChipGeo.maskk = { x: g4x, y: gRow(2), w: mdcw, h: gChipH };
+				globalChipGeo.maskfit = { x: g4x + mdcw + 2, y: gRow(2), w: mdcw, h: gChipH };
+				drawChip(globalChipGeo.maskk, 'k' + globalState.maskK, false);
+			} else {
+				globalChipGeo.maskfit = { x: g4x, y: gRow(2), w: g4w, h: gChipH };
+			}
+			drawChip(globalChipGeo.maskfit, 'Fit', !!globalState.maskFit);
+		}
+	}   // else: globalChipGeo.nmin/nmax/maskmode/maskk/maskfit simply stay unset (fresh {} above)
 
 	for (var v = 0; v < nRows; v++) {
 		var y = headH + v * rowH;
