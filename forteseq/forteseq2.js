@@ -1348,6 +1348,7 @@ function setlisten(m) {
 	if (!isFinite(m) || m < 0 || m > 2) m = 0;
 	listenMode = m;
 	if (!m) { listenOn = 0; readoutInvalidate(); }
+	outlet(4, ["gecho", "escuchar", listenMode]);
 }
 
 // Clears the hand without needing the note-offs to arrive -- which they do not, if the mode was
@@ -1369,11 +1370,12 @@ function listenpanic() {
 var bcastOn = 0;
 var followOn = 0;
 
-function setbroadcast(b) { bcastOn = b ? 1 : 0; }
+function setbroadcast(b) { bcastOn = b ? 1 : 0; outlet(4, ["gecho", "emitir", bcastOn]); }
 
 function setfollow(f) {
 	followOn = f ? 1 : 0;
 	readoutInvalidate();
+	outlet(4, ["gecho", "seguir", followOn]);
 }
 
 // A follower does not re-broadcast -- it only ever sends from its own choosing -- so there is no
@@ -2837,6 +2839,7 @@ function setpresetslot(n) {
 	if (n > PRESET_SLOTS) n = PRESET_SLOTS;
 	presetSlot = n;
 	sendPresetName(n);
+	outlet(4, ["gecho", "slot", presetSlot]);
 }
 
 // The name is display only -- never a key storepreset/recallpreset iterate as a real parameter --
@@ -3531,6 +3534,7 @@ var qnRecorridoShown = "";     // firma "manualRot,rotShape,coprimeSkip"; "" = f
 var qnVecShown = ["", "", "", "", "", ""];   // firma "min,max" por IC (1..6); "" = forzar
 var qnRandMaskShown = -1;      // -1 forces the first querynext() to emit regardless of maskRandomPct's own default (50)
 var qnModShown = ["", "", "", ""];   // firma "shape,cycle,depth,phase,dest" por modulador (1..4); "" = forzar
+var qnSesionShown = "";        // firma "listenMode,bcastOn,followOn,presetSlot"; "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3793,6 +3797,14 @@ function querynext() {
 				qnModShown[mk] = gmodKey;
 				outlet(3, ["gmod" + (mk + 1), modShape[mk], modCycle[mk], modDepth[mk], modPhase[mk], modDest[mk]]);
 			}
+		}
+		// Sesion (Ola 7, columna 9): Escuchar/Emitir/Seguir/Slot -- los cuatro parametros reales de
+		// la familia. Panic/Guardar/Cargar/Borrar son acciones (parameter_enable 0) y no viajan aca,
+		// solo mandan su mensaje (regla 8, mismo trato que clearfavs en Ola 3).
+		var gsesKey = listenMode + "," + bcastOn + "," + followOn + "," + presetSlot;
+		if (gsesKey !== qnSesionShown) {
+			qnSesionShown = gsesKey;
+			outlet(3, ["gsesion", listenMode, bcastOn, followOn, presetSlot]);
 		}
 	}
 

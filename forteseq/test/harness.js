@@ -1390,11 +1390,18 @@ function checkPresetNames() {
 		ok = false;
 	}
 
-	// El readout de nombre sigue al numbox de slot.
+	// El readout de nombre sigue al numbox de slot. setpresetslot() ahora tambien manda un gecho
+	// "slot" (Ola 7, columna Sesion) al final, asi que el mensaje de nombre queda ANTES del
+	// ultimo, no en el ultimo lugar.
 	c.presetBank = []; c.seedfactorypresets();
 	c.setpresetslot(1);
-	if (e.log[e.log.length - 1] !== '4 | presetname Denso 4v') {
+	if (e.log[e.log.length - 2] !== '4 | presetname Denso 4v') {
 		console.error('Presets: setpresetslot(1) no mando el nombre por la salida 4, mando "' +
+			e.log[e.log.length - 2] + '"');
+		ok = false;
+	}
+	if (e.log[e.log.length - 1] !== '4 | gecho slot 1') {
+		console.error('Presets: setpresetslot(1) no mando el gecho de slot, mando "' +
 			e.log[e.log.length - 1] + '"');
 		ok = false;
 	}

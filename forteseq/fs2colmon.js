@@ -141,6 +141,7 @@ function gmod1() {}
 function gmod2() {}
 function gmod3() {}
 function gmod4() {}
+function gsesion() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 

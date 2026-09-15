@@ -1,7 +1,7 @@
 // fs2horizon.js -- jsui: the "próximos pasos" panel for FORTESEQ2's floating window.
 //
 // A fixed GLOBAL sidebar (x=0..GLOBAL_W, drawn once, see paint()'s "fixed global sidebar" block)
-// sits to the left of everything, always visible, in up to SEVEN columns, each with FIXED row
+// sits to the left of everything, always visible, in up to NINE columns, each with FIXED row
 // indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
 // happening in another:
 //   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub/Sec Raiz/Oct Maestra+Drum/Pad/
@@ -77,10 +77,21 @@
 //     reason col 5 (Groove) does. Modulators never WRITE their destination parameter -- they sum on
 //     top of it at read time (modStep()/modSum) -- so this column mirrors the five knobs only, never
 //     the live modulated value; the panel's own dial keeps showing exactly what the user set.
-//   Ornamento, Filtro, Groove, Acentos, Camino and Modulacion pack into the sidebar's conditional
-//     slots left to right with no gap between them, in that FIXED priority order (condCols/
-//     condSlotX in paint()) -- each open family claims the first free slot -- so any combination can
-//     be showing at once.
+//   col 9 -- Sesion (Ola 7), also always drawn (`sesOpen` constant true, same reasoning as
+//     Acentos/Camino/Modulacion). Escuchar (Off/Sigue/Latch dropdown) / Emit+Seguir (paired
+//     toggles) / Panic (action) / Slot (drag-scrub 1-20) / Guardar+Cargar (paired actions) /
+//     Borrar (action) -- one 86px column, same chip idiom as every other family rather than the
+//     standalone toolbar the plan first floated (would need its own vertical-budget line like
+//     accGridH/statusH and its own hit-test outside the sidebar loop -- not worth it for six rows
+//     that already fit the established column shape). Panic/Guardar/Cargar/Borrar are pure
+//     actions (`parameter_enable 0` on their real widgets) -- no gecho, no sync, straight to the
+//     message, same as Limpiar favs in col 7. Seguir is never dimmed even though it is inert
+//     unless another engine on the same Bus has Emit on -- that fact is not knowable from inside
+//     this device (see the plan's Ola 7 notes).
+//   Ornamento, Filtro, Groove, Acentos, Camino, Modulacion and Sesion pack into the sidebar's
+//     conditional slots left to right with no gap between them, in that FIXED priority order
+//     (condCols/condSlotX in paint()) -- each open family claims the first free slot -- so any
+//     combination can be showing at once.
 //   Run is the one field with no gecho/querynext mirror: obj-18 ("Run") bypasses forteseq2.js
 //     entirely, gating the metro straight at the Max-patching level, so it has its own independent
 //     read (hrun, tapped off obj-18's own outlet via send/receive FS2_RUN_STATE) and write (a plain
@@ -309,6 +320,9 @@ var MOD_DEST_ABBR = ['-', 'Raz', '8va', 'Vel', 'Lrg', 'Sil', 'Swg', 'Rsg', 'Rat'
 // Same indices as forteseq2.js's D_SWING/D_STRUM/D_RATCHET/D_DEG -- for the two narrower show/hide
 // traps on top of the "Dest=- or Prof=0" whole-row dim (see the col 8 header comment above).
 var MOD_DEST_SWING = 6, MOD_DEST_STRUM = 7, MOD_DEST_RATCHET = 8, MOD_DEST_GRADO = 9;
+// Ninth sidebar column (Sesion, Ola 7). Enum copied straight from the real panel widget
+// (fs2pages.maxpat's fs2_escuchar parameter_enum) -- same "index IS value" idiom as ORDEN/CURVA.
+var ESCUCHAR_NAMES = ['Off', 'Sigue', 'Latch'];
 
 var voices = 4;
 var colorOn = 1;
@@ -400,7 +414,8 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	mod1shape: 0, mod1cycle: 8, mod1depth: 0, mod1phase: 0, mod1dest: 0,
 	mod2shape: 0, mod2cycle: 8, mod2depth: 0, mod2phase: 0, mod2dest: 0,
 	mod3shape: 0, mod3cycle: 8, mod3depth: 0, mod3phase: 0, mod3dest: 0,
-	mod4shape: 0, mod4cycle: 8, mod4depth: 0, mod4phase: 0, mod4dest: 0 };
+	mod4shape: 0, mod4cycle: 8, mod4depth: 0, mod4phase: 0, mod4dest: 0,
+	listen: 0, emit: 0, seguir: 0, slot: 1 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -573,6 +588,14 @@ function gmod4(s, c, d, p, de) {
 	globalState.mod4shape = Math.round(s); globalState.mod4cycle = Math.round(c);
 	globalState.mod4depth = Math.round(d); globalState.mod4phase = Math.round(p);
 	globalState.mod4dest = Math.round(de);
+	mgraphics.redraw();
+}
+
+function gsesion(li, em, se, sl) {
+	globalState.listen = Math.round(li);
+	globalState.emit = Math.round(em) ? 1 : 0;
+	globalState.seguir = Math.round(se) ? 1 : 0;
+	globalState.slot = Math.round(sl);
 	mgraphics.redraw();
 }
 
@@ -928,7 +951,13 @@ var DRAG_SPECS = {
 	gmod4depth: { min: -100, max: 100, field: 'mod4depth', pxPerUnit: 2, global: true,
 		send: function (v, nv) { outlet(0, ['setmoddepth', 4, nv]); } },
 	gmod4phase: { min: 0, max: 100, field: 'mod4phase', pxPerUnit: 3, global: true,
-		send: function (v, nv) { outlet(0, ['setmodphase', 4, nv]); } }
+		send: function (v, nv) { outlet(0, ['setmodphase', 4, nv]); } },
+	// Col 9 (Sesion, Ola 7), same global-sidebar idiom. Escuchar is a dropdown (openMenu), not a
+	// drag-scrub -- see onclick()'s v===-1 branch and paint()'s Sesion block. Emit/Seguir are plain
+	// toggle chips (click, no drag), and Panic/Guardar/Cargar/Borrar are actions (no sync at all,
+	// rule 8) -- only Slot needs a DRAG_SPECS entry.
+	gslot: { min: 1, max: 20, field: 'slot', pxPerUnit: 14, global: true,
+		send: function (v, nv) { outlet(0, ['setpresetslot', nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -1034,6 +1063,9 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'gmod4dest') {
 						globalState.mod4dest = mi;
 						outlet(0, ['setmoddest', 4, mi]);
+					} else if (openMenu.kind === 'gescuchar') {
+						globalState.listen = mi;
+						outlet(0, ['setlisten', mi]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -1180,6 +1212,17 @@ function onclick(x, y, but) {
 	if (ptIn(globalChipGeo.mod4depth, x, y)) { dragBox = { v: -1, kind: 'gmod4depth', startY: y, startVal: globalState.mod4depth }; return; }
 	if (ptIn(globalChipGeo.mod4phase, x, y)) { dragBox = { v: -1, kind: 'gmod4phase', startY: y, startVal: globalState.mod4phase }; return; }
 	if (ptIn(globalChipGeo.mod4dest, x, y)) { openMenu = { v: -1, kind: 'gmod4dest' }; mgraphics.redraw(); return; }
+	// Col 9 (Sesion, Ola 7). Escuchar is a dropdown; Emit/Seguir are toggle chips (same idiom as
+	// ind/flt/lck); Slot is a drag-scrub; Panic/Guardar/Cargar/Borrar are actions -- straight to the
+	// message, no local state change, same idiom as clearfavs/randmask above (rule 8, no sync).
+	if (globalChipGeo.escuchar && ptIn(globalChipGeo.escuchar, x, y)) { openMenu = { v: -1, kind: 'gescuchar' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.emit && ptIn(globalChipGeo.emit, x, y)) { globalState.emit = globalState.emit ? 0 : 1; outlet(0, ['setbroadcast', globalState.emit]); mgraphics.redraw(); return; }
+	if (globalChipGeo.seguir && ptIn(globalChipGeo.seguir, x, y)) { globalState.seguir = globalState.seguir ? 0 : 1; outlet(0, ['setfollow', globalState.seguir]); mgraphics.redraw(); return; }
+	if (globalChipGeo.panic && ptIn(globalChipGeo.panic, x, y)) { outlet(0, ['listenpanic']); return; }
+	if (globalChipGeo.slot && ptIn(globalChipGeo.slot, x, y)) { dragBox = { v: -1, kind: 'gslot', startY: y, startVal: globalState.slot }; return; }
+	if (globalChipGeo.pguardar && ptIn(globalChipGeo.pguardar, x, y)) { outlet(0, ['storepreset', globalState.slot]); return; }
+	if (globalChipGeo.pcargar && ptIn(globalChipGeo.pcargar, x, y)) { outlet(0, ['recallpreset', globalState.slot]); return; }
+	if (globalChipGeo.pborrar && ptIn(globalChipGeo.pborrar, x, y)) { outlet(0, ['clearpreset', globalState.slot]); return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -1379,9 +1422,13 @@ function paint() {
 	// Modulacion (col 8, Ola 6): also no gate of its own -- four modulators always exist, same
 	// reasoning as Acentos/Camino, last in slot priority.
 	var modOpen = true;
+	// Sesion (col 9, Ola 7): also no gate -- Escuchar/Emitir/Seguir/Slot always exist regardless of
+	// their current value, same reasoning as Acentos/Camino/Modulacion, last in slot priority.
+	var sesOpen = true;
 	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> Camino ->
-	// Modulacion): los slots condicionales se empaquetan sin hueco, cada uno toma el primero libre en
-	// este orden. Con mas de dos familias esto ya no se puede escribir a mano, asi que va como lista.
+	// Modulacion -> Sesion): los slots condicionales se empaquetan sin hueco, cada uno toma el
+	// primero libre en este orden. Con mas de dos familias esto ya no se puede escribir a mano, asi
+	// que va como lista.
 	var condCols = [];
 	if (ornOpen) condCols.push('orn');
 	if (filtOpen) condCols.push('filt');
@@ -1389,6 +1436,7 @@ function paint() {
 	if (accOpen) condCols.push('acc');
 	if (caminoOpen) condCols.push('camino');
 	if (modOpen) condCols.push('mod');
+	if (sesOpen) condCols.push('ses');
 	// Every conditional column is one G_COL_W wide except Modulacion: a 4x5 matrix does not fit in
 	// 86px, so it claims roughly two slots' worth of room (MOD_COL_W) instead. condSlotX() below
 	// walks condCols summing each one's own width rather than assuming a uniform G_COL_W, which is
@@ -1465,6 +1513,7 @@ function paint() {
 	var g6x = condSlotX('acc'), g6w = G_COL_W;
 	var g7x = condSlotX('camino'), g7w = G_COL_W;
 	var g8x = condSlotX('mod'), g8w = MOD_COL_W;
+	var g9x = condSlotX('ses'), g9w = G_COL_W;
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
@@ -1497,6 +1546,10 @@ function paint() {
 	if (modOpen) {
 		mgraphics.move_to(g8x, headH - 5);
 		mgraphics.show_text('Modulacion');
+	}
+	if (sesOpen) {
+		mgraphics.move_to(g9x, headH - 5);
+		mgraphics.show_text('Sesion');
 	}
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
@@ -1979,6 +2032,48 @@ function paint() {
 			var mDestOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'g' + fDest;
 			drawChip(globalChipGeo[fDest], MOD_DEST_ABBR[Math.round(destV)] || '?', mDestOpen, false, mDim);
 			if (mDestOpen) pendingMenu = { v: -1, kind: 'g' + fDest, anchor: globalChipGeo[fDest], items: MOD_DEST_NAMES, cur: Math.round(destV) };
+		}
+	}
+
+	// Column 9 -- Sesion (Ola 7), FIXED rows 0-5: Escuchar (dropdown) / Emit+Seguir (paired) / Panic
+	// (action) / Slot (drag-scrub) / Guardar+Cargar (paired actions) / Borrar (action). Same chip
+	// idiom as every other column rather than the toolbar the plan first floated -- cheaper, and
+	// nothing here needs more room than one 86px column already gives every other family.
+	if (sesOpen) {
+		if (gFits(0)) {
+			globalChipGeo.escuchar = { x: g9x, y: gRow(0), w: g9w, h: gChipH };
+			var gEscOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gescuchar';
+			drawChip(globalChipGeo.escuchar, ESCUCHAR_NAMES[Math.round(globalState.listen)] || '?', gEscOpen);
+			if (gEscOpen) pendingMenu = { v: -1, kind: 'gescuchar', anchor: globalChipGeo.escuchar, items: ESCUCHAR_NAMES, cur: Math.round(globalState.listen) };
+		}
+		if (gFits(1)) {
+			var g9dcw = (g9w - 2) / 2;
+			globalChipGeo.emit = { x: g9x, y: gRow(1), w: g9dcw, h: gChipH };
+			globalChipGeo.seguir = { x: g9x + g9dcw + 2, y: gRow(1), w: g9dcw, h: gChipH };
+			drawChip(globalChipGeo.emit, 'Emit', !!globalState.emit);
+			// Seguir es inerte salvo que otro motor en el MISMO Bus tenga Emitir on -- no verificable
+			// desde aca (ver el plan, Ola 7), asi que no se dimea: el chip solo dice lo que ESTE
+			// device tiene prendido, no si sirve de algo ahora mismo.
+			drawChip(globalChipGeo.seguir, 'Seg', !!globalState.seguir);
+		}
+		if (gFits(2)) {
+			globalChipGeo.panic = { x: g9x, y: gRow(2), w: g9w, h: gChipH };
+			drawChip(globalChipGeo.panic, 'Panic', false);
+		}
+		if (gFits(3)) {
+			globalChipGeo.slot = { x: g9x, y: gRow(3), w: g9w, h: gChipH };
+			drawChip(globalChipGeo.slot, 'Slot ' + globalState.slot, false);
+		}
+		if (gFits(4)) {
+			var g9pcw = (g9w - 2) / 2;
+			globalChipGeo.pguardar = { x: g9x, y: gRow(4), w: g9pcw, h: gChipH };
+			globalChipGeo.pcargar = { x: g9x + g9pcw + 2, y: gRow(4), w: g9pcw, h: gChipH };
+			drawChip(globalChipGeo.pguardar, 'Guard', false);
+			drawChip(globalChipGeo.pcargar, 'Carg', false);
+		}
+		if (gFits(5)) {
+			globalChipGeo.pborrar = { x: g9x, y: gRow(5), w: g9w, h: gChipH };
+			drawChip(globalChipGeo.pborrar, 'Borrar', false);
 		}
 	}
 

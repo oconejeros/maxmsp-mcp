@@ -209,6 +209,7 @@ function gmod1() {}
 function gmod2() {}
 function gmod3() {}
 function gmod4() {}
+function gsesion() {}
 
 // --- repintado coalescido ---------------------------------------------------------------
 // filtset llega ~64 veces en una misma pasada del scheduler; un Task a schedule(0) las junta
