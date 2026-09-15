@@ -10263,6 +10263,104 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-803",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_tension_echo_rx",
+     "patching_rect": [
+      1080.0,
+      4460.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-804",
+     "maxclass": "newobj",
+     "numinlets": 4,
+     "numoutlets": 4,
+     "outlettype": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "varname": "fs2_tension_echo_route",
+     "patching_rect": [
+      1080.0,
+      4490.0,
+      260.0,
+      20.0
+     ],
+     "text": "route tension curva tensmodel"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-805",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_tension_setrx",
+     "patching_rect": [
+      1080.0,
+      4520.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-806",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_curva_setrx",
+     "patching_rect": [
+      1230.0,
+      4520.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-807",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_tensmodel_setrx",
+     "patching_rect": [
+      1380.0,
+      4520.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -16160,6 +16258,90 @@
      ],
      "destination": [
       "obj-105",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-803",
+      0
+     ],
+     "destination": [
+      "obj-804",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-804",
+      0
+     ],
+     "destination": [
+      "obj-805",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-805",
+      0
+     ],
+     "destination": [
+      "obj-387",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-804",
+      1
+     ],
+     "destination": [
+      "obj-806",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-806",
+      0
+     ],
+     "destination": [
+      "obj-389",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-804",
+      2
+     ],
+     "destination": [
+      "obj-807",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-807",
+      0
+     ],
+     "destination": [
+      "obj-391",
       0
      ]
     }

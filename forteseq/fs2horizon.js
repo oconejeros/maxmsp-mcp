@@ -1,7 +1,7 @@
 // fs2horizon.js -- jsui: the "próximos pasos" panel for FORTESEQ2's floating window.
 //
 // A fixed GLOBAL sidebar (x=0..GLOBAL_W, drawn once, see paint()'s "fixed global sidebar" block)
-// sits to the left of everything, always visible, in up to FIVE columns, each with FIXED row
+// sits to the left of everything, always visible, in up to SEVEN columns, each with FIXED row
 // indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
 // happening in another:
 //   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub (Run first -- the transport; Dir above
@@ -36,9 +36,22 @@
 //     a HARMONIC-TEXTURE control (Modo Toque) that nobody would predict gates it. They dim inside
 //     the column in Arpegio instead. Nothing here is ever hidden row-by-row -- every one of these
 //     is a candidate for "I moved it and nothing happened", so the value stays visible.
-//   Ornamento, Filtro and Groove pack into the sidebar's conditional slots left to right with no
-//     gap between them, in that FIXED priority order (condCols/condSlotX in paint()) -- each open
-//     family claims the first free slot -- so any combination of them can be showing at once.
+//   col 6 -- Acentos (Ciclo+Tie, Euclid+Pulsos+Giro, VelMin/VelMax/Figura Normal+Acento), drawn
+//     always (`accOpen` is a constant true) -- unlike col 3-5 there is no "off" state for
+//     articulation, so it just always takes the next packed slot. Ciclo dims while Tie is on
+//     (articulationFor() ignores it then); Pulsos/Giro are HIDDEN, not dimmed, while Euclid is off.
+//   col 7 -- Camino armonico (Tension+Curva+Modelo, Prog Favoritos+Solo Fav+Fav+Limpiar favs),
+//     also always drawn (`caminoOpen` constant true, same reasoning as Acentos). This is
+//     advanceSet()'s own precedence chain made visible, and dimming here is the point: Prog
+//     Favoritos with a full list dims Tension/Curva/Modelo AND col 1's Enlace (advanceFavSeq()
+//     never reads any of them); with an EMPTY list it is a silent trap -- advanceFavSeq() falls
+//     through to advanceInOrder() so Enlace revives but Tension stays dead -- flagged with the
+//     `alarm` drawChip() color instead of a dim, on both the Prog Favoritos chip and Tension itself.
+//     Curva additionally dims whenever Tension is 0 regardless of Prog Favoritos (tensionAt() is
+//     its only reader); Modelo never dims (settensmodel() always touches the filter/Orden).
+//   Ornamento, Filtro, Groove, Acentos and Camino pack into the sidebar's conditional slots left to
+//     right with no gap between them, in that FIXED priority order (condCols/condSlotX in paint())
+//     -- each open family claims the first free slot -- so any combination can be showing at once.
 //   Run is the one field with no gecho/querynext mirror: obj-18 ("Run") bypasses forteseq2.js
 //     entirely, gating the metro straight at the Max-patching level, so it has its own independent
 //     read (hrun, tapped off obj-18's own outlet via send/receive FS2_RUN_STATE) and write (a plain
@@ -225,6 +238,10 @@ var SILPRE_NAMES = ['Silencio', 'Todo', 'Solo ac.', 'Solo norm.', 'Ralo', 'Muy r
 // panel widget's own parameter_enum (fs2_maskmode) so the popup never disagrees with the panel.
 var MASK_MODE_NAMES = ['Sub', 'Con', 'Int'];
 var MASK_MODE_INT = 2;   // same value as forteseq2.js's maskMode===2 branch -- Mask k only matters here
+// Seventh sidebar column (Camino armonico). Both enums copied straight from the real panel widgets
+// (fs2p_curva/fs2p_tensmodel's own parameter_enum) -- index IS value on both, no gsub-style trick.
+var CURVA_NAMES = ['Sube', 'Baja', 'Arco'];
+var TENSMODEL_NAMES = ['Huron', 'McKay'];
 // Modo Toque (fs2_mode, live.tab "Modo"): 0 = Acordes, 1 = Arpegio, same as forteseq2.js's
 // `mode = m ? 1 : 0`. Named because Acordes is the gate for Rasg/Dir Rasg (strumOffset() returns 0
 // for n < 2, i.e. anything that is not a chord) and for a couple of per-voice moots already here.
@@ -323,7 +340,8 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	sub: 1, swing: 50, human: 0, rasg: 0, dirRasg: 0,
 	ratN: 1, ratA: 1, ratProb: 100, ratCaida: 0,
 	accCiclo: 4, accTie: 0, euclidOn: 0, euclidK: 4, euclidRot: 0,
-	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4 };
+	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4,
+	tension: 0, curva: 0, tensmodel: 0, progfav: 0, favonly: 0, favSeqLen: 0, fav: 0 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -426,6 +444,21 @@ function gfig(n, a) { globalState.figN = Math.round(n); globalState.figA = Math.
 function gaccentgrid() {
 	var a = arrayfromargs(arguments);
 	for (var i = 0; i < ACCENT_MAX_UI; i++) accentGridUI[i] = (i < a.length && a[i]) ? 1 : 0;
+	mgraphics.redraw();
+}
+
+// Camino armonico (col 7) -- dos familias, dos mensajes, misma disciplina que ggroove/gratchet.
+function gtension(n, s, m) {
+	globalState.tension = Math.round(n);
+	globalState.curva = Math.round(s);
+	globalState.tensmodel = Math.round(m);
+	mgraphics.redraw();
+}
+function gfavstate(pf, fo, len, fv) {
+	globalState.progfav = Math.round(pf) ? 1 : 0;
+	globalState.favonly = Math.round(fo) ? 1 : 0;
+	globalState.favSeqLen = Math.round(len);
+	globalState.fav = Math.round(fv) ? 1 : 0;
 	mgraphics.redraw();
 }
 
@@ -708,7 +741,11 @@ var DRAG_SPECS = {
 	gfign: { min: 1, max: 32, field: 'figN', pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupdur', 0, nv]); } },
 	gfiga: { min: 1, max: 32, field: 'figA', pxPerUnit: 6, global: true,
-		send: function (v, nv) { outlet(0, ['setgroupdur', 1, nv]); } }
+		send: function (v, nv) { outlet(0, ['setgroupdur', 1, nv]); } },
+	// Col 7 (Camino armonico), same global-sidebar idiom. Curva/Modelo are dropdowns (openMenu), not
+	// drag-scrubs -- see onclick()'s v===-1 branch and paint()'s Camino block.
+	gtension: { min: 0, max: 16, field: 'tension', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['settension', nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -720,16 +757,19 @@ function ptIn(r, x, y) {
 	return r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
-function drawChip(r, label, on, disabled, dim) {
+// alarm (Ola 3): its own color, independent of on/disabled/dim -- for the plan's "trampas
+// silenciosas" (state that LOOKS fine but silently kills another control), never used together
+// with dim on the same chip since alarm already implies "look here", the opposite of dimming.
+function drawChip(r, label, on, disabled, dim, alarm) {
 	dim = dim === undefined ? 1 : dim;
-	mgraphics.set_source_rgba(on ? [0.55 * dim, 0.42 * dim, 0.15 * dim, 1] : [0.22, 0.22, 0.25, 1]);
+	mgraphics.set_source_rgba(alarm ? [0.55, 0.2, 0.1, 1] : (on ? [0.55 * dim, 0.42 * dim, 0.15 * dim, 1] : [0.22, 0.22, 0.25, 1]));
 	mgraphics.rectangle(r.x, r.y, r.w, r.h);
 	mgraphics.fill();
 	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
 	mgraphics.set_line_width(1);
 	mgraphics.rectangle(r.x, r.y, r.w, r.h);
 	mgraphics.stroke();
-	mgraphics.set_source_rgba(on ? [1 * dim, 0.85 * dim, 0.55 * dim, 1] : (disabled ? [0.4, 0.4, 0.44, 1] : [0.55, 0.55, 0.6, 1]));
+	mgraphics.set_source_rgba(alarm ? [1, 0.6, 0.4, 1] : (on ? [1 * dim, 0.85 * dim, 0.55 * dim, 1] : (disabled ? [0.4, 0.4, 0.44, 1] : [0.55, 0.55, 0.6, 1])));
 	mgraphics.set_font_size(11);
 	mgraphics.move_to(r.x + 3, r.y + r.h - 4);
 	mgraphics.show_text(label);
@@ -778,6 +818,12 @@ function onclick(x, y, but) {
 						// indice, para el live.menu del panel, la hace el eco en forteseq2.js.
 						globalState.sub = SUB_VALUES[mi];
 						outlet(0, ['setsub', globalState.sub]);
+					} else if (openMenu.kind === 'gcurva') {
+						globalState.curva = mi;
+						outlet(0, ['settenshape', mi]);
+					} else if (openMenu.kind === 'gtensmodel') {
+						globalState.tensmodel = mi;
+						outlet(0, ['settensmodel', mi]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -865,6 +911,15 @@ function onclick(x, y, but) {
 	if (globalChipGeo.velmaxa && ptIn(globalChipGeo.velmaxa, x, y)) { dragBox = { v: -1, kind: 'gvelmaxa', startY: y, startVal: globalState.velMaxA }; return; }
 	if (globalChipGeo.fign && ptIn(globalChipGeo.fign, x, y)) { dragBox = { v: -1, kind: 'gfign', startY: y, startVal: globalState.figN }; return; }
 	if (globalChipGeo.figa && ptIn(globalChipGeo.figa, x, y)) { dragBox = { v: -1, kind: 'gfiga', startY: y, startVal: globalState.figA }; return; }
+	// Col 7 (Camino armonico) -- Tension drag-scrub; Curva/Modelo dropdowns; Prog Favoritos/Solo
+	// Fav/Fav toggle chips (same idiom as ind/flt/lck/tie/euc); Limpiar favs is an action, no state.
+	if (globalChipGeo.tension && ptIn(globalChipGeo.tension, x, y)) { dragBox = { v: -1, kind: 'gtension', startY: y, startVal: globalState.tension }; return; }
+	if (globalChipGeo.curva && ptIn(globalChipGeo.curva, x, y)) { openMenu = { v: -1, kind: 'gcurva' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.tensmodel && ptIn(globalChipGeo.tensmodel, x, y)) { openMenu = { v: -1, kind: 'gtensmodel' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.progfav && ptIn(globalChipGeo.progfav, x, y)) { globalState.progfav = globalState.progfav ? 0 : 1; outlet(0, ['setfavseq', globalState.progfav]); mgraphics.redraw(); return; }
+	if (globalChipGeo.favonly && ptIn(globalChipGeo.favonly, x, y)) { globalState.favonly = globalState.favonly ? 0 : 1; outlet(0, ['setfavonly', globalState.favonly]); mgraphics.redraw(); return; }
+	if (globalChipGeo.fav && ptIn(globalChipGeo.fav, x, y)) { globalState.fav = globalState.fav ? 0 : 1; outlet(0, ['setfav', globalState.fav]); mgraphics.redraw(); return; }
+	if (globalChipGeo.clearfavs && ptIn(globalChipGeo.clearfavs, x, y)) { outlet(0, ['clearfavs']); return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -1050,14 +1105,26 @@ function paint() {
 	// Ornamento/Filtro/Groove, nunca reflowea col 1/2 -- en vez de escribirse como una quinta
 	// columna fija a mano.
 	var accOpen = true;
-	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> ...): los slots
-	// condicionales se empaquetan sin hueco, cada uno toma el primero libre en este orden. Con mas
-	// de dos familias esto ya no se puede escribir a mano, asi que va como lista.
+	// Camino armonico (col 7): tampoco tiene gate propio -- siempre hay una politica de avance de
+	// set corriendo (Escuchar/Seguir/Fav curada/Tension/orden normal), nunca un estado "apagado" que
+	// la haga desaparecer sin mas -- misma razon que Acentos, ultima en la prioridad de slot.
+	var caminoOpen = true;
+	// Prog Favoritos (favSeqOn) con la lista LLENA pisa Tension/Curva/Modelo Y Enlace por completo
+	// (advanceFavSeq() nunca los consulta). Con la lista VACIA es la trampa silenciosa del plan:
+	// advanceFavSeq() cae a advanceInOrder(), asi que Enlace/Orden/filtro reviven pero Tension queda
+	// muerta igual (la rama favSeqOn ya devolvio antes de llegar a advanceByTension()). Dos flags
+	// separadas porque dimean cosas distintas -- ver el bloque Camino y el chip Enlace de col 1.
+	var favSeqActive = !!globalState.progfav && globalState.favSeqLen > 0;
+	var favSeqTrap = !!globalState.progfav && globalState.favSeqLen === 0;
+	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> Camino): los
+	// slots condicionales se empaquetan sin hueco, cada uno toma el primero libre en este orden. Con
+	// mas de dos familias esto ya no se puede escribir a mano, asi que va como lista.
 	var condCols = [];
 	if (ornOpen) condCols.push('orn');
 	if (filtOpen) condCols.push('filt');
 	if (grooveOpen) condCols.push('groove');
 	if (accOpen) condCols.push('acc');
+	if (caminoOpen) condCols.push('camino');
 	var extraCols = condCols.length;
 	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraCols * (G_GAP + G_COL_W);
 	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
@@ -1121,6 +1188,7 @@ function paint() {
 	var g4x = condSlotX('filt'), g4w = G_COL_W;
 	var g5x = condSlotX('groove'), g5w = G_COL_W;
 	var g6x = condSlotX('acc'), g6w = G_COL_W;
+	var g7x = condSlotX('camino'), g7w = G_COL_W;
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
@@ -1145,6 +1213,10 @@ function paint() {
 	if (accOpen) {
 		mgraphics.move_to(g6x, headH - 5);
 		mgraphics.show_text('Acentos');
+	}
+	if (caminoOpen) {
+		mgraphics.move_to(g7x, headH - 5);
+		mgraphics.show_text('Camino');
 	}
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
@@ -1183,7 +1255,10 @@ function paint() {
 	}
 	if (gFits(6)) {
 		globalChipGeo.enlace = { x: g1x, y: gRow(6), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.enlace, 'Enl ' + globalState.enlace, false);
+		// Dimmed (idem Rasg/Dir Rasg en col 5) mientras Prog Favoritos maneja la progresion con la
+		// lista llena -- advanceFavSeq() nunca consulta linkMin. Con la lista vacia (favSeqTrap)
+		// Enlace SI revive (cae a advanceInOrder()), asi que no se dimea ahi.
+		drawChip(globalChipGeo.enlace, 'Enl ' + globalState.enlace, false, favSeqActive);
 	}
 	// Rows 7-8 -- Modo Toque y Sub, los dos GATES de la columna Groove, por eso van aca arriba y
 	// siempre visibles: una columna condicional no puede alojar su propio gate (desapareceria con
@@ -1439,6 +1514,53 @@ function paint() {
 		globalChipGeo.figa = { x: g6x + fdcw + 2, y: gRow(5), w: fdcw, h: gChipH };
 		drawChip(globalChipGeo.fign, 'Fn' + globalState.figN, false);
 		drawChip(globalChipGeo.figa, 'Fa' + globalState.figA, false);
+	}
+
+	// Column 7 -- Camino armonico (Tension+Curva+Modelo, Prog Favoritos+Solo Fav+Fav+Limpiar favs).
+	// No gate propio (caminoOpen is always true, see its definition up top) -- always drawn, FIXED
+	// rows 0-5 like col 1/2/6. This is the column where dimming is the whole point of the ola (see
+	// plan): a control that LOOKS live but currently has no effect on advanceSet()'s outcome.
+	if (gFits(0)) {
+		globalChipGeo.tension = { x: g7x, y: gRow(0), w: g7w, h: gChipH };
+		// Alarm (not dim) when the fav-progression trap is live: Prog Favoritos on with an empty
+		// list falls through to advanceInOrder() silently, so Tension LOOKS inert for no visible
+		// reason unless this chip itself says so.
+		drawChip(globalChipGeo.tension, 'Tn ' + globalState.tension, false, favSeqActive, undefined, favSeqTrap);
+	}
+	if (gFits(1)) {
+		globalChipGeo.curva = { x: g7x, y: gRow(1), w: g7w, h: gChipH };
+		var gCurvaOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gcurva';
+		// tensionAt() (inside advanceByTension()) is the only reader of tensShape -- dead at
+		// Tension 0 regardless of Prog Favoritos, same as favSeqActive/Trap dim it for the same reason.
+		drawChip(globalChipGeo.curva, CURVA_NAMES[Math.round(globalState.curva)] || '?', gCurvaOpen,
+			favSeqActive || favSeqTrap || Math.round(globalState.tension) === 0);
+		if (gCurvaOpen) pendingMenu = { v: -1, kind: 'gcurva', anchor: globalChipGeo.curva, items: CURVA_NAMES, cur: Math.round(globalState.curva) };
+	}
+	if (gFits(2)) {
+		globalChipGeo.tensmodel = { x: g7x, y: gRow(2), w: g7w, h: gChipH };
+		var gTensModelOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gtensmodel';
+		// Modelo does NOT dim with Tension at 0 -- settensmodel() always calls requestFilter() and
+		// moves consLow/consHigh/Orden's own consonance ordering regardless of the curve being live.
+		drawChip(globalChipGeo.tensmodel, TENSMODEL_NAMES[Math.round(globalState.tensmodel)] || '?', gTensModelOpen, favSeqActive || favSeqTrap);
+		if (gTensModelOpen) pendingMenu = { v: -1, kind: 'gtensmodel', anchor: globalChipGeo.tensmodel, items: TENSMODEL_NAMES, cur: Math.round(globalState.tensmodel) };
+	}
+	if (gFits(3)) {
+		var pfdcw = (g7w - 2) / 2;
+		globalChipGeo.progfav = { x: g7x, y: gRow(3), w: pfdcw, h: gChipH };
+		globalChipGeo.favonly = { x: g7x + pfdcw + 2, y: gRow(3), w: pfdcw, h: gChipH };
+		// Alarm on the Prog Favoritos chip itself -- the trap is about THIS control looking on and
+		// harmless while quietly killing Tension/Curva/Enlace next to it.
+		drawChip(globalChipGeo.progfav, 'Fav Sq', !!globalState.progfav, false, undefined, favSeqTrap);
+		drawChip(globalChipGeo.favonly, 'S.Fav', !!globalState.favonly);
+	}
+	if (gFits(4)) {
+		globalChipGeo.fav = { x: g7x, y: gRow(4), w: g7w, h: gChipH };
+		drawChip(globalChipGeo.fav, 'Fav', !!globalState.fav);
+	}
+	if (gFits(5)) {
+		globalChipGeo.clearfavs = { x: g7x, y: gRow(5), w: g7w, h: gChipH };
+		// Accion, no estado -- nunca "on" (rule 8), pero se apaga sola si no hay nada que limpiar.
+		drawChip(globalChipGeo.clearfavs, 'Lim favs', false, globalState.favSeqLen === 0);
 	}
 
 	for (var v = 0; v < nRows; v++) {

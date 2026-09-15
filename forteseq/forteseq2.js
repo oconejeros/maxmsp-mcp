@@ -1463,10 +1463,12 @@ function emitSetReadouts(displayPcs) {
 	outlet(7, [setForte[setIndex], vecString(setIndex), dissonancePercent(setIndex).toFixed(2),
 		zm ? "Z:" + zm : "-", modalityNameOf(setIndex), mm ? "Esp:" + mm : "-"]);
 	// The Fav toggle is about whatever is sounding, so it has to be repainted when the harmony
-	// moves -- but only then, or every note would push a parameter change into Live.
+	// moves -- but only then, or every note would push a parameter change into Live. gecho-wrapped
+	// (Ola 3) rather than obj-403's own reserved "fav" outlet, which is unwired -- see the Camino
+	// investigation note next to gaccentgrid in querynext().
 	if (setIndex !== favEcho) {
 		favEcho = setIndex;
-		outlet(4, ["fav", favs[setIndex] ? 1 : 0]);
+		outlet(4, ["gecho", "fav", favs[setIndex] ? 1 : 0]);
 	}
 	// The memo above is what makes this affordable: it fires once per harmonic change, not
 	// once per note, so a follower hears the harmony move and nothing else.
@@ -1509,6 +1511,7 @@ function settensmodel(m) {
 	tensModel = m ? 1 : 0;
 	if (tensLen > 0) tensAnchor = harmonyValueOf(setIndex);   // re-anchor: the units just flipped
 	requestFilter();
+	outlet(4, ["gecho", "tensmodel", tensModel]);
 }
 
 function harmonyValueOf(i) {
@@ -1636,6 +1639,7 @@ function setfav(f) {
 	if (favOnly) requestFilter();
 	post("forteseq2: " + favCount() + " favoritos\n");
 	sendFavList();
+	outlet(4, ["gecho", "fav", v]);
 }
 
 // --- the harmonic path, from outside ------------------------------------------------------
@@ -1658,21 +1662,25 @@ function settension(n) {
 	tensLen = n;
 	tensPos = 0;
 	if (n > 0) tensAnchor = harmonyValueOf(setIndex);   // start the sweep where we stand
+	outlet(4, ["gecho", "tension", tensLen]);
 }
 
 function settenshape(s) {
 	s = Math.round(s);
 	if (!isFinite(s) || s < 0 || s > 2) s = 0;
 	tensShape = s;
+	outlet(4, ["gecho", "curva", tensShape]);
 }
 
 function setfavseq(f) {
 	favSeqOn = f ? 1 : 0;
+	outlet(4, ["gecho", "progfav", favSeqOn]);
 }
 
 function setfavonly(f) {
 	favOnly = f ? 1 : 0;
 	requestFilter();
+	outlet(4, ["gecho", "favonly", favOnly]);
 }
 
 function clearfavs() {
@@ -1682,7 +1690,7 @@ function clearfavs() {
 	if (favOnly) requestFilter();
 	post("forteseq2: lista de favoritos vacia\n");
 	sendFavList();
-	outlet(4, ["fav", 0]);
+	outlet(4, ["gecho", "fav", 0]);
 }
 
 // setfavlist -1 <index> ...: the whole list at once, from the pattr that saves it with the Live
@@ -3501,6 +3509,8 @@ var qnVelMinShown = "";        // firma "groupVelMin[NORMAL],groupVelMin[ACCENT]
 var qnVelMaxShown = "";        // firma "groupVelMax[NORMAL],groupVelMax[ACCENT]"; "" = forzar
 var qnFigShown = "";           // firma "groupDurDiv[NORMAL],groupDurDiv[ACCENT]"; "" = forzar
 var qnAccentGridShown = "";    // firma accentGrid.join(","); "" = forzar
+var qnTensionShown = "";       // firma "tensLen,tensShape,tensModel"; "" = forzar
+var qnFavStateShown = "";      // firma "favSeqOn,favOnly,favSeq.length,favs[setIndex]"; "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3703,6 +3713,22 @@ function querynext() {
 		if (gagKey !== qnAccentGridShown) {
 			qnAccentGridShown = gagKey;
 			outlet(3, ["gaccentgrid"].concat(accentGrid));
+		}
+		// Camino armonico (col 7): dos familias, dos mensajes -- la curva de tension (Tension/Curva/
+		// Modelo) y la progresion curada (Prog Favoritos/Solo Fav/tamano de la lista/si el set QUE
+		// SUENA ahora es favorito), misma disciplina que ggroove/gratchet en la Ola 1. favSeq.length
+		// viaja junto a favSeqOn para que el popup pueda dibujar la trampa silenciosa del plan (Prog
+		// Favoritos on con la lista vacia cae a advanceInOrder() pero Tension se queda muerta) sin
+		// tener que sumar un tercer canal solo para eso.
+		var gtensKey = tensLen + "," + tensShape + "," + tensModel;
+		if (gtensKey !== qnTensionShown) {
+			qnTensionShown = gtensKey;
+			outlet(3, ["gtension", tensLen, tensShape, tensModel]);
+		}
+		var gfavKey = favSeqOn + "," + favOnly + "," + favSeq.length + "," + (favs[setIndex] ? 1 : 0);
+		if (gfavKey !== qnFavStateShown) {
+			qnFavStateShown = gfavKey;
+			outlet(3, ["gfavstate", favSeqOn, favOnly, favSeq.length, favs[setIndex] ? 1 : 0]);
 		}
 	}
 

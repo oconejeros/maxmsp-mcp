@@ -126,6 +126,8 @@ function gvelmin() {}
 function gvelmax() {}
 function gfig() {}
 function gaccentgrid() {}
+function gtension() {}
+function gfavstate() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
