@@ -1596,6 +1596,7 @@ function setvecmin(k, n) {
 	vecMin[k - 1] = n;
 	vecCondRefresh();
 	requestFilter();
+	outlet(4, ["gecho", "vmin" + k, n]);
 }
 
 function setvecmax(k, n) {
@@ -1607,6 +1608,7 @@ function setvecmax(k, n) {
 	vecMax[k - 1] = n;
 	vecCondRefresh();
 	requestFilter();
+	outlet(4, ["gecho", "vmax" + k, n]);
 }
 
 // Marks the set that is playing right now, which is what makes the button usable while browsing:
@@ -3080,6 +3082,7 @@ function setrandmaskpct(p) {
 	if (p < 0) p = 0;
 	if (p > 100) p = 100;
 	maskRandomPct = p;
+	outlet(4, ["gecho", "randmaskpct", p]);
 }
 
 function setrandaccentpct(p) {
@@ -3520,6 +3523,8 @@ var qnTensionShown = "";       // firma "tensLen,tensShape,tensModel"; "" = forz
 var qnFavStateShown = "";      // firma "favSeqOn,favOnly,favSeq.length,favs[setIndex]"; "" = forzar
 var qnRegistroShown = "";      // firma "rootSeqIdx,masterOctave,drumOn,drumBase"; "" = forzar
 var qnRecorridoShown = "";     // firma "manualRot,rotShape,coprimeSkip"; "" = forzar
+var qnVecShown = ["", "", "", "", "", ""];   // firma "min,max" por IC (1..6); "" = forzar
+var qnRandMaskShown = -1;      // -1 forces the first querynext() to emit regardless of maskRandomPct's own default (50)
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3663,6 +3668,22 @@ function querynext() {
 		if (maskFit !== qnMaskFitShown) {
 			qnMaskFitShown = maskFit;
 			outlet(3, ["gmaskfit", maskFit]);
+		}
+		// IC1-6 Min/Max (Ola 5) -- still the Filtro cluster, one token per interval class (same
+		// "un token por indice" precedent as velminn/velmina) since each pair has its own min/max
+		// and Live restores the twelve numboxes independently (see setvecmin/setvecmax's own note).
+		for (var vk = 0; vk < 6; vk++) {
+			var gvecKey = vecMin[vk] + "," + vecMax[vk];
+			if (gvecKey !== qnVecShown[vk]) {
+				qnVecShown[vk] = gvecKey;
+				outlet(3, ["gvec" + (vk + 1), vecMin[vk], vecMax[vk]]);
+			}
+		}
+		// Azar % Mask (maskRandomPct) -- the drag value the "Azar Mascara" button reads; the button
+		// itself is a pure action (rule 8), no sync needed for it.
+		if (maskRandomPct !== qnRandMaskShown) {
+			qnRandMaskShown = maskRandomPct;
+			outlet(3, ["grandmask", maskRandomPct]);
 		}
 		// Sub (subDiv) -- el DIVISOR, no el indice del menu: es lo que el popup muestra y lo que
 		// setsub() recibe. Va suelto porque ademas de ser un valor propio es el GATE de toda la

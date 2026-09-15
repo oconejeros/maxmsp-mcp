@@ -130,6 +130,13 @@ function gtension() {}
 function gfavstate() {}
 function gregistro() {}
 function grecorrido() {}
+function gvec1() {}
+function gvec2() {}
+function gvec3() {}
+function gvec4() {}
+function gvec5() {}
+function gvec6() {}
+function grandmask() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 

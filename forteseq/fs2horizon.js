@@ -27,13 +27,19 @@
 //     (QUAD_SCHEME_NAMES) while ornBaseMode is Cuarteto; Orn Base Paso while it's Grados; Orn Serie
 //     Inicio/Paso (one row) + Pico (another) while it's Serie. Orn Base Interval itself (col 3 row
 //     1's "ornbase" chip, alongside Notas) stays unconditional -- pre-existing, out of scope here.
-//   col 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k + Mask Fit), drawn ONLY while Flt is
-//     on (`filtOpen`) -- same GLOBAL_W-grows-not-reflows deal as col 3. Mask k only joins Mask Fit
-//     on its row while Modo Mask is Int (MASK_MODE_INT); every other mode ignores Mask k entirely,
-//     same as the engine's own maskOk() branches. The raw 12-bit chromatic mask stays out (that's
-//     fs2setpick.js's piano-UI territory, a click-grid rather than a knob), and so does the 6-pair
-//     Vector IC (interval-class min/max) -- composition-time fine-tuning, same call as leaving
-//     Tension/Curva/Modelo/Prog Favoritos out next to Enlace in col 1.
+//   col 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k + Mask Fit, IC1-6 Min/Max, Azar %
+//     Mask + Azar Mask button), drawn ONLY while Flt is on (`filtOpen`) -- same
+//     GLOBAL_W-grows-not-reflows deal as col 3. Mask k only joins Mask Fit on its row while Modo
+//     Mask is Int (MASK_MODE_INT); every other mode ignores Mask k entirely, same as the engine's
+//     own maskOk() branches. The raw 12-bit chromatic mask stays out (that's fs2setpick.js's
+//     piano-UI territory, a click-grid rather than a knob). Vector IC (Ola 5) is the six IC1-6
+//     Min|Max rows at the bottom -- an earlier round called it "composition-time" and left it out,
+//     but the plan's audit overturned that: Mask Fit can transpose a set past every other filter
+//     condition, but never past the interval-class vector (it's transposition-invariant), so it is
+//     the one condition worth seeing live. A Min above its own Max is flagged `alarm` (red), not
+//     dimmed -- it silently blocks everything rather than merely doing nothing. Azar % Mask is the
+//     drag value randomizemask() reads; the button next to it is a pure action (needs the Live API,
+//     posts to the console outside Live) with no echo of its own.
 //   col 5 -- the Groove cluster (Swing/Human, Rasg+Dir Rasg, Rat N+Rat A, Prob Rat+Caida), drawn
 //     while Sub >= 2. Swing/Human/Rat* all die with subDiv < 2 (swingOffset/humanizeOffset/
 //     scheduleBurst each bail on it -- no sub-ticks, nowhere to push the note), so that one gate
@@ -104,6 +110,8 @@
 //   gornseries <ornSeriesStart> <ornSeriesStep> <ornSeriesPeak>
 //   gsilence <groupSilence[NORMAL]> <groupSilence[ACCENT]>  genlace <linkMin>
 //   gcard <cardMin> <cardMax>  gmaskmode <maskMode>  gmaskk <maskK>  gmaskfit <maskFit>
+//   gvec1..gvec6 <min> <max>  (Ola 5, one token per interval class, col 4 rows 3-8)
+//   grandmask <maskRandomPct>  (Ola 5, col 4 row 9; the "Azar Mask" button next to it needs no sync)
 //   gregistro <rootSeqIdx> <masterOctave> <drumOn> <drumBase>  (Ola 4, col 1 rows 9-11)
 //   grecorrido <manualRot> <rotShape> <coprimeSkip>  (Ola 4, col 1 rows 12-14)
 //            -- the rest of globalState: none of these have a per-voice override, so one debounced
@@ -357,7 +365,10 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	accCiclo: 4, accTie: 0, euclidOn: 0, euclidK: 4, euclidRot: 0,
 	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4,
 	tension: 0, curva: 0, tensmodel: 0, progfav: 0, favonly: 0, favSeqLen: 0, fav: 0,
-	rootSeq: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2 };
+	rootSeq: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2,
+	vecMin1: 0, vecMax1: 12, vecMin2: 0, vecMax2: 12, vecMin3: 0, vecMax3: 12,
+	vecMin4: 0, vecMax4: 12, vecMin5: 0, vecMax5: 12, vecMin6: 0, vecMax6: 12,
+	randMaskPct: 50 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -423,6 +434,16 @@ function gcard(a, b) { globalState.cardMin = Math.round(a); globalState.cardMax 
 function gmaskmode(m) { globalState.maskMode = Math.round(m); mgraphics.redraw(); }
 function gmaskk(k) { globalState.maskK = Math.round(k); mgraphics.redraw(); }
 function gmaskfit(f) { globalState.maskFit = Math.round(f) ? 1 : 0; mgraphics.redraw(); }
+// IC1-6 Min/Max (Ola 5), one handler per interval class -- same "un token por indice" shape as
+// setvecmin/setvecmax themselves, not a shared array field (globalState is flat scalars everywhere
+// else, see gsilence/gvelmin above).
+function gvec1(a, b) { globalState.vecMin1 = Math.round(a); globalState.vecMax1 = Math.round(b); mgraphics.redraw(); }
+function gvec2(a, b) { globalState.vecMin2 = Math.round(a); globalState.vecMax2 = Math.round(b); mgraphics.redraw(); }
+function gvec3(a, b) { globalState.vecMin3 = Math.round(a); globalState.vecMax3 = Math.round(b); mgraphics.redraw(); }
+function gvec4(a, b) { globalState.vecMin4 = Math.round(a); globalState.vecMax4 = Math.round(b); mgraphics.redraw(); }
+function gvec5(a, b) { globalState.vecMin5 = Math.round(a); globalState.vecMax5 = Math.round(b); mgraphics.redraw(); }
+function gvec6(a, b) { globalState.vecMin6 = Math.round(a); globalState.vecMax6 = Math.round(b); mgraphics.redraw(); }
+function grandmask(p) { globalState.randMaskPct = Math.round(p); mgraphics.redraw(); }
 // Groove (col 5). `gsub` viaja suelto porque ademas de su propio valor es el GATE de casi toda la
 // columna; los otros siete llegan agrupados en dos mensajes, uno por familia de gate.
 function gsub(n) { globalState.sub = Math.round(n); mgraphics.redraw(); }
@@ -738,6 +759,35 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setcardmax', nv]); } },
 	gmaskk: { min: 1, max: 12, field: 'maskK', pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setmaskk', nv]); } },
+	// IC1-6 Min/Max (Ola 5), still col 4 -- 12 specs, one per numbox, setvecmin/setvecmax take the
+	// interval-class index as their first argument (same "index, then value" shape as setratchet/
+	// setgroupvelmin above), so each IC gets its own min spec and its own max spec.
+	gvmin1: { min: 0, max: 12, field: 'vecMin1', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 1, nv]); } },
+	gvmax1: { min: 0, max: 12, field: 'vecMax1', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 1, nv]); } },
+	gvmin2: { min: 0, max: 12, field: 'vecMin2', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 2, nv]); } },
+	gvmax2: { min: 0, max: 12, field: 'vecMax2', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 2, nv]); } },
+	gvmin3: { min: 0, max: 12, field: 'vecMin3', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 3, nv]); } },
+	gvmax3: { min: 0, max: 12, field: 'vecMax3', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 3, nv]); } },
+	gvmin4: { min: 0, max: 12, field: 'vecMin4', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 4, nv]); } },
+	gvmax4: { min: 0, max: 12, field: 'vecMax4', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 4, nv]); } },
+	gvmin5: { min: 0, max: 12, field: 'vecMin5', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 5, nv]); } },
+	gvmax5: { min: 0, max: 12, field: 'vecMax5', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 5, nv]); } },
+	gvmin6: { min: 0, max: 12, field: 'vecMin6', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmin', 6, nv]); } },
+	gvmax6: { min: 0, max: 12, field: 'vecMax6', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setvecmax', 6, nv]); } },
+	grandmaskpct: { min: 0, max: 100, field: 'randMaskPct', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setrandmaskpct', nv]); } },
 	// Col 5 (Groove), same global-sidebar idiom. setratchet takes the group index first, so Rat N
 	// and Rat A are two specs over the same setter -- the same shape gsilnorm/gsilacc already use.
 	gswing: { min: 50, max: 75, field: 'swing', pxPerUnit: 5, global: true,
@@ -924,6 +974,22 @@ function onclick(x, y, but) {
 	if (globalChipGeo.nmax && ptIn(globalChipGeo.nmax, x, y)) { dragBox = { v: -1, kind: 'gnmax', startY: y, startVal: globalState.cardMax }; return; }
 	if (globalChipGeo.maskmode && ptIn(globalChipGeo.maskmode, x, y)) { openMenu = { v: -1, kind: 'gmaskmode' }; mgraphics.redraw(); return; }
 	if (globalChipGeo.maskk && ptIn(globalChipGeo.maskk, x, y)) { dragBox = { v: -1, kind: 'gmaskk', startY: y, startVal: globalState.maskK }; return; }
+	// IC1-6 Min/Max rows + Azar % Mask (Ola 5), bottom of col 4. Azar Mascara itself is an action
+	// (rule 8) -- straight to the message, no dragBox/openMenu, same idiom as clearfavs above.
+	if (globalChipGeo.vmin1 && ptIn(globalChipGeo.vmin1, x, y)) { dragBox = { v: -1, kind: 'gvmin1', startY: y, startVal: globalState.vecMin1 }; return; }
+	if (globalChipGeo.vmax1 && ptIn(globalChipGeo.vmax1, x, y)) { dragBox = { v: -1, kind: 'gvmax1', startY: y, startVal: globalState.vecMax1 }; return; }
+	if (globalChipGeo.vmin2 && ptIn(globalChipGeo.vmin2, x, y)) { dragBox = { v: -1, kind: 'gvmin2', startY: y, startVal: globalState.vecMin2 }; return; }
+	if (globalChipGeo.vmax2 && ptIn(globalChipGeo.vmax2, x, y)) { dragBox = { v: -1, kind: 'gvmax2', startY: y, startVal: globalState.vecMax2 }; return; }
+	if (globalChipGeo.vmin3 && ptIn(globalChipGeo.vmin3, x, y)) { dragBox = { v: -1, kind: 'gvmin3', startY: y, startVal: globalState.vecMin3 }; return; }
+	if (globalChipGeo.vmax3 && ptIn(globalChipGeo.vmax3, x, y)) { dragBox = { v: -1, kind: 'gvmax3', startY: y, startVal: globalState.vecMax3 }; return; }
+	if (globalChipGeo.vmin4 && ptIn(globalChipGeo.vmin4, x, y)) { dragBox = { v: -1, kind: 'gvmin4', startY: y, startVal: globalState.vecMin4 }; return; }
+	if (globalChipGeo.vmax4 && ptIn(globalChipGeo.vmax4, x, y)) { dragBox = { v: -1, kind: 'gvmax4', startY: y, startVal: globalState.vecMax4 }; return; }
+	if (globalChipGeo.vmin5 && ptIn(globalChipGeo.vmin5, x, y)) { dragBox = { v: -1, kind: 'gvmin5', startY: y, startVal: globalState.vecMin5 }; return; }
+	if (globalChipGeo.vmax5 && ptIn(globalChipGeo.vmax5, x, y)) { dragBox = { v: -1, kind: 'gvmax5', startY: y, startVal: globalState.vecMax5 }; return; }
+	if (globalChipGeo.vmin6 && ptIn(globalChipGeo.vmin6, x, y)) { dragBox = { v: -1, kind: 'gvmin6', startY: y, startVal: globalState.vecMin6 }; return; }
+	if (globalChipGeo.vmax6 && ptIn(globalChipGeo.vmax6, x, y)) { dragBox = { v: -1, kind: 'gvmax6', startY: y, startVal: globalState.vecMax6 }; return; }
+	if (globalChipGeo.randmaskpct && ptIn(globalChipGeo.randmaskpct, x, y)) { dragBox = { v: -1, kind: 'grandmaskpct', startY: y, startVal: globalState.randMaskPct }; return; }
+	if (globalChipGeo.randmask && ptIn(globalChipGeo.randmask, x, y)) { outlet(0, ['randomizemask']); return; }
 	// Col 1 rows 7-8 (always drawn) -- Modo Toque toggles, Sub cycles through the six values its
 	// real live.menu offers. Sub is deliberately NOT a free 1-8 scrub even though setsub() accepts
 	// 5 and 7: those two have no slot in the panel menu, so the echo could not move the widget back.
@@ -1488,12 +1554,12 @@ function paint() {
 	}   // else: globalChipGeo.ornt/ornnotas/ornbase/ornbasemode/ornquad/ornstep/serstart/serstep/
 		// serpeak simply stay unset (fresh {} above), same as any other not-currently-applicable chip
 
-	// Column 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k/Mask Fit), only drawn while Flt
-	// is on (filtOpen, computed above alongside GLOBAL_W). The raw 12-bit pitch-class mask stays
-	// fs2setpick.js's piano-UI territory (a click-grid, not a knob); Vector IC (6 interval-class
-	// min/max pairs) stays out too -- composition-time fine-tuning, not a live-performance knob,
-	// same call as Tension/Curva/Modelo/Prog Favoritos next to Enlace. This is the shallow half:
-	// single numbers and one 3-way mode, each with a real panel widget already.
+	// Column 4 -- the Filtro cluster (n min/n max, Modo Mask, Mask k/Mask Fit, IC1-6 Min/Max, Azar %
+	// Mask), only drawn while Flt is on (filtOpen, computed above alongside GLOBAL_W). The raw
+	// 12-bit pitch-class mask stays fs2setpick.js's piano-UI territory (a click-grid, not a knob).
+	// Vector IC WAS left out of the original round (comment used to call it "composition-time, not
+	// a live-performance knob") but the plan's Ola 5 overturns that: it is the one filter condition
+	// Mask Fit cannot route around (the vector is transposition-invariant), so it belongs here.
 	if (filtOpen) {
 		if (gFits(0)) {
 			var ndcw = (g4w - 2) / 2;
@@ -1522,7 +1588,38 @@ function paint() {
 			}
 			drawChip(globalChipGeo.maskfit, 'Fit', !!globalState.maskFit);
 		}
-	}   // else: globalChipGeo.nmin/nmax/maskmode/maskk/maskfit simply stay unset (fresh {} above)
+		// Rows 3-8 -- IC1-6 Min|Max, side by side like n min/n max at row 0. A Min above its own Max
+		// lets nothing through (the engine still just warns on the console instead of freezing the
+		// sequence, see setvecmin/setvecmax's own comment) -- the plan calls this an alarm case, not
+		// a dim case: it is actively lying about what will pass, not merely inert.
+		var vdcw = (g4w - 2) / 2;
+		var VEC_ROWS = [
+			['vmin1', 'vmax1', 'vecMin1', 'vecMax1', 1], ['vmin2', 'vmax2', 'vecMin2', 'vecMax2', 2],
+			['vmin3', 'vmax3', 'vecMin3', 'vecMax3', 3], ['vmin4', 'vmax4', 'vecMin4', 'vecMax4', 4],
+			['vmin5', 'vmax5', 'vecMin5', 'vecMax5', 5], ['vmin6', 'vmax6', 'vecMin6', 'vecMax6', 6]
+		];
+		for (var vr = 0; vr < VEC_ROWS.length; vr++) {
+			var vrow = VEC_ROWS[vr], vrowN = 3 + vr;
+			if (!gFits(vrowN)) continue;
+			var vAlarm = globalState[vrow[2]] > globalState[vrow[3]];
+			globalChipGeo[vrow[0]] = { x: g4x, y: gRow(vrowN), w: vdcw, h: gChipH };
+			globalChipGeo[vrow[1]] = { x: g4x + vdcw + 2, y: gRow(vrowN), w: vdcw, h: gChipH };
+			drawChip(globalChipGeo[vrow[0]], 'i' + vrow[4] + 'n' + globalState[vrow[2]], false, false, undefined, vAlarm);
+			drawChip(globalChipGeo[vrow[1]], 'i' + vrow[4] + 'x' + globalState[vrow[3]], false, false, undefined, vAlarm);
+		}
+		// Row 9 -- Azar % Mask (drag value) + its action button, the two panel widgets from the
+		// plan's Ola 5 list. randomizemask() needs the Live API (rule 8) and posts to the console
+		// instead of doing anything outside Live; the button here can't know that in advance.
+		if (gFits(9)) {
+			globalChipGeo.randmaskpct = { x: g4x, y: gRow(9), w: g4w, h: gChipH };
+			drawChip(globalChipGeo.randmaskpct, 'Az%' + globalState.randMaskPct, false);
+		}
+		if (gFits(10)) {
+			globalChipGeo.randmask = { x: g4x, y: gRow(10), w: g4w, h: gChipH };
+			drawChip(globalChipGeo.randmask, 'Azar Mask', false);
+		}
+	}   // else: globalChipGeo.nmin/nmax/maskmode/maskk/maskfit/vmin*/vmax*/randmaskpct/randmask
+		// simply stay unset (fresh {} above)
 
 	// Column 5 -- Groove (Swing/Human, Rasg+Dir Rasg, Rat N+Rat A, Prob Rat+Caida), drawn while
 	// grooveOpen (see its definition up top for why the gate is an OR of two different conditions).
