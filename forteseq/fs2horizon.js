@@ -321,7 +321,14 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	silNorm: 0, silAcc: 0, enlace: 0,
 	cardMin: 1, cardMax: 12, maskMode: 0, maskK: 1, maskFit: 1,
 	sub: 1, swing: 50, human: 0, rasg: 0, dirRasg: 0,
-	ratN: 1, ratA: 1, ratProb: 100, ratCaida: 0 };
+	ratN: 1, ratA: 1, ratProb: 100, ratCaida: 0,
+	accCiclo: 4, accTie: 0, euclidOn: 0, euclidK: 4, euclidRot: 0,
+	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4 };
+
+// La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
+// globalState porque es un array de tamano fijo, no un escalar por campo.
+var ACCENT_MAX_UI = 16;
+var accentGridUI = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 function hstatus(rm, rd, setIdx1, md, lockedFlag) {
 	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md), Math.round(lockedFlag || 0)];
@@ -397,6 +404,28 @@ function gratchet(rn, ra, pr, dc) {
 	globalState.ratA = Math.round(ra);
 	globalState.ratProb = Math.round(pr);
 	globalState.ratCaida = Math.round(dc);
+	mgraphics.redraw();
+}
+
+// Acentos (col 6) -- Ciclo/Tie, Euclid+Pulsos+Giro, y VelMin/VelMax/Figura por grupo agrupados
+// por parametro (misma disciplina que gsilence), mas la tira de 16 acentos read-only.
+function gaccent(c, t) {
+	globalState.accCiclo = Math.round(c);
+	globalState.accTie = Math.round(t) ? 1 : 0;
+	mgraphics.redraw();
+}
+function geuclid(on, k, rot) {
+	globalState.euclidOn = Math.round(on) ? 1 : 0;
+	globalState.euclidK = Math.round(k);
+	globalState.euclidRot = Math.round(rot);
+	mgraphics.redraw();
+}
+function gvelmin(n, a) { globalState.velMinN = Math.round(n); globalState.velMinA = Math.round(a); mgraphics.redraw(); }
+function gvelmax(n, a) { globalState.velMaxN = Math.round(n); globalState.velMaxA = Math.round(a); mgraphics.redraw(); }
+function gfig(n, a) { globalState.figN = Math.round(n); globalState.figA = Math.round(a); mgraphics.redraw(); }
+function gaccentgrid() {
+	var a = arrayfromargs(arguments);
+	for (var i = 0; i < ACCENT_MAX_UI; i++) accentGridUI[i] = (i < a.length && a[i]) ? 1 : 0;
 	mgraphics.redraw();
 }
 
@@ -658,7 +687,28 @@ var DRAG_SPECS = {
 	gratprob: { min: 0, max: 100, field: 'ratProb', pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setratchetprob', nv]); } },
 	gratcaida: { min: 0, max: 100, field: 'ratCaida', pxPerUnit: 3, global: true,
-		send: function (v, nv) { outlet(0, ['setratchetdecay', nv]); } }
+		send: function (v, nv) { outlet(0, ['setratchetdecay', nv]); } },
+	// Col 6 (Acentos), same global-sidebar idiom. VelMin/VelMax/Figura take the group index first
+	// (setgroupvelmin/setgroupvelmax/setgroupdur), so Normal and Acento are two specs over the same
+	// setter each -- same shape gsilnorm/gsilacc and gratn/grata already use.
+	gciclo: { min: 1, max: 16, field: 'accCiclo', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setaccentcycle', nv]); } },
+	geuck: { min: 0, max: 16, field: 'euclidK', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['seteuclidk', nv]); } },
+	geurot: { min: 0, max: 15, field: 'euclidRot', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['seteuclidrot', nv]); } },
+	gvelminn: { min: 1, max: 127, field: 'velMinN', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupvelmin', 0, nv]); } },
+	gvelmina: { min: 1, max: 127, field: 'velMinA', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupvelmin', 1, nv]); } },
+	gvelmaxn: { min: 1, max: 127, field: 'velMaxN', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupvelmax', 0, nv]); } },
+	gvelmaxa: { min: 1, max: 127, field: 'velMaxA', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupvelmax', 1, nv]); } },
+	gfign: { min: 1, max: 32, field: 'figN', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupdur', 0, nv]); } },
+	gfiga: { min: 1, max: 32, field: 'figA', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setgroupdur', 1, nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -801,6 +851,20 @@ function onclick(x, y, but) {
 	if (globalChipGeo.ratprob && ptIn(globalChipGeo.ratprob, x, y)) { dragBox = { v: -1, kind: 'gratprob', startY: y, startVal: globalState.ratProb }; return; }
 	if (globalChipGeo.ratcaida && ptIn(globalChipGeo.ratcaida, x, y)) { dragBox = { v: -1, kind: 'gratcaida', startY: y, startVal: globalState.ratCaida }; return; }
 	if (globalChipGeo.maskfit && ptIn(globalChipGeo.maskfit, x, y)) { globalState.maskFit = globalState.maskFit ? 0 : 1; outlet(0, ['setmaskfit', globalState.maskFit]); mgraphics.redraw(); return; }
+	// Col 6 (Acentos) -- Ciclo/VelMin/VelMax/Figura drag-scrub; Tie/Euclid toggle chips (same idiom
+	// as ind/flt/lck); Pulsos/Giro only hit-testable while Euclid is on (their geo stays unset
+	// otherwise, same convention as maskk/nmin/nmax).
+	if (globalChipGeo.ciclo && ptIn(globalChipGeo.ciclo, x, y)) { dragBox = { v: -1, kind: 'gciclo', startY: y, startVal: globalState.accCiclo }; return; }
+	if (globalChipGeo.tie && ptIn(globalChipGeo.tie, x, y)) { globalState.accTie = globalState.accTie ? 0 : 1; outlet(0, ['setaccenttie', globalState.accTie]); mgraphics.redraw(); return; }
+	if (globalChipGeo.euc && ptIn(globalChipGeo.euc, x, y)) { globalState.euclidOn = globalState.euclidOn ? 0 : 1; outlet(0, ['seteuclid', globalState.euclidOn]); mgraphics.redraw(); return; }
+	if (globalChipGeo.eupuls && ptIn(globalChipGeo.eupuls, x, y)) { dragBox = { v: -1, kind: 'geuck', startY: y, startVal: globalState.euclidK }; return; }
+	if (globalChipGeo.eugir && ptIn(globalChipGeo.eugir, x, y)) { dragBox = { v: -1, kind: 'geurot', startY: y, startVal: globalState.euclidRot }; return; }
+	if (globalChipGeo.velminn && ptIn(globalChipGeo.velminn, x, y)) { dragBox = { v: -1, kind: 'gvelminn', startY: y, startVal: globalState.velMinN }; return; }
+	if (globalChipGeo.velmina && ptIn(globalChipGeo.velmina, x, y)) { dragBox = { v: -1, kind: 'gvelmina', startY: y, startVal: globalState.velMinA }; return; }
+	if (globalChipGeo.velmaxn && ptIn(globalChipGeo.velmaxn, x, y)) { dragBox = { v: -1, kind: 'gvelmaxn', startY: y, startVal: globalState.velMaxN }; return; }
+	if (globalChipGeo.velmaxa && ptIn(globalChipGeo.velmaxa, x, y)) { dragBox = { v: -1, kind: 'gvelmaxa', startY: y, startVal: globalState.velMaxA }; return; }
+	if (globalChipGeo.fign && ptIn(globalChipGeo.fign, x, y)) { dragBox = { v: -1, kind: 'gfign', startY: y, startVal: globalState.figN }; return; }
+	if (globalChipGeo.figa && ptIn(globalChipGeo.figa, x, y)) { dragBox = { v: -1, kind: 'gfiga', startY: y, startVal: globalState.figA }; return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -959,8 +1023,9 @@ function paint() {
 	var statusH = status ? 15 : 0;
 	var shapeH = (shape && shape.cols > 0) ? 34 : 0;   // the static reading-order strip
 	var ornH = (ornScale && status && status[0] === 7) ? 22 : 0;   // READ_ORNAMENT resulting-scale strip
+	var accGridH = 18;   // the read-only 16-cell accent strip (col 6, Ola 2) -- always shown
 	var nRows = Math.max(1, Math.min(MAXROWS, voices));
-	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH);
+	var gridH = Math.max(1, H - headH - statusH - shapeH - ornH - accGridH);
 	var rowH = gridH / nRows;
 	rowGeo = { headH: headH, rowH: rowH, nRows: nRows };   // read by onclick() to find the row hit
 
@@ -978,13 +1043,21 @@ function paint() {
 	var subLive = Math.round(globalState.sub) >= 2;
 	var chordLive = Math.round(globalState.mode) === MODE_CHORDS;
 	var grooveOpen = subLive;
-	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> ...): los slots
+	// Acentos (col 6) no tiene gate propio -- a diferencia de Ornamento/Filtro/Groove no hay un
+	// estado "apagado" para la articulacion o el Euclid global (siempre hay un ciclo de acentos
+	// sonando, este o no Euclid prendido), asi que la columna esta siempre presente. Sigue entrando
+	// en condCols para heredar el mismo empaquetado de slot -- toma el primero libre DESPUES de
+	// Ornamento/Filtro/Groove, nunca reflowea col 1/2 -- en vez de escribirse como una quinta
+	// columna fija a mano.
+	var accOpen = true;
+	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> ...): los slots
 	// condicionales se empaquetan sin hueco, cada uno toma el primero libre en este orden. Con mas
 	// de dos familias esto ya no se puede escribir a mano, asi que va como lista.
 	var condCols = [];
 	if (ornOpen) condCols.push('orn');
 	if (filtOpen) condCols.push('filt');
 	if (grooveOpen) condCols.push('groove');
+	if (accOpen) condCols.push('acc');
 	var extraCols = condCols.length;
 	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraCols * (G_GAP + G_COL_W);
 	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
@@ -1047,6 +1120,7 @@ function paint() {
 	var g3x = condSlotX('orn'), g3w = G_COL_W;
 	var g4x = condSlotX('filt'), g4w = G_COL_W;
 	var g5x = condSlotX('groove'), g5w = G_COL_W;
+	var g6x = condSlotX('acc'), g6w = G_COL_W;
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
@@ -1067,6 +1141,10 @@ function paint() {
 	if (grooveOpen) {
 		mgraphics.move_to(g5x, headH - 5);
 		mgraphics.show_text('Groove');
+	}
+	if (accOpen) {
+		mgraphics.move_to(g6x, headH - 5);
+		mgraphics.show_text('Acentos');
 	}
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
@@ -1317,6 +1395,51 @@ function paint() {
 			drawChip(globalChipGeo.ratcaida, 'C' + globalState.ratCaida, false, !ratOn);
 		}
 	}   // else: globalChipGeo.swing/human/rasg/dirrasg/ratn/rata/ratprob/ratcaida stay unset
+
+	// Column 6 -- Acentos (Ciclo+Tie, Euclid+Pulsos+Giro, VelMin/VelMax/Figura x Normal/Acento).
+	// No gate propio (accOpen is always true, see its definition up top) -- always drawn, FIXED
+	// rows 0-5 like col 1/2. Ciclo dimmed while Tie is on (its value is ignored, see
+	// articulationFor()); Pulsos/Giro HIDDEN (not just dimmed) while Euclid is off -- they carry no
+	// reading at all then, same treatment as col 3/4's mutually-exclusive sub-rows.
+	if (gFits(0)) {
+		var cdcw = (g6w - 2) / 2;
+		globalChipGeo.ciclo = { x: g6x, y: gRow(0), w: cdcw, h: gChipH };
+		globalChipGeo.tie = { x: g6x + cdcw + 2, y: gRow(0), w: cdcw, h: gChipH };
+		drawChip(globalChipGeo.ciclo, 'C' + globalState.accCiclo, false, !!globalState.accTie);
+		drawChip(globalChipGeo.tie, 'Tie', !!globalState.accTie);
+	}
+	if (gFits(1)) {
+		globalChipGeo.euc = { x: g6x, y: gRow(1), w: g6w, h: gChipH };
+		drawChip(globalChipGeo.euc, 'Euclid', !!globalState.euclidOn);
+	}
+	if (globalState.euclidOn && gFits(2)) {
+		var edcw = (g6w - 2) / 2;
+		globalChipGeo.eupuls = { x: g6x, y: gRow(2), w: edcw, h: gChipH };
+		globalChipGeo.eugir = { x: g6x + edcw + 2, y: gRow(2), w: edcw, h: gChipH };
+		drawChip(globalChipGeo.eupuls, 'Pl' + globalState.euclidK, false);
+		drawChip(globalChipGeo.eugir, 'Gi' + globalState.euclidRot, false);
+	}
+	if (gFits(3)) {
+		var vndcw = (g6w - 2) / 2;
+		globalChipGeo.velminn = { x: g6x, y: gRow(3), w: vndcw, h: gChipH };
+		globalChipGeo.velmina = { x: g6x + vndcw + 2, y: gRow(3), w: vndcw, h: gChipH };
+		drawChip(globalChipGeo.velminn, 'Vn' + globalState.velMinN, false);
+		drawChip(globalChipGeo.velmina, 'Va' + globalState.velMinA, false);
+	}
+	if (gFits(4)) {
+		var vxdcw = (g6w - 2) / 2;
+		globalChipGeo.velmaxn = { x: g6x, y: gRow(4), w: vxdcw, h: gChipH };
+		globalChipGeo.velmaxa = { x: g6x + vxdcw + 2, y: gRow(4), w: vxdcw, h: gChipH };
+		drawChip(globalChipGeo.velmaxn, 'Xn' + globalState.velMaxN, false);
+		drawChip(globalChipGeo.velmaxa, 'Xa' + globalState.velMaxA, false);
+	}
+	if (gFits(5)) {
+		var fdcw = (g6w - 2) / 2;
+		globalChipGeo.fign = { x: g6x, y: gRow(5), w: fdcw, h: gChipH };
+		globalChipGeo.figa = { x: g6x + fdcw + 2, y: gRow(5), w: fdcw, h: gChipH };
+		drawChip(globalChipGeo.fign, 'Fn' + globalState.figN, false);
+		drawChip(globalChipGeo.figa, 'Fa' + globalState.figA, false);
+	}
 
 	for (var v = 0; v < nRows; v++) {
 		var y = headH + v * rowH;
@@ -1705,6 +1828,32 @@ function paint() {
 		mgraphics.set_font_size(9);
 		mgraphics.move_to(ox + 12 * ocw + 10, oy + ornH / 2 + 3);
 		mgraphics.show_text(ornScale.forte + '   ' + ornScale.vec + (ornScale.is12 ? '   [12 tonos]' : ''));
+	}
+
+	// --- the accent-cycle strip: read-only view of accentGrid (Ola 2) -- when Euclid is on this IS
+	// the algorithm's output, not something to click here (see plan's show/hide rule); a clickable
+	// version is a later ola. Only the leading accCiclo (or accTie's card-length equivalent, but the
+	// engine already resolves that into accentGridUI before emitting -- see forteseq2.js's own
+	// articulationFor() for the same accentTieToN branch) cells are lit, the rest dimmed as unused.
+	var ay = headH + gridH + shapeH + ornH;
+	mgraphics.set_source_rgba([0.09, 0.09, 0.10, 1]);
+	mgraphics.rectangle(0, ay, W, accGridH);
+	mgraphics.fill();
+	mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+	mgraphics.set_font_size(8);
+	mgraphics.move_to(4, ay + accGridH - 5);
+	mgraphics.show_text('acentos');
+	var acx = 48, acw = Math.max(4, Math.min(28, (W - acx - 8) / ACCENT_MAX_UI));
+	for (var ai = 0; ai < ACCENT_MAX_UI; ai++) {
+		var inCycle = ai < Math.round(globalState.accCiclo);
+		var on = !!accentGridUI[ai];
+		if (on) {
+			mgraphics.set_source_rgba(inCycle ? [0.85, 0.55, 0.15, 1] : [0.85, 0.55, 0.15, 0.35]);
+		} else {
+			mgraphics.set_source_rgba(inCycle ? [0.3, 0.3, 0.33, 1] : [0.3, 0.3, 0.33, 0.35]);
+		}
+		mgraphics.rectangle(acx + ai * acw + 1, ay + 3, acw - 2, accGridH - 6);
+		mgraphics.fill();
 	}
 
 	if (statusH) {

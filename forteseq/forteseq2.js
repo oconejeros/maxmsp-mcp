@@ -3495,6 +3495,12 @@ var qnMaskFitShown = -1;
 var qnSubShown = -1;           // -1 forces the first querynext() to emit regardless of subDiv's own default (1)
 var qnGrooveShown = "";        // firma "swingPct,humanizePct,strumSub,strumDir"; "" = forzar
 var qnRatchetShown = "";       // firma "ratchetN[NORMAL],ratchetN[ACCENT],ratchetPct,ratchetDecay"; "" = forzar
+var qnAccentShown = "";        // firma "accentCycle,accentTieToN"; "" = forzar
+var qnEuclidShown = "";        // firma "euclidOn,euclidK,euclidRot"; "" = forzar
+var qnVelMinShown = "";        // firma "groupVelMin[NORMAL],groupVelMin[ACCENT]"; "" = forzar
+var qnVelMaxShown = "";        // firma "groupVelMax[NORMAL],groupVelMax[ACCENT]"; "" = forzar
+var qnFigShown = "";           // firma "groupDurDiv[NORMAL],groupDurDiv[ACCENT]"; "" = forzar
+var qnAccentGridShown = "";    // firma accentGrid.join(","); "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3659,6 +3665,44 @@ function querynext() {
 		if (gratKey !== qnRatchetShown) {
 			qnRatchetShown = gratKey;
 			outlet(3, ["gratchet", ratchetN[GROUP_NORMAL], ratchetN[GROUP_ACCENT], ratchetPct, ratchetDecay]);
+		}
+		// Acentos (col 6): Ciclo Acentos/Ciclo igual a n, Euclid on+Pulsos+Giro, y las 6 de
+		// articulacion por grupo (VelMin/VelMax/Figura x Normal/Acento) -- las hermanas exactas de
+		// Silencio Normal/Acento (gsilence, arriba) asi que van agrupadas por parametro igual que ahi,
+		// no las 6 en un solo mensaje.
+		var gaccKey = accentCycle + "," + accentTieToN;
+		if (gaccKey !== qnAccentShown) {
+			qnAccentShown = gaccKey;
+			outlet(3, ["gaccent", accentCycle, accentTieToN]);
+		}
+		var geucKey = euclidOn + "," + euclidK + "," + euclidRot;
+		if (geucKey !== qnEuclidShown) {
+			qnEuclidShown = geucKey;
+			outlet(3, ["geuclid", euclidOn, euclidK, euclidRot]);
+		}
+		var gvminKey = groupVelMin[GROUP_NORMAL] + "," + groupVelMin[GROUP_ACCENT];
+		if (gvminKey !== qnVelMinShown) {
+			qnVelMinShown = gvminKey;
+			outlet(3, ["gvelmin", groupVelMin[GROUP_NORMAL], groupVelMin[GROUP_ACCENT]]);
+		}
+		var gvmaxKey = groupVelMax[GROUP_NORMAL] + "," + groupVelMax[GROUP_ACCENT];
+		if (gvmaxKey !== qnVelMaxShown) {
+			qnVelMaxShown = gvmaxKey;
+			outlet(3, ["gvelmax", groupVelMax[GROUP_NORMAL], groupVelMax[GROUP_ACCENT]]);
+		}
+		var gfigKey = groupDurDiv[GROUP_NORMAL] + "," + groupDurDiv[GROUP_ACCENT];
+		if (gfigKey !== qnFigShown) {
+			qnFigShown = gfigKey;
+			outlet(3, ["gfig", groupDurDiv[GROUP_NORMAL], groupDurDiv[GROUP_ACCENT]]);
+		}
+		// La tira de 16 acentos, read-only en esta ola (ver plan): firma por join, igual disciplina
+		// que el resto. No confundir con el outlet(4,["accentgrid",...]) de applyEuclid() -- ese es
+		// el canal de PANEL-ECHO (outlet 4, va a obj-403's outlet reservado y sin cablear todavia);
+		// este es el canal del POPUP (outlet 3), separado a proposito.
+		var gagKey = accentGrid.join(",");
+		if (gagKey !== qnAccentGridShown) {
+			qnAccentGridShown = gagKey;
+			outlet(3, ["gaccentgrid"].concat(accentGrid));
 		}
 	}
 
@@ -4990,6 +5034,7 @@ function setaccentcycle(c) {
 	if (c > ACCENT_MAX) c = ACCENT_MAX;
 	accentCycle = c;
 	applyEuclid();          // the cycle IS the n of E(k,n), so the pattern is refitted to it
+	outlet(4, ["gecho", "ciclo", accentCycle]);
 }
 
 // Bjorklund's algorithm: k onsets spread over n cells as evenly as n allows. Written out rather
@@ -5037,6 +5082,7 @@ function applyEuclid() {
 function seteuclid(on) {
 	euclidOn = on ? 1 : 0;
 	applyEuclid();
+	outlet(4, ["gecho", "euc", euclidOn]);
 }
 
 function seteuclidk(k) {
@@ -5045,6 +5091,7 @@ function seteuclidk(k) {
 	if (k > ACCENT_MAX) k = ACCENT_MAX;
 	euclidK = k;
 	applyEuclid();
+	outlet(4, ["gecho", "eupuls", euclidK]);
 }
 
 function seteuclidrot(r) {
@@ -5053,6 +5100,7 @@ function seteuclidrot(r) {
 	if (r > ACCENT_MAX - 1) r = ACCENT_MAX - 1;
 	euclidRot = r;
 	applyEuclid();
+	outlet(4, ["gecho", "eugir", euclidRot]);
 }
 
 // 1 = the cycle length follows the current set's cardinality, so accents lock onto the same
@@ -5060,6 +5108,7 @@ function seteuclidrot(r) {
 // pattern against the harmony whenever the two are coprime.
 function setaccenttie(t) {
 	accentTieToN = t ? 1 : 0;
+	outlet(4, ["gecho", "tie", accentTieToN]);
 }
 
 function setvoicephase(v, p) {
@@ -5164,6 +5213,9 @@ function setgroupvelmin(g, v) {
 	if (v < 1) v = 1;             // 0 would be a note-off
 	if (v > 127) v = 127;
 	groupVelMin[i] = v;
+	// Setter con indice de grupo: un TOKEN POR INDICE, igual que g0silence/g1silence/ratn/rata --
+	// el canal gecho es "un token, un valor" y no sabe de argumentos extra.
+	outlet(4, ["gecho", i === GROUP_NORMAL ? "velminn" : "velmina", v]);
 }
 
 function setgroupvelmax(g, v) {
@@ -5173,6 +5225,7 @@ function setgroupvelmax(g, v) {
 	if (v < 1) v = 1;
 	if (v > 127) v = 127;
 	groupVelMax[i] = v;
+	outlet(4, ["gecho", i === GROUP_NORMAL ? "velmaxn" : "velmaxa", v]);
 }
 
 // div is a note-value denominator: 1 = whole, 4 = quarter, 8 = eighth, 16 = sixteenth...
@@ -5182,6 +5235,7 @@ function setgroupdur(g, div) {
 	div = Math.round(div);
 	if (div < 1) div = 1;
 	groupDurDiv[i] = div;
+	outlet(4, ["gecho", i === GROUP_NORMAL ? "fign" : "figa", div]);
 }
 
 function setgroupsilence(g, pct) {

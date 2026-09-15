@@ -188,6 +188,12 @@ function gmaskfit() {}
 function gsub() {}
 function ggroove() {}
 function gratchet() {}
+function gaccent() {}
+function geuclid() {}
+function gvelmin() {}
+function gvelmax() {}
+function gfig() {}
+function gaccentgrid() {}
 
 // --- repintado coalescido ---------------------------------------------------------------
 // filtset llega ~64 veces en una misma pasada del scheduler; un Task a schedule(0) las junta

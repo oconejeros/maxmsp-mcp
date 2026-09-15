@@ -120,6 +120,12 @@ function gmaskfit() {}
 function gsub() {}
 function ggroove() {}
 function gratchet() {}
+function gaccent() {}
+function geuclid() {}
+function gvelmin() {}
+function gvelmax() {}
+function gfig() {}
+function gaccentgrid() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
