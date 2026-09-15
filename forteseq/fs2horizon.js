@@ -1,11 +1,13 @@
 // fs2horizon.js -- jsui: the "próximos pasos" panel for FORTESEQ2's floating window.
 //
 // A fixed GLOBAL sidebar (x=0..GLOBAL_W, drawn once, see paint()'s "fixed global sidebar" block)
-// sits to the left of everything, always visible, in up to FOUR columns, each with FIXED row
+// sits to the left of everything, always visible, in up to FIVE columns, each with FIXED row
 // indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
 // happening in another:
-//   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace (Run first -- the transport; Dir above Patron on
-//     request; Enlace/linkMin -- the common-tone constraint on the next set -- appended last).
+//   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub (Run first -- the transport; Dir above
+//     Patron on request; Enlace/linkMin -- the common-tone constraint on the next set -- appended
+//     after those; Modo Toque and Sub last because they are the two GATES of col 5, and a
+//     conditional column cannot hold the control that decides whether it exists).
 //   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc (the last row -- groupSilence
 //     -- is what a Preset Silencio pick on the row above only OVERWRITES; worth its own row).
 //   col 3 -- the Ornamento cluster (Tipo/Notas+Base/BaseModo), drawn ONLY while Patron===Ornamento
@@ -24,9 +26,19 @@
 //     fs2setpick.js's piano-UI territory, a click-grid rather than a knob), and so does the 6-pair
 //     Vector IC (interval-class min/max) -- composition-time fine-tuning, same call as leaving
 //     Tension/Curva/Modelo/Prog Favoritos out next to Enlace in col 1.
-//   Ornamento (col 3) and Filtro (col 4) pack into the sidebar's conditional slots left to right
-//     with no gap between them -- Ornamento always claims the first free slot when open, Filtro
-//     takes whichever is left -- so either, both, or neither can be showing at once.
+//   col 5 -- the Groove cluster (Swing/Human, Rasg+Dir Rasg, Rat N+Rat A, Prob Rat+Caida), drawn
+//     while Sub >= 2. Swing/Human/Rat* all die with subDiv < 2 (swingOffset/humanizeOffset/
+//     scheduleBurst each bail on it -- no sub-ticks, nowhere to push the note), so that one gate
+//     covers six of the eight. Rasg/Dir Rasg are the exception: strumOffset bails on `n < 2`, not
+//     on subDiv, so they technically fire at Sub 1 -- but the offset is measured in SUB-TICKS, and
+//     at Sub 1 one sub-tick is a whole STEP, so a 4-note chord ends up spread over 4 steps on top
+//     of whatever comes next. That is not a strum, and it is not worth coupling a RHYTHM column to
+//     a HARMONIC-TEXTURE control (Modo Toque) that nobody would predict gates it. They dim inside
+//     the column in Arpegio instead. Nothing here is ever hidden row-by-row -- every one of these
+//     is a candidate for "I moved it and nothing happened", so the value stays visible.
+//   Ornamento, Filtro and Groove pack into the sidebar's conditional slots left to right with no
+//     gap between them, in that FIXED priority order (condCols/condSlotX in paint()) -- each open
+//     family claims the first free slot -- so any combination of them can be showing at once.
 //   Run is the one field with no gecho/querynext mirror: obj-18 ("Run") bypasses forteseq2.js
 //     entirely, gating the metro straight at the Max-patching level, so it has its own independent
 //     read (hrun, tapped off obj-18's own outlet via send/receive FS2_RUN_STATE) and write (a plain
@@ -41,9 +53,9 @@
 // performance ones, added anyway on request -- Rango/PresetSilencio are "apply this preset" fire-
 // and-forget actions engine-side (rangeTemplateIndex/silencePresetIndex just record what was last
 // picked, for this readout), unlike Orden which is real persistent state (orderMode). Modo
-// (Acordes/Arpegio) is read into globalState.mode (hstatus) and used internally (see keyMoot/
-// readMoot below) but has NO chip here -- setmode() has no existing panel-side control to
-// cross-check against, unlike every other global setter here, so it stayed engine-only.
+// (Acordes/Arpegio) was read-only here for a while -- setmode() looked like it had no panel-side
+// control to cross-check against -- but it does: `fs2_mode` obj-19 in fs2pages.maxpat, a live.tab
+// wired straight into `prepend setmode`, so it is now a writable chip like the rest.
 //
 // One ROW per voice, to the right of the global sidebar. Each row is:
 // [ label+toggles ]  [ pattern grid ]  [ history ]
@@ -213,6 +225,22 @@ var SILPRE_NAMES = ['Silencio', 'Todo', 'Solo ac.', 'Solo norm.', 'Ralo', 'Muy r
 // panel widget's own parameter_enum (fs2_maskmode) so the popup never disagrees with the panel.
 var MASK_MODE_NAMES = ['Sub', 'Con', 'Int'];
 var MASK_MODE_INT = 2;   // same value as forteseq2.js's maskMode===2 branch -- Mask k only matters here
+// Modo Toque (fs2_mode, live.tab "Modo"): 0 = Acordes, 1 = Arpegio, same as forteseq2.js's
+// `mode = m ? 1 : 0`. Named because Acordes is the gate for Rasg/Dir Rasg (strumOffset() returns 0
+// for n < 2, i.e. anything that is not a chord) and for a couple of per-voice moots already here.
+var MODE_NAMES = ['Acordes', 'Arpegio'];
+var MODE_CHORDS = 0;
+// Fifth sidebar column (Groove). `Sub`'s real widget (fs2_sub_g) is a live.menu whose INDEX is not
+// its value; the popup deals in the DIVISOR throughout (that is what setsub() takes and what
+// querynext's `gsub` carries) and the engine's own gecho converts back to the index for the panel.
+// So this list is only used to cycle the chip, never to talk to Max.
+var SUB_VALUES = [1, 2, 3, 4, 6, 8];
+var SUB_LABELS = ['1', '2', '3', '4', '6', '8'];   // los mismos, como items del dropdown
+function subIndexOf(n) {
+	for (var k = 0; k < SUB_VALUES.length; k++) if (SUB_VALUES[k] === Math.round(n)) return k;
+	return 0;
+}
+var DIR_RASG_ABBR = ['Arr', 'Aba', 'Azar', 'Alt'];   // fs2_dirrasg's enum, abbreviated for a ~41px chip
 
 var voices = 4;
 var colorOn = 1;
@@ -291,7 +319,9 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	orden: 0, rango: 0, silpre: 0, run: 0, ornQuad: 0,
 	ornStep: 1, ornSeriesStart: 1, ornSeriesStep: 1, ornSeriesPeak: 4,
 	silNorm: 0, silAcc: 0, enlace: 0,
-	cardMin: 1, cardMax: 12, maskMode: 0, maskK: 1, maskFit: 1 };
+	cardMin: 1, cardMax: 12, maskMode: 0, maskK: 1, maskFit: 1,
+	sub: 1, swing: 50, human: 0, rasg: 0, dirRasg: 0,
+	ratN: 1, ratA: 1, ratProb: 100, ratCaida: 0 };
 
 function hstatus(rm, rd, setIdx1, md, lockedFlag) {
 	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md), Math.round(lockedFlag || 0)];
@@ -352,6 +382,23 @@ function gcard(a, b) { globalState.cardMin = Math.round(a); globalState.cardMax 
 function gmaskmode(m) { globalState.maskMode = Math.round(m); mgraphics.redraw(); }
 function gmaskk(k) { globalState.maskK = Math.round(k); mgraphics.redraw(); }
 function gmaskfit(f) { globalState.maskFit = Math.round(f) ? 1 : 0; mgraphics.redraw(); }
+// Groove (col 5). `gsub` viaja suelto porque ademas de su propio valor es el GATE de casi toda la
+// columna; los otros siete llegan agrupados en dos mensajes, uno por familia de gate.
+function gsub(n) { globalState.sub = Math.round(n); mgraphics.redraw(); }
+function ggroove(sw, hu, ra, dr) {
+	globalState.swing = Math.round(sw);
+	globalState.human = Math.round(hu);
+	globalState.rasg = Math.round(ra);
+	globalState.dirRasg = Math.round(dr);
+	mgraphics.redraw();
+}
+function gratchet(rn, ra, pr, dc) {
+	globalState.ratN = Math.round(rn);
+	globalState.ratA = Math.round(ra);
+	globalState.ratProb = Math.round(pr);
+	globalState.ratCaida = Math.round(dc);
+	mgraphics.redraw();
+}
 
 function hshape() {
 	var a = arrayfromargs(arguments);
@@ -595,7 +642,23 @@ var DRAG_SPECS = {
 	gnmax: { min: 1, max: 12, field: 'cardMax', pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setcardmax', nv]); } },
 	gmaskk: { min: 1, max: 12, field: 'maskK', pxPerUnit: 10, global: true,
-		send: function (v, nv) { outlet(0, ['setmaskk', nv]); } }
+		send: function (v, nv) { outlet(0, ['setmaskk', nv]); } },
+	// Col 5 (Groove), same global-sidebar idiom. setratchet takes the group index first, so Rat N
+	// and Rat A are two specs over the same setter -- the same shape gsilnorm/gsilacc already use.
+	gswing: { min: 50, max: 75, field: 'swing', pxPerUnit: 5, global: true,
+		send: function (v, nv) { outlet(0, ['setswing', nv]); } },
+	ghuman: { min: 0, max: 100, field: 'human', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['sethumanize', nv]); } },
+	grasg: { min: 0, max: 8, field: 'rasg', pxPerUnit: 12, global: true,
+		send: function (v, nv) { outlet(0, ['setstrum', nv]); } },
+	gratn: { min: 1, max: 4, field: 'ratN', pxPerUnit: 16, global: true,
+		send: function (v, nv) { outlet(0, ['setratchet', 0, nv]); } },
+	grata: { min: 1, max: 4, field: 'ratA', pxPerUnit: 16, global: true,
+		send: function (v, nv) { outlet(0, ['setratchet', 1, nv]); } },
+	gratprob: { min: 0, max: 100, field: 'ratProb', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setratchetprob', nv]); } },
+	gratcaida: { min: 0, max: 100, field: 'ratCaida', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setratchetdecay', nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -659,6 +722,12 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'gmaskmode') {
 						globalState.maskMode = mi;
 						outlet(0, ['setmaskmode', mi]);
+					} else if (openMenu.kind === 'gsub') {
+						// El unico dropdown cuyo item NO es su propio valor: el indice elige de
+						// SUB_VALUES y al motor sale el DIVISOR (setsub lo toma asi). La vuelta a
+						// indice, para el live.menu del panel, la hace el eco en forteseq2.js.
+						globalState.sub = SUB_VALUES[mi];
+						outlet(0, ['setsub', globalState.sub]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -711,6 +780,26 @@ function onclick(x, y, but) {
 	if (globalChipGeo.nmax && ptIn(globalChipGeo.nmax, x, y)) { dragBox = { v: -1, kind: 'gnmax', startY: y, startVal: globalState.cardMax }; return; }
 	if (globalChipGeo.maskmode && ptIn(globalChipGeo.maskmode, x, y)) { openMenu = { v: -1, kind: 'gmaskmode' }; mgraphics.redraw(); return; }
 	if (globalChipGeo.maskk && ptIn(globalChipGeo.maskk, x, y)) { dragBox = { v: -1, kind: 'gmaskk', startY: y, startVal: globalState.maskK }; return; }
+	// Col 1 rows 7-8 (always drawn) -- Modo Toque toggles, Sub cycles through the six values its
+	// real live.menu offers. Sub is deliberately NOT a free 1-8 scrub even though setsub() accepts
+	// 5 and 7: those two have no slot in the panel menu, so the echo could not move the widget back.
+	if (ptIn(globalChipGeo.modo, x, y)) {
+		globalState.mode = Math.round(globalState.mode) === MODE_CHORDS ? 1 : MODE_CHORDS;
+		outlet(0, ['setmode', globalState.mode]); mgraphics.redraw(); return;
+	}
+	if (ptIn(globalChipGeo.sub, x, y)) { openMenu = { v: -1, kind: 'gsub' }; mgraphics.redraw(); return; }
+	// Col 5 (Groove) -- only hit-testable while that column is drawn (its geo stays unset otherwise).
+	if (globalChipGeo.swing && ptIn(globalChipGeo.swing, x, y)) { dragBox = { v: -1, kind: 'gswing', startY: y, startVal: globalState.swing }; return; }
+	if (globalChipGeo.human && ptIn(globalChipGeo.human, x, y)) { dragBox = { v: -1, kind: 'ghuman', startY: y, startVal: globalState.human }; return; }
+	if (globalChipGeo.rasg && ptIn(globalChipGeo.rasg, x, y)) { dragBox = { v: -1, kind: 'grasg', startY: y, startVal: globalState.rasg }; return; }
+	if (globalChipGeo.dirrasg && ptIn(globalChipGeo.dirrasg, x, y)) {
+		globalState.dirRasg = (Math.round(globalState.dirRasg) + 1) % 4;
+		outlet(0, ['setstrumdir', globalState.dirRasg]); mgraphics.redraw(); return;
+	}
+	if (globalChipGeo.ratn && ptIn(globalChipGeo.ratn, x, y)) { dragBox = { v: -1, kind: 'gratn', startY: y, startVal: globalState.ratN }; return; }
+	if (globalChipGeo.rata && ptIn(globalChipGeo.rata, x, y)) { dragBox = { v: -1, kind: 'grata', startY: y, startVal: globalState.ratA }; return; }
+	if (globalChipGeo.ratprob && ptIn(globalChipGeo.ratprob, x, y)) { dragBox = { v: -1, kind: 'gratprob', startY: y, startVal: globalState.ratProb }; return; }
+	if (globalChipGeo.ratcaida && ptIn(globalChipGeo.ratcaida, x, y)) { dragBox = { v: -1, kind: 'gratcaida', startY: y, startVal: globalState.ratCaida }; return; }
 	if (globalChipGeo.maskfit && ptIn(globalChipGeo.maskfit, x, y)) { globalState.maskFit = globalState.maskFit ? 0 : 1; outlet(0, ['setmaskfit', globalState.maskFit]); mgraphics.redraw(); return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
@@ -875,10 +964,28 @@ function paint() {
 	var rowH = gridH / nRows;
 	rowGeo = { headH: headH, rowH: rowH, nRows: nRows };   // read by onclick() to find the row hit
 
-	var G_COL_W = 86, G_GAP = 4;   // width of each of the (up to) 4 fixed sidebar columns, and the gap between them
-	var ornOpen = globalState.patron === READ_ORNAMENT;   // col 3 slot only exists while Patron IS Ornamento
-	var filtOpen = !!globalState.filtered;                // col 4 slot only exists while Flt is on
-	var extraCols = (ornOpen ? 1 : 0) + (filtOpen ? 1 : 0);   // how many of the 2 conditional slots are showing
+	var G_COL_W = 86, G_GAP = 4;   // width of each fixed sidebar column, and the gap between them
+	var ornOpen = globalState.patron === READ_ORNAMENT;   // Ornamento slot only exists while Patron IS Ornamento
+	var filtOpen = !!globalState.filtered;                // Filtro slot only exists while Flt is on
+	// La columna Groove aparece con Sub >= 2 y con nada mas: UNA causa, una consecuencia, igual que
+	// Patron=Ornamento y Flt. Estuvo un rato gateada por `subLive || chordLive` porque strumOffset()
+	// no mira subDiv -- su unica condicion es `n < 2` -- asi que Rasg tecnicamente hace algo en
+	// Acordes con Sub=1. Pero ese algo es degenerado: el offset se mide en SUB-TICKS y con Sub=1 un
+	// sub-tick es un paso entero, asi que Rasg=1 sobre un acorde de 4 notas las reparte en 4 pasos
+	// pisando lo que venga. No es un rasgueo, es arpegiar a lo largo de la secuencia. No vale un
+	// gate que acopla una columna de RITMO a un control de TEXTURA ARMONICA, que nadie predice.
+	// chordLive sobrevive, pero solo para atenuar Rasg/Dir Rasg ADENTRO de la columna.
+	var subLive = Math.round(globalState.sub) >= 2;
+	var chordLive = Math.round(globalState.mode) === MODE_CHORDS;
+	var grooveOpen = subLive;
+	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> ...): los slots
+	// condicionales se empaquetan sin hueco, cada uno toma el primero libre en este orden. Con mas
+	// de dos familias esto ya no se puede escribir a mano, asi que va como lista.
+	var condCols = [];
+	if (ornOpen) condCols.push('orn');
+	if (filtOpen) condCols.push('filt');
+	if (grooveOpen) condCols.push('groove');
+	var extraCols = condCols.length;
 	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraCols * (G_GAP + G_COL_W);
 	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
 	// loop de filas. Las cuatro son de FILAS FIJAS (sin contador dinamico) para que nada dentro de una
@@ -932,9 +1039,14 @@ function paint() {
 	var gChipH = 18, gChipGap = 2;
 	var g1x = 2, g1w = G_COL_W;
 	var g2x = g1x + g1w + G_GAP, g2w = G_COL_W;
-	var slot3x = g2x + g2w + G_GAP;                                            // first conditional slot
-	var g3x = slot3x, g3w = G_COL_W;                                           // Ornamento always claims it first
-	var g4x = slot3x + (ornOpen ? (G_GAP + G_COL_W) : 0), g4w = G_COL_W;       // Filtro takes whichever is free
+	var slot3x = g2x + g2w + G_GAP;   // where the first conditional slot starts
+	function condSlotX(name) {        // -1 when that family is closed -- its chips then never get a geo
+		for (var ck = 0; ck < condCols.length; ck++) if (condCols[ck] === name) return slot3x + ck * (G_GAP + G_COL_W);
+		return -1;
+	}
+	var g3x = condSlotX('orn'), g3w = G_COL_W;
+	var g4x = condSlotX('filt'), g4w = G_COL_W;
+	var g5x = condSlotX('groove'), g5w = G_COL_W;
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
@@ -951,6 +1063,10 @@ function paint() {
 	if (filtOpen) {
 		mgraphics.move_to(g4x, headH - 5);
 		mgraphics.show_text('Filtro');
+	}
+	if (grooveOpen) {
+		mgraphics.move_to(g5x, headH - 5);
+		mgraphics.show_text('Groove');
 	}
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
@@ -990,6 +1106,25 @@ function paint() {
 	if (gFits(6)) {
 		globalChipGeo.enlace = { x: g1x, y: gRow(6), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.enlace, 'Enl ' + globalState.enlace, false);
+	}
+	// Rows 7-8 -- Modo Toque y Sub, los dos GATES de la columna Groove, por eso van aca arriba y
+	// siempre visibles: una columna condicional no puede alojar su propio gate (desapareceria con
+	// el, y no habria como volver). Modo Toque ademas ya se leia (hstatus lo trae desde siempre) y
+	// gobierna varios moot por voz; lo que faltaba era poder escribirlo, que ahora si tiene camino
+	// probado (fs2_mode obj-19 -> prepend setmode -> motor, dentro de fs2pages.maxpat).
+	if (gFits(7)) {
+		globalChipGeo.modo = { x: g1x, y: gRow(7), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.modo, MODE_NAMES[Math.round(globalState.mode)] || '?', false);
+	}
+	// Sub va de dropdown, no de chip que cicla: su widget real ES un live.menu de seis items, asi
+	// que la lista es el espejo exacto -- y ciclar +1 por click obliga a dar la vuelta entera para
+	// bajar de 8 a 2. El dropdown ya se da vuelta solo si no entra hacia abajo (ver pendingMenu),
+	// que importa justo aca por ser la ultima fila de la columna.
+	if (gFits(8)) {
+		globalChipGeo.sub = { x: g1x, y: gRow(8), w: g1w, h: gChipH };
+		var gSubOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gsub';
+		drawChip(globalChipGeo.sub, 'Sub ' + globalState.sub, gSubOpen);
+		if (gSubOpen) pendingMenu = { v: -1, kind: 'gsub', anchor: globalChipGeo.sub, items: SUB_LABELS, cur: subIndexOf(globalState.sub) };
 	}
 
 	// Column 2 -- Set/Root/R.Arm/Orden/Rango/PresetSil/SilNorm+SilAcc, FIXED rows 0-6. Same
@@ -1133,6 +1268,55 @@ function paint() {
 			drawChip(globalChipGeo.maskfit, 'Fit', !!globalState.maskFit);
 		}
 	}   // else: globalChipGeo.nmin/nmax/maskmode/maskk/maskfit simply stay unset (fresh {} above)
+
+	// Column 5 -- Groove (Swing/Human, Rasg+Dir Rasg, Rat N+Rat A, Prob Rat+Caida), drawn while
+	// grooveOpen (see its definition up top for why the gate is an OR of two different conditions).
+	// Sub y Modo Toque, sus dos gates, NO viven aca sino en col 1: una columna no puede contener el
+	// control que decide si existe. Nada se oculta dentro de la columna -- se ATENUA -- porque cada
+	// una de estas es candidata a "la moví y no pasó nada": el usuario tiene que poder ver el valor
+	// que puso y que esta ahi sin efecto, no que el control desaparecio.
+	if (grooveOpen) {
+		// Swing y Human no necesitan gate propio: su unica condicion es subDiv >= 2 y esa ya es la
+		// de la columna entera, asi que si se ven, andan.
+		if (gFits(0)) {
+			globalChipGeo.swing = { x: g5x, y: gRow(0), w: g5w, h: gChipH };
+			drawChip(globalChipGeo.swing, 'Sw ' + globalState.swing, false);
+		}
+		if (gFits(1)) {
+			globalChipGeo.human = { x: g5x, y: gRow(1), w: g5w, h: gChipH };
+			drawChip(globalChipGeo.human, 'Hu ' + globalState.human, false);
+		}
+		// Rasg + Dir Rasg: el unico par de la columna con un gate PROPIO, el acorde (strumOffset
+		// devuelve 0 con n < 2), asi que se atenuan en Arpegio. Dir Rasg ademas no hace nada con
+		// Rasg en 0. Atenuados, nunca ocultos: son justo los candidatos a "la movi y no paso nada".
+		if (gFits(2)) {
+			var rdcw = (g5w - 2) / 2;
+			globalChipGeo.rasg = { x: g5x, y: gRow(2), w: rdcw, h: gChipH };
+			globalChipGeo.dirrasg = { x: g5x + rdcw + 2, y: gRow(2), w: rdcw, h: gChipH };
+			drawChip(globalChipGeo.rasg, 'R' + globalState.rasg, false, !chordLive);
+			drawChip(globalChipGeo.dirrasg, DIR_RASG_ABBR[Math.round(globalState.dirRasg)] || '?', false,
+				!chordLive || Math.round(globalState.rasg) <= 0);
+		}
+		// Rat N / Rat A: su otra condicion en scheduleBurst() (`subDiv < 2`) tambien es la de la
+		// columna, asi que aca mandan ellas solas.
+		if (gFits(3)) {
+			var ndcw2 = (g5w - 2) / 2;
+			globalChipGeo.ratn = { x: g5x, y: gRow(3), w: ndcw2, h: gChipH };
+			globalChipGeo.rata = { x: g5x + ndcw2 + 2, y: gRow(3), w: ndcw2, h: gChipH };
+			drawChip(globalChipGeo.ratn, 'N' + globalState.ratN, false);
+			drawChip(globalChipGeo.rata, 'A' + globalState.ratA, false);
+		}
+		// Prob Rat y Caida necesitan que ALGUN grupo tenga ratchet: con Rat N y Rat A los dos en 1
+		// no hay rafaga sobre la cual aplicar ni probabilidad ni caida.
+		if (gFits(4)) {
+			var ratOn = Math.round(globalState.ratN) > 1 || Math.round(globalState.ratA) > 1;
+			var pdcw = (g5w - 2) / 2;
+			globalChipGeo.ratprob = { x: g5x, y: gRow(4), w: pdcw, h: gChipH };
+			globalChipGeo.ratcaida = { x: g5x + pdcw + 2, y: gRow(4), w: pdcw, h: gChipH };
+			drawChip(globalChipGeo.ratprob, 'P' + globalState.ratProb, false, !ratOn);
+			drawChip(globalChipGeo.ratcaida, 'C' + globalState.ratCaida, false, !ratOn);
+		}
+	}   // else: globalChipGeo.swing/human/rasg/dirrasg/ratn/rata/ratprob/ratcaida stay unset
 
 	for (var v = 0; v < nRows; v++) {
 		var y = headH + v * rowH;

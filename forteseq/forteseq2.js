@@ -1724,6 +1724,7 @@ function loadbang() {
 function setmode(m) {
 	mode = m ? 1 : 0;
 	noteIndex = 0;
+	outlet(4, ["gecho", "mode", mode]);
 }
 
 function setlock(l) {
@@ -2099,6 +2100,7 @@ function setswing(p) {
 	if (!isFinite(p) || p < 50) p = 50;
 	if (p > 75) p = 75;
 	swingPct = p;
+	outlet(4, ["gecho", "swing", swingPct]);
 }
 
 // Every other step is pushed late by a fraction of the gap between steps. The fraction is the
@@ -2119,6 +2121,7 @@ function sethumanize(p) {
 	if (!isFinite(p) || p < 0) p = 0;
 	if (p > 100) p = 100;
 	humanizePct = p;
+	outlet(4, ["gecho", "human", humanizePct]);
 }
 
 // Timing jitter, drawn per note so two voices on the same step do not move together -- that
@@ -2137,12 +2140,14 @@ function setstrum(n) {
 	if (!isFinite(n) || n < 0) n = 0;
 	if (n > SUB_MAX) n = SUB_MAX;
 	strumSub = n;
+	outlet(4, ["gecho", "rasg", strumSub]);
 }
 
 function setstrumdir(d) {
 	d = Math.round(d);
 	if (!isFinite(d) || d < 0 || d > 3) d = 0;
 	strumDir = d;
+	outlet(4, ["gecho", "dirrasg", strumDir]);
 }
 
 // Spreads the notes of one chord across consecutive sub-ticks instead of striking them together.
@@ -2164,6 +2169,9 @@ function setratchet(g, n) {
 	if (!isFinite(n) || n < 1) n = 1;
 	if (n > 4) n = 4;
 	ratchetN[i] = n;
+	// Setter con indice de grupo: un TOKEN POR INDICE, igual que g0silence/g1silence -- el idioma
+	// "un token, un valor" del canal gecho no sabe de argumentos extra.
+	outlet(4, ["gecho", i === GROUP_NORMAL ? "ratn" : "rata", n]);
 }
 
 function setratchetprob(p) {
@@ -2171,6 +2179,7 @@ function setratchetprob(p) {
 	if (!isFinite(p) || p < 0) p = 0;
 	if (p > 100) p = 100;
 	ratchetPct = p;
+	outlet(4, ["gecho", "ratprob", ratchetPct]);
 }
 
 function setratchetdecay(p) {
@@ -2178,6 +2187,7 @@ function setratchetdecay(p) {
 	if (!isFinite(p) || p < 0) p = 0;
 	if (p > 100) p = 100;
 	ratchetDecay = p;
+	outlet(4, ["gecho", "ratcaida", ratchetDecay]);
 }
 
 // A fixed shove per voice, which is what turns four voices playing the same rhythm into an
@@ -2248,6 +2258,20 @@ function setsub(n) {
 	// the old grid and would land at the wrong moment in the new one.
 	subPos = 0;
 	flushAllPending();
+	// El widget real (`fs2_sub_g` obj-706 en FORTESEQ2.amxd) es un live.menu cuyo INDICE (0-5) no es
+	// su valor: muestra 1/2/3/4/6/8 y una cadena de message boxes traduce a divisor antes del
+	// `prepend setsub`. El motor guarda el DIVISOR, asi que el eco tiene que convertir de vuelta.
+	// subDiv 5 y 7 son alcanzables por mensaje pero no existen en el menu: ahi no se ecoa nada en
+	// vez de mandar un indice inventado.
+	var subMi = subMenuIndex(subDiv);
+	if (subMi >= 0) outlet(4, ["gecho", "sub", subMi]);
+}
+
+// Los seis valores del enum de `fs2_sub_g`, en su orden de indice.
+var SUB_MENU = [1, 2, 3, 4, 6, 8];
+function subMenuIndex(n) {
+	for (var k = 0; k < SUB_MENU.length; k++) if (SUB_MENU[k] === n) return k;
+	return -1;
 }
 
 function schedule(offset, msg) {
@@ -2667,6 +2691,10 @@ function setharmrate(r) {
 	if (n > 64) n = 64;
 	harmRate = n;
 	harmCount = 0;   // a new rate counts from here, not from wherever the old one had got to
+	// El widget real es `fs2_rarm` obj-148 DENTRO de fs2pages.maxpat (live.numbox "Ritmo Arm",
+	// 0-64) -- no confundir con `fs2_rate2` obj-480 del patcher raiz ("Vel Arm", 5-260 ms, reloj
+	// libre, sin setter en el motor). Cablear al segundo no da error, simplemente no funciona.
+	outlet(4, ["gecho", "rarm", harmRate]);
 }
 
 function setrootseq(i) {
@@ -3464,6 +3492,9 @@ var qnCardShown = "";          // firma "cardMin,cardMax"; "" = forzar
 var qnMaskModeShown = -1;      // -1 forces the first querynext() to emit regardless of maskMode's own default (0)
 var qnMaskKShown = -1;
 var qnMaskFitShown = -1;
+var qnSubShown = -1;           // -1 forces the first querynext() to emit regardless of subDiv's own default (1)
+var qnGrooveShown = "";        // firma "swingPct,humanizePct,strumSub,strumDir"; "" = forzar
+var qnRatchetShown = "";       // firma "ratchetN[NORMAL],ratchetN[ACCENT],ratchetPct,ratchetDecay"; "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3607,6 +3638,27 @@ function querynext() {
 		if (maskFit !== qnMaskFitShown) {
 			qnMaskFitShown = maskFit;
 			outlet(3, ["gmaskfit", maskFit]);
+		}
+		// Sub (subDiv) -- el DIVISOR, no el indice del menu: es lo que el popup muestra y lo que
+		// setsub() recibe. Va suelto porque ademas de ser un valor propio es el GATE de toda la
+		// columna Groove (swing/human/ratchet mueren con subDiv < 2, ver swingOffset/humanizeOffset/
+		// scheduleBurst), asi que el popup lo necesita aunque el resto de la columna este oculto.
+		if (subDiv !== qnSubShown) {
+			qnSubShown = subDiv;
+			outlet(3, ["gsub", subDiv]);
+		}
+		// Groove y Ratchet -- dos mensajes agrupados en vez de siete sueltos, misma disciplina de
+		// firma que gornseries/gcard. Se separan en dos porque son dos familias con gates distintos:
+		// Rasg/Dir Rasg dependen de que haya ACORDE (strumOffset: n < 2 y chau), el resto de Sub.
+		var ggrooveKey = swingPct + "," + humanizePct + "," + strumSub + "," + strumDir;
+		if (ggrooveKey !== qnGrooveShown) {
+			qnGrooveShown = ggrooveKey;
+			outlet(3, ["ggroove", swingPct, humanizePct, strumSub, strumDir]);
+		}
+		var gratKey = ratchetN[GROUP_NORMAL] + "," + ratchetN[GROUP_ACCENT] + "," + ratchetPct + "," + ratchetDecay;
+		if (gratKey !== qnRatchetShown) {
+			qnRatchetShown = gratKey;
+			outlet(3, ["gratchet", ratchetN[GROUP_NORMAL], ratchetN[GROUP_ACCENT], ratchetPct, ratchetDecay]);
 		}
 	}
 

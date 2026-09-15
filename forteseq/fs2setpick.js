@@ -173,6 +173,21 @@ function groot() {}
 function gornament() {}
 function gflags() {}
 function gharm() {}
+function gorden() {}
+function grango() {}
+function gsilpre() {}
+function gsilence() {}
+function genlace() {}
+function gornquad() {}
+function gornstep() {}
+function gornseries() {}
+function gcard() {}
+function gmaskmode() {}
+function gmaskk() {}
+function gmaskfit() {}
+function gsub() {}
+function ggroove() {}
+function gratchet() {}
 
 // --- repintado coalescido ---------------------------------------------------------------
 // filtset llega ~64 veces en una misma pasada del scheduler; un Task a schedule(0) las junta
