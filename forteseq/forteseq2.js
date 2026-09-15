@@ -2035,6 +2035,7 @@ function setmodshape(k, s) {
 	modShape[i] = s;
 	modCell[i] = -1;   // a change of shape draws afresh instead of keeping the other shape's value
 	modRefresh();
+	outlet(4, ["gecho", "m" + k + "shape", s]);
 }
 
 function setmodcycle(k, n) {
@@ -2045,6 +2046,7 @@ function setmodcycle(k, n) {
 	if (n > 64) n = 64;
 	modCycle[i] = n;
 	modRefresh();
+	outlet(4, ["gecho", "m" + k + "cycle", n]);
 }
 
 function setmoddepth(k, p) {
@@ -2056,6 +2058,7 @@ function setmoddepth(k, p) {
 	if (p > 100) p = 100;
 	modDepth[i] = p;
 	modRefresh();
+	outlet(4, ["gecho", "m" + k + "depth", p]);
 }
 
 function setmodphase(k, p) {
@@ -2066,6 +2069,7 @@ function setmodphase(k, p) {
 	if (p > 100) p = 100;
 	modPhase[i] = p;
 	modRefresh();
+	outlet(4, ["gecho", "m" + k + "phase", p]);
 }
 
 function setmoddest(k, d) {
@@ -2075,6 +2079,7 @@ function setmoddest(k, d) {
 	if (!isFinite(d) || d < 0 || d >= MOD_SPAN.length) d = 0;
 	modDest[i] = d;
 	modRefresh();
+	outlet(4, ["gecho", "m" + k + "dest", d]);
 }
 
 // The readers. Each is a guarded lookup, so an unmodulated device pays one comparison per read
@@ -3525,6 +3530,7 @@ var qnRegistroShown = "";      // firma "rootSeqIdx,masterOctave,drumOn,drumBase
 var qnRecorridoShown = "";     // firma "manualRot,rotShape,coprimeSkip"; "" = forzar
 var qnVecShown = ["", "", "", "", "", ""];   // firma "min,max" por IC (1..6); "" = forzar
 var qnRandMaskShown = -1;      // -1 forces the first querynext() to emit regardless of maskRandomPct's own default (50)
+var qnModShown = ["", "", "", ""];   // firma "shape,cycle,depth,phase,dest" por modulador (1..4); "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3775,6 +3781,18 @@ function querynext() {
 		if (grecKey !== qnRecorridoShown) {
 			qnRecorridoShown = grecKey;
 			outlet(3, ["grecorrido", manualRot, rotShape, coprimeSkip]);
+		}
+		// Modulacion (Ola 6, columna 8): un mensaje por modulador -- coincide con como se dibuja
+		// (una fila de la matriz por modulador), asi que un arrastre en un modulador nunca redibuja
+		// los otros tres. modActive/modSum no viajan: los moduladores NUNCA escriben el parametro,
+		// solo suman en tiempo de lectura (ver modStep), asi que el popup no tiene que reflejar la
+		// modulacion en curso, solo los cinco valores que la definen.
+		for (var mk = 0; mk < MOD_N; mk++) {
+			var gmodKey = modShape[mk] + "," + modCycle[mk] + "," + modDepth[mk] + "," + modPhase[mk] + "," + modDest[mk];
+			if (gmodKey !== qnModShown[mk]) {
+				qnModShown[mk] = gmodKey;
+				outlet(3, ["gmod" + (mk + 1), modShape[mk], modCycle[mk], modDepth[mk], modPhase[mk], modDest[mk]]);
+			}
 		}
 	}
 

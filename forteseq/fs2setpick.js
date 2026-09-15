@@ -205,6 +205,10 @@ function gvec4() {}
 function gvec5() {}
 function gvec6() {}
 function grandmask() {}
+function gmod1() {}
+function gmod2() {}
+function gmod3() {}
+function gmod4() {}
 
 // --- repintado coalescido ---------------------------------------------------------------
 // filtset llega ~64 veces en una misma pasada del scheduler; un Task a schedule(0) las junta

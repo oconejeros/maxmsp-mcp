@@ -63,9 +63,24 @@
 //     `alarm` drawChip() color instead of a dim, on both the Prog Favoritos chip and Tension itself.
 //     Curva additionally dims whenever Tension is 0 regardless of Prog Favoritos (tensionAt() is
 //     its only reader); Modelo never dims (settensmodel() always touches the filter/Orden).
-//   Ornamento, Filtro, Groove, Acentos and Camino pack into the sidebar's conditional slots left to
-//     right with no gap between them, in that FIXED priority order (condCols/condSlotX in paint())
-//     -- each open family claims the first free slot -- so any combination can be showing at once.
+//   col 8 -- Modulacion (Ola 6), also always drawn (`modOpen` constant true, same reasoning as
+//     Acentos/Camino -- four modulators always exist, there is no "off" state for the family as a
+//     whole). Breaks the chip-per-row idiom on purpose (the plan calls for a matrix, not 20 loose
+//     chips): a 4-row x 5-field grid, one row per modulator (M1-M4), fields left to right Forma
+//     (dropdown)/Ciclo/Prof/Fase (drag-scrub)/Dest (dropdown) -- same order setmodshape/setmodcycle/
+//     setmoddepth/setmodphase/setmoddest take their arguments in. Needs roughly DOUBLE a normal
+//     column's width (`MOD_COL_W`, see `condColW()`) -- condSlotX()/GLOBAL_W generalized to a
+//     per-column width instead of the uniform G_COL_W every other conditional column uses. A whole
+//     row dims when it plainly does nothing (`Dest === "-"` or `Prof === 0`, modStep()'s own early
+//     continue); two narrower traps dim on top of that: Dest=Grado only reaches degreeAt() in
+//     Arpegio (Acordes never calls it), and Dest=Swing/Rasgueo/Ratchet need Sub >= 2 for the same
+//     reason col 5 (Groove) does. Modulators never WRITE their destination parameter -- they sum on
+//     top of it at read time (modStep()/modSum) -- so this column mirrors the five knobs only, never
+//     the live modulated value; the panel's own dial keeps showing exactly what the user set.
+//   Ornamento, Filtro, Groove, Acentos, Camino and Modulacion pack into the sidebar's conditional
+//     slots left to right with no gap between them, in that FIXED priority order (condCols/
+//     condSlotX in paint()) -- each open family claims the first free slot -- so any combination can
+//     be showing at once.
 //   Run is the one field with no gecho/querynext mirror: obj-18 ("Run") bypasses forteseq2.js
 //     entirely, gating the metro straight at the Max-patching level, so it has its own independent
 //     read (hrun, tapped off obj-18's own outlet via send/receive FS2_RUN_STATE) and write (a plain
@@ -281,6 +296,19 @@ var DIR_RASG_ABBR = ['Arr', 'Aba', 'Azar', 'Alt'];   // fs2_dirrasg's enum, abbr
 // real widget's own parameter_enum (fs2_rseq2) so the popup never disagrees with the panel.
 var ROOTSEQ_NAMES = ['Raiz fija', 'Cuartas', 'Quintas', '3as m', '3as M', 'Tonos', 'Cromatica',
 	'Tritono', 'I IV V', 'Azar'];
+// Eighth sidebar column (Modulacion, Ola 6). Both enums copied straight from the real panel widgets
+// (fs2pages.maxpat's md_m<k>_forma/md_m<k>_dest, same parameter_enum on all four modulators) -- same
+// "index IS value" idiom as CURVA_NAMES/TENSMODEL_NAMES. ABBR versions are for the matrix's ~30px
+// cells (MOD_COL_W split 5 ways); the dropdown list itself uses the full names, same split as
+// PATRON_ABBR/READ_NAMES above.
+var MOD_SHAPE_NAMES = ['Seno', 'Triang', 'Diente', 'Cuadr', 'Azar', 'Paseo'];
+var MOD_SHAPE_ABBR = ['Sen', 'Tri', 'Die', 'Cua', 'Aza', 'Pas'];
+var MOD_DEST_NAMES = ['-', 'Raiz', 'Octava', 'Vel', 'Largo', 'Silencio', 'Swing', 'Rasgueo',
+	'Ratchet', 'Grado', 'Human', 'Caida'];
+var MOD_DEST_ABBR = ['-', 'Raz', '8va', 'Vel', 'Lrg', 'Sil', 'Swg', 'Rsg', 'Rat', 'Grd', 'Hum', 'Cai'];
+// Same indices as forteseq2.js's D_SWING/D_STRUM/D_RATCHET/D_DEG -- for the two narrower show/hide
+// traps on top of the "Dest=- or Prof=0" whole-row dim (see the col 8 header comment above).
+var MOD_DEST_SWING = 6, MOD_DEST_STRUM = 7, MOD_DEST_RATCHET = 8, MOD_DEST_GRADO = 9;
 
 var voices = 4;
 var colorOn = 1;
@@ -368,7 +396,11 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	rootSeq: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2,
 	vecMin1: 0, vecMax1: 12, vecMin2: 0, vecMax2: 12, vecMin3: 0, vecMax3: 12,
 	vecMin4: 0, vecMax4: 12, vecMin5: 0, vecMax5: 12, vecMin6: 0, vecMax6: 12,
-	randMaskPct: 50 };
+	randMaskPct: 50,
+	mod1shape: 0, mod1cycle: 8, mod1depth: 0, mod1phase: 0, mod1dest: 0,
+	mod2shape: 0, mod2cycle: 8, mod2depth: 0, mod2phase: 0, mod2dest: 0,
+	mod3shape: 0, mod3cycle: 8, mod3depth: 0, mod3phase: 0, mod3dest: 0,
+	mod4shape: 0, mod4cycle: 8, mod4depth: 0, mod4phase: 0, mod4dest: 0 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -513,6 +545,34 @@ function grecorrido(rot, rx, sk) {
 	globalState.rotacion = Math.round(rot);
 	globalState.rotarx = Math.round(rx) ? 1 : 0;
 	globalState.salto = Math.round(sk);
+	mgraphics.redraw();
+}
+
+// Modulacion (Ola 6, col 8) -- one message per modulator, matching one matrix row per message
+// (see querynext()'s own comment): a drag on modulator 2 never touches globalState.mod1*/mod3*/
+// mod4*, so it never forces the other three rows to redraw either.
+function gmod1(s, c, d, p, de) {
+	globalState.mod1shape = Math.round(s); globalState.mod1cycle = Math.round(c);
+	globalState.mod1depth = Math.round(d); globalState.mod1phase = Math.round(p);
+	globalState.mod1dest = Math.round(de);
+	mgraphics.redraw();
+}
+function gmod2(s, c, d, p, de) {
+	globalState.mod2shape = Math.round(s); globalState.mod2cycle = Math.round(c);
+	globalState.mod2depth = Math.round(d); globalState.mod2phase = Math.round(p);
+	globalState.mod2dest = Math.round(de);
+	mgraphics.redraw();
+}
+function gmod3(s, c, d, p, de) {
+	globalState.mod3shape = Math.round(s); globalState.mod3cycle = Math.round(c);
+	globalState.mod3depth = Math.round(d); globalState.mod3phase = Math.round(p);
+	globalState.mod3dest = Math.round(de);
+	mgraphics.redraw();
+}
+function gmod4(s, c, d, p, de) {
+	globalState.mod4shape = Math.round(s); globalState.mod4cycle = Math.round(c);
+	globalState.mod4depth = Math.round(d); globalState.mod4phase = Math.round(p);
+	globalState.mod4dest = Math.round(de);
 	mgraphics.redraw();
 }
 
@@ -840,7 +900,35 @@ var DRAG_SPECS = {
 	grotacion: { min: 0, max: 11, field: 'rotacion', pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setrotation', nv]); } },
 	gsalto: { min: 1, max: 11, field: 'salto', pxPerUnit: 10, global: true,
-		send: function (v, nv) { outlet(0, ['setcoprime', nv]); } }
+		send: function (v, nv) { outlet(0, ['setcoprime', nv]); } },
+	// Col 8 (Modulacion, Ola 6), same global-sidebar idiom. Forma/Dest are dropdowns (openMenu), not
+	// drag-scrubs -- see onclick()'s v===-1 branch and paint()'s Modulacion block. setmod* all take
+	// the modulator index k=1..4 as their first argument, same "index, then value" shape as
+	// setvecmin/setvecmax/setratchet above.
+	gmod1cycle: { min: 1, max: 64, field: 'mod1cycle', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setmodcycle', 1, nv]); } },
+	gmod1depth: { min: -100, max: 100, field: 'mod1depth', pxPerUnit: 2, global: true,
+		send: function (v, nv) { outlet(0, ['setmoddepth', 1, nv]); } },
+	gmod1phase: { min: 0, max: 100, field: 'mod1phase', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setmodphase', 1, nv]); } },
+	gmod2cycle: { min: 1, max: 64, field: 'mod2cycle', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setmodcycle', 2, nv]); } },
+	gmod2depth: { min: -100, max: 100, field: 'mod2depth', pxPerUnit: 2, global: true,
+		send: function (v, nv) { outlet(0, ['setmoddepth', 2, nv]); } },
+	gmod2phase: { min: 0, max: 100, field: 'mod2phase', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setmodphase', 2, nv]); } },
+	gmod3cycle: { min: 1, max: 64, field: 'mod3cycle', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setmodcycle', 3, nv]); } },
+	gmod3depth: { min: -100, max: 100, field: 'mod3depth', pxPerUnit: 2, global: true,
+		send: function (v, nv) { outlet(0, ['setmoddepth', 3, nv]); } },
+	gmod3phase: { min: 0, max: 100, field: 'mod3phase', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setmodphase', 3, nv]); } },
+	gmod4cycle: { min: 1, max: 64, field: 'mod4cycle', pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setmodcycle', 4, nv]); } },
+	gmod4depth: { min: -100, max: 100, field: 'mod4depth', pxPerUnit: 2, global: true,
+		send: function (v, nv) { outlet(0, ['setmoddepth', 4, nv]); } },
+	gmod4phase: { min: 0, max: 100, field: 'mod4phase', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setmodphase', 4, nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -922,6 +1010,30 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'grootseq') {
 						globalState.rootSeq = mi;
 						outlet(0, ['setrootseq', mi]);
+					} else if (openMenu.kind === 'gmod1shape') {
+						globalState.mod1shape = mi;
+						outlet(0, ['setmodshape', 1, mi]);
+					} else if (openMenu.kind === 'gmod1dest') {
+						globalState.mod1dest = mi;
+						outlet(0, ['setmoddest', 1, mi]);
+					} else if (openMenu.kind === 'gmod2shape') {
+						globalState.mod2shape = mi;
+						outlet(0, ['setmodshape', 2, mi]);
+					} else if (openMenu.kind === 'gmod2dest') {
+						globalState.mod2dest = mi;
+						outlet(0, ['setmoddest', 2, mi]);
+					} else if (openMenu.kind === 'gmod3shape') {
+						globalState.mod3shape = mi;
+						outlet(0, ['setmodshape', 3, mi]);
+					} else if (openMenu.kind === 'gmod3dest') {
+						globalState.mod3dest = mi;
+						outlet(0, ['setmoddest', 3, mi]);
+					} else if (openMenu.kind === 'gmod4shape') {
+						globalState.mod4shape = mi;
+						outlet(0, ['setmodshape', 4, mi]);
+					} else if (openMenu.kind === 'gmod4dest') {
+						globalState.mod4dest = mi;
+						outlet(0, ['setmoddest', 4, mi]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -1045,6 +1157,29 @@ function onclick(x, y, but) {
 	if (globalChipGeo.favonly && ptIn(globalChipGeo.favonly, x, y)) { globalState.favonly = globalState.favonly ? 0 : 1; outlet(0, ['setfavonly', globalState.favonly]); mgraphics.redraw(); return; }
 	if (globalChipGeo.fav && ptIn(globalChipGeo.fav, x, y)) { globalState.fav = globalState.fav ? 0 : 1; outlet(0, ['setfav', globalState.fav]); mgraphics.redraw(); return; }
 	if (globalChipGeo.clearfavs && ptIn(globalChipGeo.clearfavs, x, y)) { outlet(0, ['clearfavs']); return; }
+	// Col 8 (Modulacion, Ola 6) -- Forma/Dest open a dropdown (openMenu, same as Curva/Modelo above);
+	// Ciclo/Prof/Fase arm a drag-scrub. Always drawn (modOpen is a constant true, see paint()), so no
+	// `globalChipGeo.mod1shape &&` guard is needed the way Euclid's Pulsos/Giro need one.
+	if (ptIn(globalChipGeo.mod1shape, x, y)) { openMenu = { v: -1, kind: 'gmod1shape' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod1cycle, x, y)) { dragBox = { v: -1, kind: 'gmod1cycle', startY: y, startVal: globalState.mod1cycle }; return; }
+	if (ptIn(globalChipGeo.mod1depth, x, y)) { dragBox = { v: -1, kind: 'gmod1depth', startY: y, startVal: globalState.mod1depth }; return; }
+	if (ptIn(globalChipGeo.mod1phase, x, y)) { dragBox = { v: -1, kind: 'gmod1phase', startY: y, startVal: globalState.mod1phase }; return; }
+	if (ptIn(globalChipGeo.mod1dest, x, y)) { openMenu = { v: -1, kind: 'gmod1dest' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod2shape, x, y)) { openMenu = { v: -1, kind: 'gmod2shape' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod2cycle, x, y)) { dragBox = { v: -1, kind: 'gmod2cycle', startY: y, startVal: globalState.mod2cycle }; return; }
+	if (ptIn(globalChipGeo.mod2depth, x, y)) { dragBox = { v: -1, kind: 'gmod2depth', startY: y, startVal: globalState.mod2depth }; return; }
+	if (ptIn(globalChipGeo.mod2phase, x, y)) { dragBox = { v: -1, kind: 'gmod2phase', startY: y, startVal: globalState.mod2phase }; return; }
+	if (ptIn(globalChipGeo.mod2dest, x, y)) { openMenu = { v: -1, kind: 'gmod2dest' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod3shape, x, y)) { openMenu = { v: -1, kind: 'gmod3shape' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod3cycle, x, y)) { dragBox = { v: -1, kind: 'gmod3cycle', startY: y, startVal: globalState.mod3cycle }; return; }
+	if (ptIn(globalChipGeo.mod3depth, x, y)) { dragBox = { v: -1, kind: 'gmod3depth', startY: y, startVal: globalState.mod3depth }; return; }
+	if (ptIn(globalChipGeo.mod3phase, x, y)) { dragBox = { v: -1, kind: 'gmod3phase', startY: y, startVal: globalState.mod3phase }; return; }
+	if (ptIn(globalChipGeo.mod3dest, x, y)) { openMenu = { v: -1, kind: 'gmod3dest' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod4shape, x, y)) { openMenu = { v: -1, kind: 'gmod4shape' }; mgraphics.redraw(); return; }
+	if (ptIn(globalChipGeo.mod4cycle, x, y)) { dragBox = { v: -1, kind: 'gmod4cycle', startY: y, startVal: globalState.mod4cycle }; return; }
+	if (ptIn(globalChipGeo.mod4depth, x, y)) { dragBox = { v: -1, kind: 'gmod4depth', startY: y, startVal: globalState.mod4depth }; return; }
+	if (ptIn(globalChipGeo.mod4phase, x, y)) { dragBox = { v: -1, kind: 'gmod4phase', startY: y, startVal: globalState.mod4phase }; return; }
+	if (ptIn(globalChipGeo.mod4dest, x, y)) { openMenu = { v: -1, kind: 'gmod4dest' }; mgraphics.redraw(); return; }
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -1241,17 +1376,28 @@ function paint() {
 	// separadas porque dimean cosas distintas -- ver el bloque Camino y el chip Enlace de col 1.
 	var favSeqActive = !!globalState.progfav && globalState.favSeqLen > 0;
 	var favSeqTrap = !!globalState.progfav && globalState.favSeqLen === 0;
-	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> Camino): los
-	// slots condicionales se empaquetan sin hueco, cada uno toma el primero libre en este orden. Con
-	// mas de dos familias esto ya no se puede escribir a mano, asi que va como lista.
+	// Modulacion (col 8, Ola 6): also no gate of its own -- four modulators always exist, same
+	// reasoning as Acentos/Camino, last in slot priority.
+	var modOpen = true;
+	// Orden de prioridad de slot, FIJO (Ornamento -> Filtro -> Groove -> Acentos -> Camino ->
+	// Modulacion): los slots condicionales se empaquetan sin hueco, cada uno toma el primero libre en
+	// este orden. Con mas de dos familias esto ya no se puede escribir a mano, asi que va como lista.
 	var condCols = [];
 	if (ornOpen) condCols.push('orn');
 	if (filtOpen) condCols.push('filt');
 	if (grooveOpen) condCols.push('groove');
 	if (accOpen) condCols.push('acc');
 	if (caminoOpen) condCols.push('camino');
-	var extraCols = condCols.length;
-	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraCols * (G_GAP + G_COL_W);
+	if (modOpen) condCols.push('mod');
+	// Every conditional column is one G_COL_W wide except Modulacion: a 4x5 matrix does not fit in
+	// 86px, so it claims roughly two slots' worth of room (MOD_COL_W) instead. condSlotX() below
+	// walks condCols summing each one's own width rather than assuming a uniform G_COL_W, which is
+	// the only change from the plain "extraCols * (G_GAP + G_COL_W)" formula every earlier column used.
+	var MOD_COL_W = G_COL_W * 2 + G_GAP;
+	function condColW(name) { return name === 'mod' ? MOD_COL_W : G_COL_W; }
+	var extraW = 0;
+	for (var _cci = 0; _cci < condCols.length; _cci++) extraW += G_GAP + condColW(condCols[_cci]);
+	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraW;
 	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
 	// loop de filas. Las cuatro son de FILAS FIJAS (sin contador dinamico) para que nada dentro de una
 	// columna se corra por lo que pase en otra: col 1 = Ind/Flt/Lck/Dir/Patron/Enlace; col 2 = Set/
@@ -1306,7 +1452,11 @@ function paint() {
 	var g2x = g1x + g1w + G_GAP, g2w = G_COL_W;
 	var slot3x = g2x + g2w + G_GAP;   // where the first conditional slot starts
 	function condSlotX(name) {        // -1 when that family is closed -- its chips then never get a geo
-		for (var ck = 0; ck < condCols.length; ck++) if (condCols[ck] === name) return slot3x + ck * (G_GAP + G_COL_W);
+		var x = slot3x;
+		for (var ck = 0; ck < condCols.length; ck++) {
+			if (condCols[ck] === name) return x;
+			x += G_GAP + condColW(condCols[ck]);
+		}
 		return -1;
 	}
 	var g3x = condSlotX('orn'), g3w = G_COL_W;
@@ -1314,6 +1464,7 @@ function paint() {
 	var g5x = condSlotX('groove'), g5w = G_COL_W;
 	var g6x = condSlotX('acc'), g6w = G_COL_W;
 	var g7x = condSlotX('camino'), g7w = G_COL_W;
+	var g8x = condSlotX('mod'), g8w = MOD_COL_W;
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
@@ -1342,6 +1493,10 @@ function paint() {
 	if (caminoOpen) {
 		mgraphics.move_to(g7x, headH - 5);
 		mgraphics.show_text('Camino');
+	}
+	if (modOpen) {
+		mgraphics.move_to(g8x, headH - 5);
+		mgraphics.show_text('Modulacion');
 	}
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
@@ -1760,6 +1915,71 @@ function paint() {
 		globalChipGeo.clearfavs = { x: g7x, y: gRow(5), w: g7w, h: gChipH };
 		// Accion, no estado -- nunca "on" (rule 8), pero se apaga sola si no hay nada que limpiar.
 		drawChip(globalChipGeo.clearfavs, 'Lim favs', false, globalState.favSeqLen === 0);
+	}
+
+	// Column 8 -- Modulacion (Ola 6), FIXED rows 0-3, one row per modulator -- the matrix the plan
+	// asks for instead of 20 loose chips (see the file-header comment for the full rationale).
+	// ROWTAG_W reserves a sliver on the left for the "M<k>" row label (plain text, not a clickable
+	// chip); the rest splits into 5 narrow cells left to right -- Forma (dropdown) / Ciclo / Prof /
+	// Fase (drag-scrub) / Dest (dropdown), same argument order setmodshape/setmodcycle/setmoddepth/
+	// setmodphase/setmoddest take. Cells are prefixed the same way every other narrow numeric chip in
+	// this sidebar already is ("n"+cardMin, "k"+maskK, "i1n"+val) instead of a separate field-header
+	// row, which would not fit above only 4 rows.
+	if (modOpen) {
+		var ROWTAG_W = 12;
+		var mCellW = (g8w - ROWTAG_W - 4) / 5;   // 4 = the four 1px gaps between 5 cells
+		var MOD_ROWS = [
+			['mod1shape', 'mod1cycle', 'mod1depth', 'mod1phase', 'mod1dest', 1],
+			['mod2shape', 'mod2cycle', 'mod2depth', 'mod2phase', 'mod2dest', 2],
+			['mod3shape', 'mod3cycle', 'mod3depth', 'mod3phase', 'mod3dest', 3],
+			['mod4shape', 'mod4cycle', 'mod4depth', 'mod4phase', 'mod4dest', 4]
+		];
+		for (var mr = 0; mr < MOD_ROWS.length; mr++) {
+			if (!gFits(mr)) continue;
+			var mRow = MOD_ROWS[mr];
+			var fShape = mRow[0], fCycle = mRow[1], fDepth = mRow[2], fPhase = mRow[3], fDest = mRow[4], mk = mRow[5];
+			var shapeV = globalState[fShape], cycleV = globalState[fCycle], depthV = globalState[fDepth],
+				phaseV = globalState[fPhase], destV = globalState[fDest];
+			var my = gRow(mr);
+			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+			mgraphics.set_font_size(8);
+			mgraphics.move_to(g8x, my + gChipH - 5);
+			mgraphics.show_text('M' + mk);
+
+			// Toda la fila se apaga cuando plainly no hace nada: sin destino, o Prof 0 (modStep()'s
+			// own `if (!dest || !modDepth[k]) continue`). Dos trampas mas angostas encima de esa:
+			// Grado solo se lee en Arpegio (degreeAt() nunca corre en Acordes), y Swing/Rasgueo/
+			// Ratchet necesitan Sub >= 2, la misma condicion que apaga la columna Groove (col 5).
+			var rowDead = destV === 0 || depthV === 0;
+			var destDegMoot = destV === MOD_DEST_GRADO && Math.round(globalState.mode) === MODE_CHORDS;
+			var destRitmoMoot = (destV === MOD_DEST_SWING || destV === MOD_DEST_STRUM || destV === MOD_DEST_RATCHET) &&
+				Math.round(globalState.sub) < 2;
+			var mDim = (rowDead || destDegMoot || destRitmoMoot) ? 0.4 : 1.0;
+
+			var cx = g8x + ROWTAG_W;
+			globalChipGeo[fShape] = { x: cx, y: my, w: mCellW, h: gChipH };
+			var mShapeOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'g' + fShape;
+			drawChip(globalChipGeo[fShape], MOD_SHAPE_ABBR[Math.round(shapeV)] || '?', mShapeOpen, false, mDim);
+			if (mShapeOpen) pendingMenu = { v: -1, kind: 'g' + fShape, anchor: globalChipGeo[fShape], items: MOD_SHAPE_NAMES, cur: Math.round(shapeV) };
+			cx += mCellW + 1;
+
+			globalChipGeo[fCycle] = { x: cx, y: my, w: mCellW, h: gChipH };
+			drawChip(globalChipGeo[fCycle], 'C' + cycleV, false, false, mDim);
+			cx += mCellW + 1;
+
+			globalChipGeo[fDepth] = { x: cx, y: my, w: mCellW, h: gChipH };
+			drawChip(globalChipGeo[fDepth], 'P' + depthV, false, false, mDim);
+			cx += mCellW + 1;
+
+			globalChipGeo[fPhase] = { x: cx, y: my, w: mCellW, h: gChipH };
+			drawChip(globalChipGeo[fPhase], 'F' + phaseV, false, false, mDim);
+			cx += mCellW + 1;
+
+			globalChipGeo[fDest] = { x: cx, y: my, w: mCellW, h: gChipH };
+			var mDestOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'g' + fDest;
+			drawChip(globalChipGeo[fDest], MOD_DEST_ABBR[Math.round(destV)] || '?', mDestOpen, false, mDim);
+			if (mDestOpen) pendingMenu = { v: -1, kind: 'g' + fDest, anchor: globalChipGeo[fDest], items: MOD_DEST_NAMES, cur: Math.round(destV) };
+		}
 	}
 
 	for (var v = 0; v < nRows; v++) {

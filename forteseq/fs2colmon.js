@@ -137,6 +137,10 @@ function gvec4() {}
 function gvec5() {}
 function gvec6() {}
 function grandmask() {}
+function gmod1() {}
+function gmod2() {}
+function gmod3() {}
+function gmod4() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
