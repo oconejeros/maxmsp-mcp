@@ -196,6 +196,8 @@ function gfig() {}
 function gaccentgrid() {}
 function gtension() {}
 function gfavstate() {}
+function gregistro() {}
+function grecorrido() {}
 
 // --- repintado coalescido ---------------------------------------------------------------
 // filtset llega ~64 veces en una misma pasada del scheduler; un Task a schedule(0) las junta

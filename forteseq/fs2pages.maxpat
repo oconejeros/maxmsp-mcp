@@ -10361,6 +10361,144 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-808",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_recorrido_echo_rx",
+     "patching_rect": [
+      1080.0,
+      4560.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-809",
+     "maxclass": "newobj",
+     "numinlets": 6,
+     "numoutlets": 6,
+     "outlettype": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "varname": "fs2_recorrido_echo_route",
+     "patching_rect": [
+      1080.0,
+      4590.0,
+      300.0,
+      20.0
+     ],
+     "text": "route drum pad rotacion rotarx salto"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-810",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_drum_setrx",
+     "patching_rect": [
+      1080.0,
+      4620.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-811",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_pad_setrx",
+     "patching_rect": [
+      1230.0,
+      4620.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-812",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rotacion_setrx",
+     "patching_rect": [
+      1380.0,
+      4620.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-813",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rotarx_setrx",
+     "patching_rect": [
+      1530.0,
+      4620.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-814",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_salto_setrx",
+     "patching_rect": [
+      1680.0,
+      4620.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -16342,6 +16480,138 @@
      ],
      "destination": [
       "obj-391",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-808",
+      0
+     ],
+     "destination": [
+      "obj-809",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-809",
+      0
+     ],
+     "destination": [
+      "obj-810",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-810",
+      0
+     ],
+     "destination": [
+      "obj-144",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-809",
+      1
+     ],
+     "destination": [
+      "obj-811",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-811",
+      0
+     ],
+     "destination": [
+      "obj-146",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-809",
+      2
+     ],
+     "destination": [
+      "obj-812",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-812",
+      0
+     ],
+     "destination": [
+      "obj-403",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-809",
+      3
+     ],
+     "destination": [
+      "obj-813",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-813",
+      0
+     ],
+     "destination": [
+      "obj-406",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-809",
+      4
+     ],
+     "destination": [
+      "obj-814",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-814",
+      0
+     ],
+     "destination": [
+      "obj-400",
       0
      ]
     }

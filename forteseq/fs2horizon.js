@@ -4,10 +4,18 @@
 // sits to the left of everything, always visible, in up to SEVEN columns, each with FIXED row
 // indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
 // happening in another:
-//   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub (Run first -- the transport; Dir above
-//     Patron on request; Enlace/linkMin -- the common-tone constraint on the next set -- appended
-//     after those; Modo Toque and Sub last because they are the two GATES of col 5, and a
-//     conditional column cannot hold the control that decides whether it exists).
+//   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub/Sec Raiz/Oct Maestra+Drum/Pad/
+//     Rotacion/Rotar x Cambio/Salto Coprimo (Run first -- the transport; Dir above Patron on
+//     request; Enlace/linkMin -- the common-tone constraint on the next set -- appended after
+//     those; Modo Toque and Sub next because they are the two GATES of col 5, and a conditional
+//     column cannot hold the control that decides whether it exists). Rows 9-13 (Ola 4, Registro y
+//     recorrido) went here rather than their own column -- they are single values, not a family
+//     with its own on/off state. Oct Maestra+Drum share a row (Drum is the most aggressive gate in
+//     the device: on, it kills Oct Maestra, the per-voice octave AND Rango in col 2 -- dimmed both
+//     places); Pad is HIDDEN (not dimmed) unless Drum is on; Rotacion has no per-voice gate --
+//     chordFor() reads it too, not just the arpeggio walk; Rotar x Cambio dims in Acordes
+//     (rotShape only gates the auto-advance of `rotation`, which the chord branch never touches);
+//     Salto Coprimo is HIDDEN unless Patron===Coprimo, last row, nothing below it to push.
 //   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc (the last row -- groupSilence
 //     -- is what a Preset Silencio pick on the row above only OVERWRITES; worth its own row).
 //   col 3 -- the Ornamento cluster (Tipo/Notas+Base/BaseModo), drawn ONLY while Patron===Ornamento
@@ -96,6 +104,8 @@
 //   gornseries <ornSeriesStart> <ornSeriesStep> <ornSeriesPeak>
 //   gsilence <groupSilence[NORMAL]> <groupSilence[ACCENT]>  genlace <linkMin>
 //   gcard <cardMin> <cardMax>  gmaskmode <maskMode>  gmaskk <maskK>  gmaskfit <maskFit>
+//   gregistro <rootSeqIdx> <masterOctave> <drumOn> <drumBase>  (Ola 4, col 1 rows 9-11)
+//   grecorrido <manualRot> <rotShape> <coprimeSkip>  (Ola 4, col 1 rows 12-14)
 //            -- the rest of globalState: none of these have a per-voice override, so one debounced
 //            emit each covers every row equally (see querynext() in forteseq2.js). hrun is the one
 //            exception -- NOT sent by forteseq2.js/querynext at all, see the sidebar note above.
@@ -216,6 +226,7 @@ var READ_NAMES = ['Recto', 'Súper', 'SúperMín', 'Modos', 'Coprimo', 'Zigzag',
 var DIR_NAMES = ['adelante', 'atrás', 'alterna'];
 var ORN_TYPE_NAMES = ['Interp', 'Infra', 'Ultra', 'Infra-Inter', 'Infra-Ultra', 'Inf-Int-Ult'];
 var READ_ORNAMENT = 7;   // same value as forteseq2.js's READ_ORNAMENT -- shows the OrnTipo chip
+var READ_COPRIMO = 4;    // same value as forteseq2.js's READ_COPRIMO -- gates the Salto row (col 1)
 // Abbreviations for the narrow Patron/Dir chips (dcw is only ~43px) -- the full READ_NAMES/
 // DIR_NAMES strings are used everywhere else (the label block, OrnTipo's wider chip).
 var PATRON_ABBR = ['Recto', 'Súper', 'SMin', 'Modos', 'Coprim', 'Zigzag', 'Urna', 'Ornam'];
@@ -258,6 +269,10 @@ function subIndexOf(n) {
 	return 0;
 }
 var DIR_RASG_ABBR = ['Arr', 'Aba', 'Azar', 'Alt'];   // fs2_dirrasg's enum, abbreviated for a ~41px chip
+// Ola 4 additions to col 1 (Registro/Recorrido, rows 9-13). ROOTSEQ_NAMES copied straight from the
+// real widget's own parameter_enum (fs2_rseq2) so the popup never disagrees with the panel.
+var ROOTSEQ_NAMES = ['Raiz fija', 'Cuartas', 'Quintas', '3as m', '3as M', 'Tonos', 'Cromatica',
+	'Tritono', 'I IV V', 'Azar'];
 
 var voices = 4;
 var colorOn = 1;
@@ -341,7 +356,8 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	ratN: 1, ratA: 1, ratProb: 100, ratCaida: 0,
 	accCiclo: 4, accTie: 0, euclidOn: 0, euclidK: 4, euclidRot: 0,
 	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4,
-	tension: 0, curva: 0, tensmodel: 0, progfav: 0, favonly: 0, favSeqLen: 0, fav: 0 };
+	tension: 0, curva: 0, tensmodel: 0, progfav: 0, favonly: 0, favSeqLen: 0, fav: 0,
+	rootSeq: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -459,6 +475,23 @@ function gfavstate(pf, fo, len, fv) {
 	globalState.favonly = Math.round(fo) ? 1 : 0;
 	globalState.favSeqLen = Math.round(len);
 	globalState.fav = Math.round(fv) ? 1 : 0;
+	mgraphics.redraw();
+}
+
+// Registro y recorrido (Ola 4, col 1 filas 9-13) -- dos mensajes, misma disciplina que
+// ggroove/gratchet/gtension. "registro" es exactamente lo que Drum apaga de un saque (Sec Raiz,
+// Oct Maestra, Drum, Pad); "recorrido" son las tres formas de caminar el set activo.
+function gregistro(rs, om, dr, pd) {
+	globalState.rootSeq = Math.round(rs);
+	globalState.octMaestra = Math.round(om);
+	globalState.drum = Math.round(dr) ? 1 : 0;
+	globalState.pad = Math.round(pd);
+	mgraphics.redraw();
+}
+function grecorrido(rot, rx, sk) {
+	globalState.rotacion = Math.round(rot);
+	globalState.rotarx = Math.round(rx) ? 1 : 0;
+	globalState.salto = Math.round(sk);
 	mgraphics.redraw();
 }
 
@@ -745,7 +778,19 @@ var DRAG_SPECS = {
 	// Col 7 (Camino armonico), same global-sidebar idiom. Curva/Modelo are dropdowns (openMenu), not
 	// drag-scrubs -- see onclick()'s v===-1 branch and paint()'s Camino block.
 	gtension: { min: 0, max: 16, field: 'tension', pxPerUnit: 10, global: true,
-		send: function (v, nv) { outlet(0, ['settension', nv]); } }
+		send: function (v, nv) { outlet(0, ['settension', nv]); } },
+	// Col 1 filas 9-13 (Registro/Recorrido, Ola 4), mismo idioma global-sidebar. Rotacion no tiene un
+	// rango fijo en el motor (wrap mod la cardinalidad del set activo, ver setrotation()) -- 0-11
+	// cubre cualquier cardinalidad real y el motor mismo hace el wrap final, asi que un arrastre mas
+	// alla del set actual simplemente se clampea aca, sin desincronizar nada.
+	goctm: { min: -5, max: 5, field: 'octMaestra', pxPerUnit: 8, global: true,
+		send: function (v, nv) { outlet(0, ['setmasteroctave', nv]); } },
+	gpad: { min: 0, max: 115, field: 'pad', pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setdrumbase', nv]); } },
+	grotacion: { min: 0, max: 11, field: 'rotacion', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setrotation', nv]); } },
+	gsalto: { min: 1, max: 11, field: 'salto', pxPerUnit: 10, global: true,
+		send: function (v, nv) { outlet(0, ['setcoprime', nv]); } }
 };
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
@@ -824,6 +869,9 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'gtensmodel') {
 						globalState.tensmodel = mi;
 						outlet(0, ['settensmodel', mi]);
+					} else if (openMenu.kind === 'grootseq') {
+						globalState.rootSeq = mi;
+						outlet(0, ['setrootseq', mi]);
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -884,6 +932,17 @@ function onclick(x, y, but) {
 		outlet(0, ['setmode', globalState.mode]); mgraphics.redraw(); return;
 	}
 	if (ptIn(globalChipGeo.sub, x, y)) { openMenu = { v: -1, kind: 'gsub' }; mgraphics.redraw(); return; }
+	// Col 1 filas 9-13 (Registro/Recorrido, Ola 4) -- Sec Raiz dropdown; Oct Maestra/Pad/Rotacion
+	// drag-scrub; Drum/Rotar x Cambio toggle chips (mismo idioma que ind/flt/lck/tie/euc); Salto solo
+	// hit-testable mientras Patron===Coprimo (su geo queda sin setear si no, mismo convenio que
+	// maskk/nmin/nmax/eupuls/eugir).
+	if (globalChipGeo.rootseq && ptIn(globalChipGeo.rootseq, x, y)) { openMenu = { v: -1, kind: 'grootseq' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.octm && ptIn(globalChipGeo.octm, x, y)) { dragBox = { v: -1, kind: 'goctm', startY: y, startVal: globalState.octMaestra }; return; }
+	if (globalChipGeo.drum && ptIn(globalChipGeo.drum, x, y)) { globalState.drum = globalState.drum ? 0 : 1; outlet(0, ['setdrum', globalState.drum]); mgraphics.redraw(); return; }
+	if (globalChipGeo.pad && ptIn(globalChipGeo.pad, x, y)) { dragBox = { v: -1, kind: 'gpad', startY: y, startVal: globalState.pad }; return; }
+	if (globalChipGeo.rotacion && ptIn(globalChipGeo.rotacion, x, y)) { dragBox = { v: -1, kind: 'grotacion', startY: y, startVal: globalState.rotacion }; return; }
+	if (globalChipGeo.rotarx && ptIn(globalChipGeo.rotarx, x, y)) { globalState.rotarx = globalState.rotarx ? 0 : 1; outlet(0, ['setshape', globalState.rotarx]); mgraphics.redraw(); return; }
+	if (globalChipGeo.salto && ptIn(globalChipGeo.salto, x, y)) { dragBox = { v: -1, kind: 'gsalto', startY: y, startVal: globalState.salto }; return; }
 	// Col 5 (Groove) -- only hit-testable while that column is drawn (its geo stays unset otherwise).
 	if (globalChipGeo.swing && ptIn(globalChipGeo.swing, x, y)) { dragBox = { v: -1, kind: 'gswing', startY: y, startVal: globalState.swing }; return; }
 	if (globalChipGeo.human && ptIn(globalChipGeo.human, x, y)) { dragBox = { v: -1, kind: 'ghuman', startY: y, startVal: globalState.human }; return; }
@@ -1279,6 +1338,47 @@ function paint() {
 		drawChip(globalChipGeo.sub, 'Sub ' + globalState.sub, gSubOpen);
 		if (gSubOpen) pendingMenu = { v: -1, kind: 'gsub', anchor: globalChipGeo.sub, items: SUB_LABELS, cur: subIndexOf(globalState.sub) };
 	}
+	// Rows 9-13 (Ola 4) -- Registro y recorrido, agregadas a col 1 en vez de a una columna propia
+	// (ver la charla del plan): Sec Raiz sola; Oct Maestra y Drum emparejadas (Drum es el gate mas
+	// agresivo del device, apaga Oct Maestra, la octava por voz Y Rango -- ver col 2 mas abajo); Pad
+	// OCULTO (no dimeado, no aporta lectura) salvo con Drum on, mismo idioma que Pulsos/Giro bajo
+	// Euclid; Rotacion siempre vale (chordFor() la usa tambien en Acordes); Rotar x Cambio dimeada en
+	// Acordes (rotShape solo gobierna el auto-avance de `rotation`, que step() ni toca en modo
+	// acorde); Salto Coprimo OCULTO salvo con Patron===Coprimo, ultima fila, no empuja nada.
+	var drumOn = !!globalState.drum;
+	if (gFits(9)) {
+		globalChipGeo.rootseq = { x: g1x, y: gRow(9), w: g1w, h: gChipH };
+		var gRootSeqOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grootseq';
+		drawChip(globalChipGeo.rootseq, ROOTSEQ_NAMES[Math.round(globalState.rootSeq)] || '?', gRootSeqOpen);
+		if (gRootSeqOpen) pendingMenu = { v: -1, kind: 'grootseq', anchor: globalChipGeo.rootseq, items: ROOTSEQ_NAMES, cur: Math.round(globalState.rootSeq) };
+	}
+	if (gFits(10)) {
+		var g1dcw = (g1w - 2) / 2;
+		globalChipGeo.octm = { x: g1x, y: gRow(10), w: g1dcw, h: gChipH };
+		globalChipGeo.drum = { x: g1x + g1dcw + 2, y: gRow(10), w: g1dcw, h: gChipH };
+		drawChip(globalChipGeo.octm, 'O' + (globalState.octMaestra > 0 ? '+' : '') + globalState.octMaestra, false, drumOn);
+		drawChip(globalChipGeo.drum, 'Drum', drumOn);
+	}
+	if (drumOn && gFits(11)) {
+		globalChipGeo.pad = { x: g1x, y: gRow(11), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.pad, 'Pad ' + globalState.pad, false);
+	} else {
+		globalChipGeo.pad = null;
+	}
+	if (gFits(12)) {
+		globalChipGeo.rotacion = { x: g1x, y: gRow(12), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.rotacion, 'Rot ' + globalState.rotacion, false);
+	}
+	if (gFits(13)) {
+		globalChipGeo.rotarx = { x: g1x, y: gRow(13), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.rotarx, 'Rot x Camb', !!globalState.rotarx, chordLive);
+	}
+	if (Math.round(globalState.patron) === READ_COPRIMO && gFits(14)) {
+		globalChipGeo.salto = { x: g1x, y: gRow(14), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.salto, 'Salto ' + globalState.salto, false);
+	} else {
+		globalChipGeo.salto = null;
+	}
 
 	// Column 2 -- Set/Root/R.Arm/Orden/Rango/PresetSil/SilNorm+SilAcc, FIXED rows 0-6. Same
 	// drag-scrub DRAG_SPECS entries as before for Set/Root/R.Arm/SilNorm/SilAcc; Orden/Rango/
@@ -1304,7 +1404,9 @@ function paint() {
 	if (gFits(4)) {
 		globalChipGeo.rango = { x: g2x, y: gRow(4), w: g2w, h: gChipH };
 		var gRangoOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grango';
-		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen);
+		// Dimmed con Drum on (Ola 4) -- drumOn cambia a padFor(pc), Rango deja de tener efecto, y
+		// ya esta en pantalla (ver el bloque de col 1, filas 9-13, mas arriba).
+		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen, drumOn);
 		if (gRangoOpen) pendingMenu = { v: -1, kind: 'grango', anchor: globalChipGeo.rango, items: RANGE_NAMES, cur: Math.round(globalState.rango) };
 	}
 	if (gFits(5)) {

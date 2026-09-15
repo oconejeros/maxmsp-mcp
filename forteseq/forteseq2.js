@@ -1427,7 +1427,10 @@ var readoutRotation = -1;
 function emitRotationReadout() {
 	if (manualRot === readoutRotation) return;
 	readoutRotation = manualRot;
-	outlet(4, ["rotation", manualRot]);
+	// Was a bare "rotation" message -- fell through obj-403's route to its reject outlet with no
+	// consumer wired (found dead in the Ola 4 audit, same story as "fav" in Ola 3). Reusing this
+	// existing debounce instead of a third qn*Shown tracker in querynext().
+	outlet(4, ["gecho", "rotacion", manualRot]);
 }
 
 function readoutUnchanged(pcs) {
@@ -2684,6 +2687,7 @@ function setrangetemplate(t) {
 
 function setdrum(x) {
 	drumOn = x ? 1 : 0;
+	outlet(4, ["gecho", "drum", drumOn]);
 }
 
 function setdrumbase(b) {
@@ -2691,6 +2695,7 @@ function setdrumbase(b) {
 	if (!isFinite(n) || n < 0) n = 0;
 	if (n > 115) n = 115;   // the top pad of a twelve-wide set has to stay inside MIDI
 	drumBase = n;
+	outlet(4, ["gecho", "pad", drumBase]);
 }
 
 function setharmrate(r) {
@@ -2713,6 +2718,7 @@ function setrootseq(i) {
 	// Every sequence begins on 0, so switching one on leaves the harmony where it stands and the
 	// walk starts at the next set change. Azar is the exception and has to draw its first root.
 	rootSeqOffset = (n === ROOT_RANDOM) ? Math.floor(Math.random() * 12) : 0;
+	outlet(4, ["gecho", "rootseq", rootSeqIdx]);
 }
 
 function setvoicing(m) {
@@ -2736,6 +2742,7 @@ function setroot(r) {
 
 function setmasteroctave(o) {
 	masterOctave = Math.round(o);
+	outlet(4, ["gecho", "octm", masterOctave]);
 }
 
 function setbpmtrack(b) {
@@ -3511,6 +3518,8 @@ var qnFigShown = "";           // firma "groupDurDiv[NORMAL],groupDurDiv[ACCENT]
 var qnAccentGridShown = "";    // firma accentGrid.join(","); "" = forzar
 var qnTensionShown = "";       // firma "tensLen,tensShape,tensModel"; "" = forzar
 var qnFavStateShown = "";      // firma "favSeqOn,favOnly,favSeq.length,favs[setIndex]"; "" = forzar
+var qnRegistroShown = "";      // firma "rootSeqIdx,masterOctave,drumOn,drumBase"; "" = forzar
+var qnRecorridoShown = "";     // firma "manualRot,rotShape,coprimeSkip"; "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
 for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
 
@@ -3729,6 +3738,22 @@ function querynext() {
 		if (gfavKey !== qnFavStateShown) {
 			qnFavStateShown = gfavKey;
 			outlet(3, ["gfavstate", favSeqOn, favOnly, favSeq.length, favs[setIndex] ? 1 : 0]);
+		}
+		// Registro y recorrido (Ola 4): filas nuevas en columna 1, no columna propia -- dos
+		// mensajes por funcion, misma disciplina que ggroove/gratchet. "registro" agrupa
+		// exactamente lo que Drum apaga de un saque (Sec Raiz, Oct Maestra, Drum, Pad -- las
+		// cuatro van junto a Oct Maestra en col 1); "recorrido" son las tres formas de caminar
+		// el set activo (Rotacion/Rotar x Cambio/Salto Coprimo). Voicing/Conduccion (solo Acordes)
+		// quedan fuera de esta ola -- su interaccion con Modo Acordes todavia no esta terminada.
+		var gregKey = rootSeqIdx + "," + masterOctave + "," + drumOn + "," + drumBase;
+		if (gregKey !== qnRegistroShown) {
+			qnRegistroShown = gregKey;
+			outlet(3, ["gregistro", rootSeqIdx, masterOctave, drumOn, drumBase]);
+		}
+		var grecKey = manualRot + "," + rotShape + "," + coprimeSkip;
+		if (grecKey !== qnRecorridoShown) {
+			qnRecorridoShown = grecKey;
+			outlet(3, ["grecorrido", manualRot, rotShape, coprimeSkip]);
 		}
 	}
 
@@ -4891,6 +4916,7 @@ function step() {
 
 function setshape(s) {
 	rotShape = s ? 1 : 0;
+	outlet(4, ["gecho", "rotarx", rotShape]);
 }
 
 // Manual rotation: which degree of the current set starts the arpeggio, and which of its
@@ -4941,6 +4967,7 @@ function setcoprime(k) {
 	coprimeSkip = Math.round(k);
 	if (!isFinite(coprimeSkip) || coprimeSkip < 1) coprimeSkip = 1;
 	if (coprimeSkip > 11) coprimeSkip = 11;
+	outlet(4, ["gecho", "salto", coprimeSkip]);
 }
 
 // --- READ_ORNAMENT setters. Each rebuilds the offset list and restarts the pass, the same as a

@@ -128,6 +128,8 @@ function gfig() {}
 function gaccentgrid() {}
 function gtension() {}
 function gfavstate() {}
+function gregistro() {}
+function grecorrido() {}
 
 function bang() { mgraphics.redraw(); }   // loadbang safety
 
