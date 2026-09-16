@@ -137,7 +137,8 @@ var ornSeriesStep = 1;     // growth per step (1..4)
 var ornSeriesPeak = 4;     // how many ascending steps before the size mirrors back down (1..8)
 var ornSeriesIntervals = [];   // derived: one arch of interval sizes, ascending then back down
 var ornSeriesPeriodSum = 0;    // derived: sum of ornSeriesIntervals, for the pitch-class repeat length
-var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute
+var locked = 0;        // 0 = advance through all 351, 1 = stay on lockIndex and only permute --
+                        // Sec Raiz (rootSeqAdvance) keeps walking regardless, see advanceOnPass()
 var lockIndex = 0;     // which set (0-based) to freeze on when locked
 var setIndex = 0;      // which of the 351 Tn-classes we're on
 var noteIndex = 0;     // position within current set's arpeggio (arpeggio mode)
@@ -1395,16 +1396,28 @@ function followset(b, i) {
 // finish can sit over a chord that changes every 4.
 function advanceOnPass() {
 	if (harmRate > 0) return 0;
+	if (locked) {
+		// step() re-pins setIndex to lockIndex every tick regardless of what runs here, so Lck
+		// was only ever freezing WHICH set sounds -- not the root walk carrying it around on top.
+		// Sec Raiz (Cuartas/Quintas/etc.) stays live under a locked set, same gates as the normal
+		// walk (a held chord or a followed bus still owns the harmony, lock or not).
+		if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
+		return 0;
+	}
 	return advanceSet();
 }
 
 // The other half of that: the clock-driven set change, counted in steps. `rotation` is bumped
 // here for the same reason the pass-driven path bumps it, since this is now where the set moves.
 function harmonyStep() {
-	if (harmRate <= 0 || locked) return;
+	if (harmRate <= 0) return;
 	harmCount++;
 	if (harmCount < harmRate) return;
 	harmCount = 0;
+	if (locked) {
+		if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
+		return;
+	}
 	var wrapped = advanceSet();
 	if (rotShape === 1 || (wrapped && rotShape === 0)) rotation++;
 }
@@ -4817,7 +4830,7 @@ function stepIndependent(pcs, n) {
 
 	if (mode === 0) {
 		sharedSoundPos = -1;   // acordes: no walk to point at
-		if (!locked) advanceOnPass();
+		advanceOnPass();       // still called locked -- see advanceOnPass(), it no-ops the set then
 		return;
 	}
 	// The shared noteIndex is frozen when locked, so it can't drive the shape-strip cursor here.
@@ -4865,10 +4878,8 @@ function step() {
 		minimalPos++;
 		if (minimalPos >= minSeq.length) {
 			minimalPos = 0;
-			if (!locked) {
-				advanceOnPass();
-				minimalCachedFor = -1;
-			}
+			advanceOnPass();   // walks Sec Raiz even locked; setIndex itself only moves unlocked
+			if (!locked) minimalCachedFor = -1;
 		}
 		return;
 	}
@@ -4895,10 +4906,8 @@ function step() {
 			permIndex++;
 			if (permIndex >= permList.length) {
 				permIndex = 0;
-				if (!locked) {
-					advanceOnPass();
-					permSetTag = -1;   // force the permIndex reset above on the new set next step
-				}
+				advanceOnPass();   // walks Sec Raiz even locked; setIndex itself only moves unlocked
+				if (!locked) permSetTag = -1;   // force the permIndex reset above on the new set next step
 			}
 		}
 		return;
@@ -4920,9 +4929,7 @@ function step() {
 		} else {
 			markAllSilent();
 		}
-		if (!locked) {
-			advanceOnPass();
-		}
+		advanceOnPass();   // walks Sec Raiz even locked; setIndex itself only moves unlocked
 	} else {
 		// The reading order picks the degree; `rotation` still turns the whole pass by one degree
 		// per pass, as it always did, and `manualRot` (setrotation(), the "Rotación" dial) adds a
@@ -4950,6 +4957,7 @@ function step() {
 			noteIndex = 0;
 			if (locked) {
 				rotation = (rotation + 1) % n;   // only one set in the loop, so always rotate per cycle
+				advanceOnPass();   // walks Sec Raiz even locked; setIndex itself stays pinned
 			} else {
 				if (rotShape === 1) {
 					rotation = (rotation + 1) % n;

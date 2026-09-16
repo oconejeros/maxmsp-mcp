@@ -5,19 +5,22 @@
 // indices (no dynamic per-column counter) so nothing in one column ever shifts because of what's
 // happening in another:
 //   col 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace/Modo Toque/Sub/Sec Raiz/Oct Maestra+Drum/Pad/
-//     Rotacion/Rotar x Cambio/Salto Coprimo (Run first -- the transport; Dir above Patron on
-//     request; Enlace/linkMin -- the common-tone constraint on the next set -- appended after
-//     those; Modo Toque and Sub next because they are the two GATES of col 5, and a conditional
-//     column cannot hold the control that decides whether it exists). Rows 9-13 (Ola 4, Registro y
-//     recorrido) went here rather than their own column -- they are single values, not a family
-//     with its own on/off state. Oct Maestra+Drum share a row (Drum is the most aggressive gate in
-//     the device: on, it kills Oct Maestra, the per-voice octave AND Rango in col 2 -- dimmed both
-//     places); Pad is HIDDEN (not dimmed) unless Drum is on; Rotacion has no per-voice gate --
-//     chordFor() reads it too, not just the arpeggio walk; Rotar x Cambio dims in Acordes
-//     (rotShape only gates the auto-advance of `rotation`, which the chord branch never touches);
-//     Salto Coprimo is HIDDEN unless Patron===Coprimo, last row, nothing below it to push.
-//   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc (the last row -- groupSilence
-//     -- is what a Preset Silencio pick on the row above only OVERWRITES; worth its own row).
+//     Salto Coprimo (Run first -- the transport; Dir above Patron on request; Enlace/linkMin --
+//     the common-tone constraint on the next set -- appended after those; Modo Toque and Sub next
+//     because they are the two GATES of col 5, and a conditional column cannot hold the control
+//     that decides whether it exists). Rows 9-10 (Ola 4, Registro y recorrido) went here rather
+//     than their own column -- they are single values, not a family with its own on/off state.
+//     Oct Maestra+Drum share a row (Drum is the most aggressive gate in the device: on, it kills
+//     Oct Maestra, the per-voice octave AND Rango in col 2 -- dimmed both places); Pad is HIDDEN
+//     (not dimmed) unless Drum is on; Salto Coprimo is HIDDEN unless Patron===Coprimo, last row,
+//     nothing below it to push.
+//   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc/Rotacion+Rotar x Cambio (the
+//     groupSilence row is what a Preset Silencio pick on the row above only OVERWRITES; worth its
+//     own row). Rotacion+RotX share the last row, moved here from col 1 and paired side by side on
+//     request instead of the two full-width rows they used to take. Rotacion has no per-voice
+//     gate -- chordFor() reads it too, not just the arpeggio walk; RotX (Rotar x Cambio) dims in
+//     Acordes (rotShape only gates the auto-advance of `rotation`, which the chord branch never
+//     touches).
 //   col 3 -- the Ornamento cluster (Tipo/Notas+Base/BaseModo), drawn ONLY while Patron===Ornamento
 //     (`ornOpen`); GLOBAL_W itself grows to make room for it (see paint()'s GLOBAL_W formula) --
 //     the one thing that DOES move when Ornamento toggles is the lookahead grid getting narrower,
@@ -1894,13 +1897,12 @@ function paint() {
 		drawChip(globalChipGeo.sub, 'Sub ' + globalState.sub, gSubOpen, undefined, undefined, undefined, 'menu');
 		if (gSubOpen) pendingMenu = { v: -1, kind: 'gsub', anchor: globalChipGeo.sub, items: SUB_LABELS, cur: subIndexOf(globalState.sub) };
 	}
-	// Rows 7-11 (Ola 4) -- Registro y recorrido, agregadas a col 1 en vez de a una columna propia
+	// Rows 7-9 (Ola 4) -- Registro y recorrido, agregadas a col 1 en vez de a una columna propia
 	// (ver la charla del plan): Sec Raiz sola; Oct Maestra y Drum emparejadas (Drum es el gate mas
 	// agresivo del device, apaga Oct Maestra, la octava por voz Y Rango -- ver col 2 mas abajo); Pad
 	// OCULTO (no dimeado, no aporta lectura) salvo con Drum on, mismo idioma que Pulsos/Giro bajo
-	// Euclid; Rotacion siempre vale (chordFor() la usa tambien en Acordes); Rotar x Cambio dimeada en
-	// Acordes (rotShape solo gobierna el auto-avance de `rotation`, que step() ni toca en modo
-	// acorde); Salto Coprimo OCULTO salvo con Patron===Coprimo, ultima fila, no empuja nada.
+	// Euclid. Rotacion/Rotar x Cambio viven ahora en la col 2, fila 7 (ver mas abajo), emparejadas en
+	// la misma fila a pedido -- Salto Coprimo baja a la fila 10 para no dejar el hueco que dejaron.
 	var drumOn = !!globalState.drum;
 	if (gFits(7)) {
 		globalChipGeo.rootseq = { x: g1x, y: gRow(7), w: g1w, h: gChipH };
@@ -1920,16 +1922,8 @@ function paint() {
 	} else {
 		globalChipGeo.pad = null;
 	}
-	if (gFits(10)) {
-		globalChipGeo.rotacion = { x: g1x, y: gRow(10), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.rotacion, 'Rot ' + globalState.rotacion, false);
-	}
-	if (gFits(11)) {
-		globalChipGeo.rotarx = { x: g1x, y: gRow(11), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.rotarx, 'Rot x Camb', !!globalState.rotarx, chordLive, undefined, undefined, 'toggle');
-	}
-	if (Math.round(globalState.patron) === READ_COPRIMO && gFits(12)) {
-		globalChipGeo.salto = { x: g1x, y: gRow(12), w: g1w, h: gChipH };
+	if (Math.round(globalState.patron) === READ_COPRIMO && gFits(10)) {
+		globalChipGeo.salto = { x: g1x, y: gRow(10), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.salto, 'Salto ' + globalState.salto, false);
 	} else {
 		globalChipGeo.salto = null;
@@ -1960,7 +1954,7 @@ function paint() {
 		globalChipGeo.rango = { x: g2x, y: gRow(4), w: g2w, h: gChipH };
 		var gRangoOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grango';
 		// Dimmed con Drum on (Ola 4) -- drumOn cambia a padFor(pc), Rango deja de tener efecto, y
-		// ya esta en pantalla (ver el bloque de col 1, filas 9-13, mas arriba).
+		// ya esta en pantalla (ver el bloque de col 1, filas 7-10, mas arriba).
 		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen, drumOn, undefined, undefined, 'menu');
 		if (gRangoOpen) pendingMenu = { v: -1, kind: 'grango', anchor: globalChipGeo.rango, items: RANGE_NAMES, cur: Math.round(globalState.rango) };
 	}
@@ -1979,6 +1973,18 @@ function paint() {
 		globalChipGeo.silacc = { x: g2x + g2dcw + 2, y: gRow(6), w: g2dcw, h: gChipH };
 		drawChip(globalChipGeo.silnorm, 'N' + globalState.silNorm, false);
 		drawChip(globalChipGeo.silacc, 'A' + globalState.silAcc, false);
+	}
+	// Row 7 -- Rotacion y Rotar x Cambio, movidas de la col 1 y emparejadas en una sola fila a pedido
+	// (antes ocupaban dos filas enteras propias). Mismo comportamiento de siempre: Rotacion siempre
+	// vale (chordFor() la usa tambien en Acordes); Rotar x Cambio se dimea en Acordes (rotShape solo
+	// gobierna el auto-avance de `rotation`, que step() ni toca en modo acorde) -- ver chordLive mas
+	// arriba. 'RotX' en vez de 'Rot x Camb' porque a mitad de fila no entra el texto largo.
+	if (gFits(7)) {
+		var g2dcw7 = (g2w - 2) / 2;
+		globalChipGeo.rotacion = { x: g2x, y: gRow(7), w: g2dcw7, h: gChipH };
+		globalChipGeo.rotarx = { x: g2x + g2dcw7 + 2, y: gRow(7), w: g2dcw7, h: gChipH };
+		drawChip(globalChipGeo.rotacion, 'Rot ' + globalState.rotacion, false);
+		drawChip(globalChipGeo.rotarx, 'RotX', !!globalState.rotarx, chordLive, undefined, undefined, 'toggle');
 	}
 
 	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron
