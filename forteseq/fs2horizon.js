@@ -14,13 +14,16 @@
 //     Oct Maestra, the per-voice octave AND Rango in col 2 -- dimmed both places); Pad is HIDDEN
 //     (not dimmed) unless Drum is on; Salto Coprimo is HIDDEN unless Patron===Coprimo, last row,
 //     nothing below it to push.
-//   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc/Rotacion+Rotar x Cambio (the
-//     groupSilence row is what a Preset Silencio pick on the row above only OVERWRITES; worth its
-//     own row). Rotacion+RotX share the last row, moved here from col 1 and paired side by side on
-//     request instead of the two full-width rows they used to take. Rotacion has no per-voice
-//     gate -- chordFor() reads it too, not just the arpeggio walk; RotX (Rotar x Cambio) dims in
-//     Acordes (rotShape only gates the auto-advance of `rotation`, which the chord branch never
-//     touches).
+//   col 2 -- Set/Root/R.Arm/Orden/Rango/PresetSilencio/SilNorm+SilAcc/Rotacion+Rotar x Cambio/
+//     Ritmo Raiz (the groupSilence row is what a Preset Silencio pick on the row above only
+//     OVERWRITES; worth its own row). Rotacion+RotX share a row, moved here from col 1 and paired
+//     side by side on request instead of the two full-width rows they used to take. Rotacion has no
+//     per-voice gate -- chordFor() reads it too, not just the arpeggio walk; RotX (Rotar x Cambio)
+//     dims in Acordes (rotShape only gates the auto-advance of `rotation`, which the chord branch
+//     never touches). Ritmo Raiz (rootRate) is the last row: 0 (default) leaves Sec Raiz (col 1)
+//     walking tied to the harmony exactly as before this control existed; >0 puts it on its own
+//     step-count clock, same "RA"-style idiom as R.Arm two rows up but for the root instead of the
+//     set.
 //   col 3 -- the Ornamento cluster (Tipo/Notas+Base/BaseModo), drawn ONLY while Patron===Ornamento
 //     (`ornOpen`); GLOBAL_W itself grows to make room for it (see paint()'s GLOBAL_W formula) --
 //     the one thing that DOES move when Ornamento toggles is the lookahead grid getting narrower,
@@ -410,7 +413,7 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	accCiclo: 4, accTie: 0, euclidOn: 0, euclidK: 4, euclidRot: 0,
 	velMinN: 55, velMinA: 95, velMaxN: 80, velMaxA: 115, figN: 16, figA: 4,
 	tension: 0, curva: 0, tensmodel: 0, progfav: 0, favonly: 0, favSeqLen: 0, fav: 0,
-	rootSeq: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2,
+	rootSeq: 0, rootRate: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2,
 	vecMin1: 0, vecMax1: 12, vecMin2: 0, vecMax2: 12, vecMin3: 0, vecMax3: 12,
 	vecMin4: 0, vecMax4: 12, vecMin5: 0, vecMax5: 12, vecMin6: 0, vecMax6: 12,
 	randMaskPct: 50,
@@ -461,6 +464,9 @@ function gflags(ind, filt) {
 	mgraphics.redraw();
 }
 function gharm(r) { globalState.harmRate = Math.round(r); mgraphics.redraw(); }
+// Ritmo Raiz (Ola 4 followup): same idiom as gharm just above, but for Sec Raiz's own clock
+// (rootRate in forteseq2.js) instead of the harmony's.
+function graiz(r) { globalState.rootRate = Math.round(r); mgraphics.redraw(); }
 function gorden(m) { globalState.orden = Math.round(m); mgraphics.redraw(); }
 function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
 function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
@@ -838,6 +844,8 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setornbaseinterval', nv]); } },
 	gharm: { min: 0, max: 64, field: 'harmRate', def: 0, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setharmrate', nv]); } },
+	graiz: { min: 0, max: 64, field: 'rootRate', def: 0, pxPerUnit: 6, global: true,
+		send: function (v, nv) { outlet(0, ['setrootrate', nv]); } },
 	// Col 3's mode-specific rows (Grados/Serie), same global-sidebar idiom -- see paint()'s col 3
 	// block for which one is actually drawn (mutually exclusive, gated by globalState.ornBaseMode).
 	gornstep: { min: 1, max: 4, field: 'ornStep', def: 1, pxPerUnit: 16, global: true,
@@ -1075,7 +1083,7 @@ function ondblclick(x, y) {
 		['gind', G.ind], ['gflt', G.flt], ['glck', G.lck],
 		['gpatron', G.patron], ['gdir', G.dir],
 		['gornt', G.ornt], ['gornnotas', G.ornnotas], ['gornbase', G.ornbase], ['gornbasemode', G.ornbasemode],
-		['gset', G.set], ['groot', G.root], ['gharm', G.harm],
+		['gset', G.set], ['groot', G.root], ['gharm', G.harm], ['graiz', G.raizrate],
 		['gorden', G.orden], ['grango', G.rango], ['gsilpre', G.silpre],
 		['gornquad', G.ornquad], ['gornstep', G.ornstep],
 		['gserstart', G.serstart], ['gserstep', G.serstep], ['gserpeak', G.serpeak],
@@ -1326,6 +1334,7 @@ function onclick(x, y, but) {
 	if (ptIn(globalChipGeo.set, x, y)) { dragBox = { v: -1, kind: 'gset', startY: y, startVal: globalState.setIdx }; return; }
 	if (ptIn(globalChipGeo.root, x, y)) { dragBox = { v: -1, kind: 'groot', startY: y, startVal: globalState.root }; return; }
 	if (ptIn(globalChipGeo.harm, x, y)) { dragBox = { v: -1, kind: 'gharm', startY: y, startVal: globalState.harmRate }; return; }
+	if (globalChipGeo.raizrate && ptIn(globalChipGeo.raizrate, x, y)) { dragBox = { v: -1, kind: 'graiz', startY: y, startVal: globalState.rootRate }; return; }
 	if (ptIn(globalChipGeo.orden, x, y)) { openMenu = { v: -1, kind: 'gorden' }; mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.rango, x, y)) { openMenu = { v: -1, kind: 'grango' }; mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.silpre, x, y)) { openMenu = { v: -1, kind: 'gsilpre' }; mgraphics.redraw(); return; }
@@ -1985,6 +1994,13 @@ function paint() {
 		globalChipGeo.rotarx = { x: g2x + g2dcw7 + 2, y: gRow(7), w: g2dcw7, h: gChipH };
 		drawChip(globalChipGeo.rotacion, 'Rot ' + globalState.rotacion, false);
 		drawChip(globalChipGeo.rotarx, 'RotX', !!globalState.rotarx, chordLive, undefined, undefined, 'toggle');
+	}
+	// Row 8 -- Ritmo Raiz, same idiom as R.Arm (row 2): 0 means Sec Raiz still walks tied to the
+	// harmony (advanceOnPass()/harmonyStep()), same as before this control existed; >0 puts it on
+	// its own step-count clock (rootStep() in forteseq2.js), independent of the set.
+	if (gFits(8)) {
+		globalChipGeo.raizrate = { x: g2x, y: gRow(8), w: g2w, h: gChipH };
+		drawChip(globalChipGeo.raizrate, 'RR' + globalState.rootRate, false);
 	}
 
 	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron

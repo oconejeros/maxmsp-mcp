@@ -11353,6 +11353,169 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-858",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "fontsize": 8.0,
+     "varname": "fs2_lbl_rraiz",
+     "text": "R.Raiz",
+     "patching_rect": [
+      140.0,
+      2440.0,
+      40.0,
+      16.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      236.0,
+      522.0,
+      40.0,
+      16.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-859",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_rraiz",
+     "annotation": "Cada cuantos pasos avanza Sec Raiz. En 0 el root walk sigue atado a la armonia, como siempre (avanza cuando avanza el set -- ver Ritmo Arm). Con cualquier otro valor Sec Raiz tiene su PROPIO reloj, independiente de cuando (o si) cambia el set.",
+     "patching_rect": [
+      140.0,
+      2459.0,
+      38.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      236.0,
+      536.0,
+      38.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 64.0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Ritmo Raiz",
+       "parameter_shortname": "Ritmo Raiz"
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-860",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rraiz_prep",
+     "patching_rect": [
+      140.0,
+      2489.0,
+      150.0,
+      22.0
+     ],
+     "text": "prepend setrootrate"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-861",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "pg_init[4]",
+     "patching_rect": [
+      140.0,
+      2519.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-862",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rraiz_gecho_rx",
+     "patching_rect": [
+      900.0,
+      4350.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-863",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "fs2_rraiz_gecho_route",
+     "patching_rect": [
+      900.0,
+      4380.0,
+      160.0,
+      20.0
+     ],
+     "text": "route rraiz"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-864",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_rraiz_gecho_setrx",
+     "patching_rect": [
+      900.0,
+      4410.0,
+      160.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -18393,6 +18556,90 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-859",
+      0
+     ],
+     "destination": [
+      "obj-860",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-860",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-861",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-861",
+      0
+     ],
+     "destination": [
+      "obj-859",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-862",
+      0
+     ],
+     "destination": [
+      "obj-863",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-863",
+      0
+     ],
+     "destination": [
+      "obj-864",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-864",
+      0
+     ],
+     "destination": [
+      "obj-859",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -18997,7 +19244,12 @@
      ]
     }
    },
-   "inherited_shortname": 1
+   "inherited_shortname": 1,
+   "obj-859": [
+    "Ritmo Raiz",
+    "Ritmo Raiz",
+    0
+   ]
   },
   "autosave": 0,
   "oscreceiveudpport": 0

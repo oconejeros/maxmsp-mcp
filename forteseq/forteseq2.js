@@ -296,6 +296,13 @@ var rootSeqIdx = 0;      // 0 = no sequence; ROOT_RANDOM = a new root drawn each
 var rootSeqPos = 0;
 var rootSeqOffset = 0;   // what the sequence is contributing right now
 
+// The root walk has always advanced whenever the harmony did (every pass, or every harmRate
+// steps -- see advanceOnPass()/harmonyStep()). rootRate > 0 puts Sec Raiz on ITS OWN clock
+// instead, same idiom as harmRate/harmCount just above: a root change every N steps, independent
+// of when (or whether) the set itself moves.
+var rootRate = 0;
+var rootCount = 0;
+
 // How a chord is spread, and whether the next one may choose its inversion to stay near the one
 // that just sounded.
 var voicingMode = 0;
@@ -995,7 +1002,10 @@ var ROOT_SEQUENCES = [
 ];
 var ROOT_RANDOM = ROOT_SEQUENCES.length;        // one past the list: a root drawn at random
 
-// Called once per harmonic change, from advanceSet(), which is the only place the harmony moves.
+// Steps the root walk one notch. Called either tied to the harmony (from advanceSet()'s three
+// sub-strategies and the locked branches of advanceOnPass()/harmonyStep(), gated below by
+// rootSeqAdvanceOnHarmony()) or from rootStep()'s own independent clock when rootRate > 0 --
+// never both at once for the same tick, see rootRate's declaration.
 function rootSeqAdvance() {
 	if (rootSeqIdx === ROOT_RANDOM) {
 		rootSeqOffset = Math.floor(Math.random() * 12);
@@ -1005,6 +1015,13 @@ function rootSeqAdvance() {
 	if (!seq) { rootSeqOffset = 0; return; }
 	rootSeqPos = (rootSeqPos + 1) % seq.length;
 	rootSeqOffset = seq[rootSeqPos];
+}
+
+// The harmony-tied call sites (a step where the set itself changed) route through here instead of
+// calling rootSeqAdvance() directly, so Ritmo Raiz > 0 can take the root walk off this clock without
+// touching every call site individually.
+function rootSeqAdvanceOnHarmony() {
+	if (rootRate <= 0) rootSeqAdvance();
 }
 
 // What actually sounds as the root. The sequence is added on top of BOTH branches on purpose:
@@ -1171,12 +1188,12 @@ function advanceInOrder() {
 			if (popcount(cb & fittedBits(cand)) < linkMin) continue;
 		}
 		setIndex = cand;
-		rootSeqAdvance();   // the only place the harmony moves, so the only place the root walks
+		rootSeqAdvanceOnHarmony();
 		return raw >= total ? 1 : 0;
 	}
 	if (fallback >= 0) {
 		setIndex = fallback;
-		rootSeqAdvance();
+		rootSeqAdvanceOnHarmony();
 		return fallbackRaw >= total ? 1 : 0;
 	}
 	return 0;
@@ -1243,7 +1260,7 @@ function advanceByTension() {
 	if (best < 0) best = loose;
 	if (best < 0) return 0;
 	setIndex = best;
-	rootSeqAdvance();
+	rootSeqAdvanceOnHarmony();
 	// "Wrapped" drives the shape rotation and the end-of-pass answer. A lap of the catalogue
 	// means nothing here, so what is reported is the cycle coming round, which is the thing that
 	// actually repeats.
@@ -1258,7 +1275,7 @@ function advanceFavSeq() {
 	if (!n) return advanceInOrder();
 	var k = favSeq.indexOf(setIndex);   // -1 lands on favSeq[0], which is where to come in
 	setIndex = favSeq[(k + 1) % n];
-	rootSeqAdvance();
+	rootSeqAdvanceOnHarmony();
 	return (k + 1) >= n ? 1 : 0;
 }
 
@@ -1400,8 +1417,9 @@ function advanceOnPass() {
 		// step() re-pins setIndex to lockIndex every tick regardless of what runs here, so Lck
 		// was only ever freezing WHICH set sounds -- not the root walk carrying it around on top.
 		// Sec Raiz (Cuartas/Quintas/etc.) stays live under a locked set, same gates as the normal
-		// walk (a held chord or a followed bus still owns the harmony, lock or not).
-		if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
+		// walk (a held chord or a followed bus still owns the harmony, lock or not) -- unless
+		// rootRate > 0 has already taken the walk onto its own clock, see rootStep().
+		if (rootRate <= 0 && !(listenMode && heldBits) && !followOn) rootSeqAdvance();
 		return 0;
 	}
 	return advanceSet();
@@ -1415,11 +1433,23 @@ function harmonyStep() {
 	if (harmCount < harmRate) return;
 	harmCount = 0;
 	if (locked) {
-		if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
+		if (rootRate <= 0 && !(listenMode && heldBits) && !followOn) rootSeqAdvance();
 		return;
 	}
 	var wrapped = advanceSet();
 	if (rotShape === 1 || (wrapped && rotShape === 0)) rotation++;
+}
+
+// Sec Raiz on its own clock (Ritmo Raiz > 0): a root change every rootRate steps, independent of
+// whether -- or how often -- the harmony itself moves. Same held-chord/follow gates as the
+// harmony-tied branches above, so a listener's hand or a followed bus still owns the root the same
+// way it owns the set.
+function rootStep() {
+	if (rootRate <= 0) return;
+	rootCount++;
+	if (rootCount < rootRate) return;
+	rootCount = 0;
+	if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
 }
 
 // --- readouts ---------------------------------------------------------------------------
@@ -2732,6 +2762,17 @@ function setharmrate(r) {
 	outlet(4, ["gecho", "rarm", harmRate]);
 }
 
+function setrootrate(r) {
+	var n = Math.round(r);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 64) n = 64;
+	rootRate = n;
+	rootCount = 0;   // same reason as setharmrate(): a new rate counts from here, not mid-cycle
+	// Real widget is `fs2_rraiz` inside fs2pages.maxpat (live.numbox "Ritmo Raiz", 0-64), same
+	// idiom as fs2_rarm/setharmrate() just above.
+	outlet(4, ["gecho", "rraiz", rootRate]);
+}
+
 function setrootseq(i) {
 	var n = Math.round(i);
 	if (!isFinite(n) || n < 0 || n > ROOT_RANDOM) n = 0;
@@ -3321,9 +3362,10 @@ function voiceSelfCursored(v) {
 	return voiceExternal[v] || (mode === 1 && voiceIndep);
 }
 
-// How many more steps the CURRENT set and rotation survive. The lookahead is only exact within
-// this window: at a pass boundary advanceOnPass() moves the catalogue and bumps `rotation`, and
-// with harmRate > 0 the set changes on its own step count -- neither is cheap to run forward
+// How many more steps the CURRENT set, rotation AND root survive. The lookahead is only exact
+// within this window: at a pass boundary advanceOnPass() moves the catalogue and bumps `rotation`,
+// with harmRate > 0 the set changes on its own step count, and with rootRate > 0 the root ALSO
+// changes on its own step count (independent of the set) -- none of those are cheap to run forward
 // here, so cells past `colRemain` are shown blank rather than guessed wrong.
 function colRemain(n) {
 	var rem;
@@ -3336,6 +3378,7 @@ function colRemain(n) {
 		rem = readCycleLength(n) - noteIndex;
 	}
 	if (harmRate > 0 && (harmRate - harmCount) < rem) rem = harmRate - harmCount;
+	if (rootRate > 0 && (rootRate - rootCount) < rem) rem = rootRate - rootCount;
 	return rem < 0 ? 0 : rem;
 }
 
@@ -3519,6 +3562,7 @@ var qnRootShown = null;        // null forces the first querynext() to emit rega
 var qnOrnGlobalShown = "";     // firma "ornType,ornCount,ornBaseInterval"; "" = forzar
 var qnGFlagsShown = "";        // firma "indep,filter"; "" = forzar
 var qnHarmRateShown = -1;      // -1 forces the first querynext() to emit regardless of harmRate's own default (0)
+var qnRootRateShown = -1;      // -1 forces the first querynext() to emit regardless of rootRate's own default (0)
 var qnOrdenShown = -1;         // -1 forces the first querynext() to emit regardless of orderMode's own default (0)
 var qnRangoShown = -1;
 var qnSilpreShown = -1;
@@ -3640,6 +3684,10 @@ function querynext() {
 		if (harmRate !== qnHarmRateShown) {
 			qnHarmRateShown = harmRate;
 			outlet(3, ["gharm", harmRate]);
+		}
+		if (rootRate !== qnRootRateShown) {
+			qnRootRateShown = rootRate;
+			outlet(3, ["graiz", rootRate]);
 		}
 		// Orden/Rango/Preset Silencio -- setup-time globals, not per-voice, added to the sidebar's
 		// second column alongside Set/Root/R.Arm. rangeTemplateIndex/silencePresetIndex are pure
@@ -4849,6 +4897,7 @@ function step() {
 	patternStep++;
 	if (locked) setIndex = lockIndex;
 	harmonyStep();   // may move the set before this step reads it, when the harmony has its own clock
+	rootStep();      // same idea for Sec Raiz, on its own independent clock when rootRate > 0
 	if (setIndex >= sets.length) setIndex = 0;
 	var pcs = sets[setIndex];
 	var n = pcs.length;
