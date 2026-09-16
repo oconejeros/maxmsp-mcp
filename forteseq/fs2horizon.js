@@ -776,6 +776,23 @@ var menuItemGeo = [];
 // as numbox); ondrag() -- a real jsui callback, see harmonograph_ui.js's onclick/ondrag pair for
 // the precedent -- does the actual scrubbing and sends the message, one voice/field at a time.
 var dragBox = null;   // { v, kind, startY, startVal } or null -- v === -1 means the global sidebar, not a voice
+
+// Per-session column collapse (density/clarity pass): the user can shrink Camino/Modulacion/Sesion
+// to a narrow strip to give the per-voice grid more room, without losing the signal that something
+// inside is still active (see the "in use" dot in paint()'s collapsed-strip draw). Deliberately NOT
+// persisted (no globalState field, no gecho, no Live parameter) -- resets to all-expanded every time
+// this jsui reloads, same scope the user asked for. Acentos was left out on purpose: only the three
+// columns named in the request get this.
+var collapsedCols = { camino: false, mod: false, ses: false };
+var COLLAPSED_W = 16;
+
+// Sidebar-only font bump (user asked to read the left panel more easily, "unos 2 numeros" bigger).
+// drawChip() reads this instead of a literal size so both the sidebar (globalChipGeo.*) and the
+// per-voice grid (cg.*) keep sharing one function -- paint() sets it to SIDEBAR_CHIP_FONT right
+// before drawing the sidebar and puts it back to CHIP_FONT right before the per-voice loop, so the
+// per-voice grid's own text size is untouched.
+var CHIP_FONT = 11, SIDEBAR_CHIP_FONT = 13;
+var chipFontSize = CHIP_FONT;
 // Each spec's send(v, nv, state) builds and fires the actual outlet(0, [...]) message: `v` is the
 // 0-based voice index (ignored by global specs, which carry no voice number at all) and `state` is
 // vkeyInfo[v] for a per-voice spec or globalState for a `global: true` one -- Articulacion's 4
@@ -972,19 +989,52 @@ function ptIn(r, x, y) {
 // alarm (Ola 3): its own color, independent of on/disabled/dim -- for the plan's "trampas
 // silenciosas" (state that LOOKS fine but silently kills another control), never used together
 // with dim on the same chip since alarm already implies "look here", the opposite of dimming.
-function drawChip(r, label, on, disabled, dim, alarm) {
+// `kind` (density/clarity pass, all optional -- omitted keeps the exact pre-existing look, so no
+// existing call-site breaks by not passing it):
+//   'toggle' -- a plain boolean on/off (Run, Tie, Euclid, Emit/Seguir, Fav...): fill drawn at HALF
+//     the rect's height, vertically centered, so it reads as a compact pill instead of a full-row
+//     button. The hit-test rect `r` itself is UNCHANGED -- onclick()'s ptIn(r,...) still tests the
+//     full row, so no click handler anywhere needed to change.
+//   'menu' -- opens a dropdown (openMenu): same full-rect look as before, plus a small ▾ marker on
+//     the right edge so it reads as "opens a list" even before it's clicked open.
+//   'action' -- a momentary action button with no persistent state (Panic, Guardar, Limpiar favs):
+//     outline only, no fill, so it reads as "does something" rather than "is something".
+//   undefined -- drag-scrub numeric chips and anything not yet migrated: unchanged legacy look.
+function drawChip(r, label, on, disabled, dim, alarm, kind) {
 	dim = dim === undefined ? 1 : dim;
-	mgraphics.set_source_rgba(alarm ? [0.55, 0.2, 0.1, 1] : (on ? [0.55 * dim, 0.42 * dim, 0.15 * dim, 1] : [0.22, 0.22, 0.25, 1]));
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	var fillOn = alarm ? [0.55, 0.2, 0.1, 1] : (on ? [0.55 * dim, 0.42 * dim, 0.15 * dim, 1] : [0.22, 0.22, 0.25, 1]);
+	var textOn = alarm ? [1, 0.6, 0.4, 1] : (on ? [1 * dim, 0.85 * dim, 0.55 * dim, 1] : (disabled ? [0.4, 0.4, 0.44, 1] : [0.55, 0.55, 0.6, 1]));
+	if (kind === 'action') {
+		mgraphics.set_source_rgba([0, 0, 0, 0.35]);
+		mgraphics.rectangle(r.x, r.y, r.w, r.h);
+		mgraphics.fill();
+		mgraphics.set_source_rgba(textOn);
+		mgraphics.set_line_width(1);
+		mgraphics.rectangle(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+		mgraphics.stroke();
+		mgraphics.set_font_size(chipFontSize);
+		mgraphics.move_to(r.x + 3, r.y + r.h - 4);
+		mgraphics.show_text(label);
+		return;
+	}
+	var fr = r;   // toggle kind used to draw at 55% of r.h, centered -- made it look shorter than
+	// every other chip kind (menu/drag/plain), most visible once two toggles share a row. Now fills
+	// the full cell like everything else; on/off state still reads from fillOn/textOn alone.
+	mgraphics.set_source_rgba(fillOn);
+	mgraphics.rectangle(fr.x, fr.y, fr.w, fr.h);
 	mgraphics.fill();
 	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
 	mgraphics.set_line_width(1);
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.rectangle(fr.x, fr.y, fr.w, fr.h);
 	mgraphics.stroke();
-	mgraphics.set_source_rgba(alarm ? [1, 0.6, 0.4, 1] : (on ? [1 * dim, 0.85 * dim, 0.55 * dim, 1] : (disabled ? [0.4, 0.4, 0.44, 1] : [0.55, 0.55, 0.6, 1])));
-	mgraphics.set_font_size(11);
+	mgraphics.set_source_rgba(textOn);
+	mgraphics.set_font_size(chipFontSize);
 	mgraphics.move_to(r.x + 3, r.y + r.h - 4);
 	mgraphics.show_text(label);
+	if (kind === 'menu') {
+		mgraphics.move_to(r.x + r.w - 9, r.y + r.h - 4);
+		mgraphics.show_text('▾');
+	}
 }
 
 // Click one of the 6 per-voice toggle chips -> send the same setvoice* message the "Voces N" tabs
@@ -1087,6 +1137,13 @@ function onclick(x, y, but) {
 		openMenu = null; menuItemGeo = [];
 		mgraphics.redraw(); return;
 	}
+	// Column collapse toggles (density/clarity pass) -- checked first among the sidebar so a click
+	// on a collapsed strip never falls through to whatever used to be under it. `xxxHdr` is the
+	// header row when expanded (click collapses) or the whole column height when collapsed (click
+	// anywhere re-expands) -- see paint()'s header block for how that single rect is built each frame.
+	if (globalChipGeo.caminoHdr && ptIn(globalChipGeo.caminoHdr, x, y)) { collapsedCols.camino = !collapsedCols.camino; mgraphics.redraw(); return; }
+	if (globalChipGeo.modHdr && ptIn(globalChipGeo.modHdr, x, y)) { collapsedCols.mod = !collapsedCols.mod; mgraphics.redraw(); return; }
+	if (globalChipGeo.sesHdr && ptIn(globalChipGeo.sesHdr, x, y)) { collapsedCols.ses = !collapsedCols.ses; mgraphics.redraw(); return; }
 	// The fixed global sidebar -- checked before the per-row lookup below since it isn't part of
 	// any voice row (x never overlaps a row's own chips, but checking explicitly here avoids
 	// wastefully falling through to the row-hit math on every sidebar click).
@@ -1442,7 +1499,15 @@ function paint() {
 	// walks condCols summing each one's own width rather than assuming a uniform G_COL_W, which is
 	// the only change from the plain "extraCols * (G_GAP + G_COL_W)" formula every earlier column used.
 	var MOD_COL_W = G_COL_W * 2 + G_GAP;
-	function condColW(name) { return name === 'mod' ? MOD_COL_W : G_COL_W; }
+	// Collapse checked first: a collapsed family still holds its slot in condCols (so nothing else
+	// reorders around it), it just claims COLLAPSED_W instead of its normal width -- condSlotX()
+	// below sums via this same function, so shrinking here is the whole mechanism, nothing else to
+	// touch. Same lever the Modulacion matrix already uses for the opposite case (claiming EXTRA
+	// width instead of less).
+	function condColW(name) {
+		if (collapsedCols[name]) return COLLAPSED_W;
+		return name === 'mod' ? MOD_COL_W : G_COL_W;
+	}
 	var extraW = 0;
 	for (var _cci = 0; _cci < condCols.length; _cci++) extraW += G_GAP + condColW(condCols[_cci]);
 	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraW;
@@ -1495,6 +1560,7 @@ function paint() {
 	// happens last, after the loop. globalState is populated by hstatus/ornbasemode/groot/
 	// gornament/gflags/gharm (see those handlers above).
 	globalChipGeo = {};
+	chipFontSize = SIDEBAR_CHIP_FONT;   // bigger label text for the whole left panel; reset below the per-voice loop
 	var gChipH = 18, gChipGap = 2;
 	var g1x = 2, g1w = G_COL_W;
 	var g2x = g1x + g1w + G_GAP, g2w = G_COL_W;
@@ -1511,14 +1577,39 @@ function paint() {
 	var g4x = condSlotX('filt'), g4w = G_COL_W;
 	var g5x = condSlotX('groove'), g5w = G_COL_W;
 	var g6x = condSlotX('acc'), g6w = G_COL_W;
-	var g7x = condSlotX('camino'), g7w = G_COL_W;
-	var g8x = condSlotX('mod'), g8w = MOD_COL_W;
-	var g9x = condSlotX('ses'), g9w = G_COL_W;
+	var g7x = condSlotX('camino'), g7w = condColW('camino');
+	var g8x = condSlotX('mod'), g8w = condColW('mod');
+	var g9x = condSlotX('ses'), g9w = condColW('ses');
 	var gy = headH + 2;
 	function gRow(n) { return gy + n * (gChipH + gChipGap); }
 	function gFits(n) { return gRow(n) + gChipH <= H; }
+
+	// "In use" for the collapsed-strip dot (density/clarity pass) -- plain non-default checks on
+	// globalState, computed once here so the header block below can draw the dot without needing
+	// any of the body loops (which are skipped entirely for a collapsed column) to have run yet.
+	var caminoInUse = Math.round(globalState.tension) > 0 || !!globalState.progfav || !!globalState.favonly;
+	var modInUse = false;
+	for (var _miu = 1; _miu <= 4; _miu++) {
+		// Same formula as MOD_ROWS' own `rowDead` further down (dest="-" or depth=0 -> inert row).
+		if (globalState['mod' + _miu + 'dest'] !== 0 && globalState['mod' + _miu + 'depth'] !== 0) { modInUse = true; break; }
+	}
+	var sesInUse = Math.round(globalState.listen) !== 0 || !!globalState.emit || !!globalState.seguir;
+
+	// Draws a collapsed column's narrow strip: one-letter tag + an "in use" dot below it. The dot
+	// reuses drawChip's own "on" amber when lit, dim gray otherwise -- no new palette invented.
+	function drawCollapsedStrip(x, w, letter, inUse) {
+		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+		mgraphics.set_font_size(11);
+		mgraphics.move_to(x + w / 2 - 3, headH - 5);
+		mgraphics.show_text(letter);
+		mgraphics.set_source_rgba(inUse ? [1, 0.85, 0.55, 1] : [0.35, 0.35, 0.4, 1]);
+		var cx = x + w / 2, cy = headH + 6, rad = 3;
+		mgraphics.rectangle(cx - rad, cy - rad, rad * 2, rad * 2);
+		mgraphics.fill();
+	}
+
 	mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-	mgraphics.set_font_size(8);
+	mgraphics.set_font_size(10);
 	mgraphics.move_to(g1x, headH - 5);
 	mgraphics.show_text('Global');
 	mgraphics.move_to(g2x, headH - 5);
@@ -1539,80 +1630,108 @@ function paint() {
 		mgraphics.move_to(g6x, headH - 5);
 		mgraphics.show_text('Acentos');
 	}
+	// Camino/Modulacion/Sesion: collapsible (density/clarity pass). `caminoHdr`/`modHdr`/`sesHdr`
+	// double as the click target both ways -- when expanded it covers just the header row (click
+	// collapses); when collapsed it covers the whole column height (click anywhere re-expands).
+	// The family stays IN condCols either way (caminoOpen/modOpen/sesOpen never go false) -- only
+	// condColW()'s width answer changes, so col 1/2 and the slots before this one never move.
 	if (caminoOpen) {
-		mgraphics.move_to(g7x, headH - 5);
-		mgraphics.show_text('Camino');
+		if (collapsedCols.camino) {
+			globalChipGeo.caminoHdr = { x: g7x, y: 0, w: g7w, h: H };
+			drawCollapsedStrip(g7x, g7w, 'C', caminoInUse);
+		} else {
+			globalChipGeo.caminoHdr = { x: g7x, y: 0, w: g7w, h: headH };
+			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+			mgraphics.set_font_size(10);
+			mgraphics.move_to(g7x, headH - 5);
+			mgraphics.show_text('Camino');
+		}
 	}
 	if (modOpen) {
-		mgraphics.move_to(g8x, headH - 5);
-		mgraphics.show_text('Modulacion');
+		if (collapsedCols.mod) {
+			globalChipGeo.modHdr = { x: g8x, y: 0, w: g8w, h: H };
+			drawCollapsedStrip(g8x, g8w, 'M', modInUse);
+		} else {
+			globalChipGeo.modHdr = { x: g8x, y: 0, w: g8w, h: headH };
+			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+			mgraphics.set_font_size(10);
+			mgraphics.move_to(g8x, headH - 5);
+			mgraphics.show_text('Modulacion');
+		}
 	}
 	if (sesOpen) {
-		mgraphics.move_to(g9x, headH - 5);
-		mgraphics.show_text('Sesion');
+		if (collapsedCols.ses) {
+			globalChipGeo.sesHdr = { x: g9x, y: 0, w: g9w, h: H };
+			drawCollapsedStrip(g9x, g9w, 'S', sesInUse);
+		} else {
+			globalChipGeo.sesHdr = { x: g9x, y: 0, w: g9w, h: headH };
+			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+			mgraphics.set_font_size(10);
+			mgraphics.move_to(g9x, headH - 5);
+			mgraphics.show_text('Sesion');
+		}
 	}
 
-	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-6. Run sits first (transport,
-	// decides whether anything downstream plays at all); Dir sits ABOVE Patron per request -- none
-	// of these depend on each other's state so a fixed order costs nothing (unlike the old inline
-	// Ornamento sub-fields, which genuinely only exist conditionally -- those moved to col 3 below
-	// instead of growing this column, so col 1 never reflows regardless of what Patron is set to).
-	// Enlace (linkMin, common-tone constraint on the next set) sits last, appended rather than
-	// slotted between Lck and Dir -- it is independent of every other row here, so where exactly
+	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-4. The four pure on/off switches
+	// (Run/Ind/Flt/Lck) are paired two-per-row, half width each, same g1dcw idiom as OctM+Drum below
+	// -- they read as one 2x2 block and free up 2 row-heights for everything under them. Run sits
+	// first (transport, decides whether anything downstream plays at all); Dir sits ABOVE Patron per
+	// request -- none of these depend on each other's state so a fixed order costs nothing (unlike
+	// the old inline Ornamento sub-fields, which genuinely only exist conditionally -- those moved to
+	// col 3 below instead of growing this column, so col 1 never reflows regardless of what Patron is
+	// set to). Enlace (linkMin, common-tone constraint on the next set) sits last, appended rather
+	// than slotted between Lck and Dir -- it is independent of every other row here, so where exactly
 	// costs nothing either.
+	var g1dcw = (g1w - 2) / 2;
 	if (gFits(0)) {
-		globalChipGeo.run = { x: g1x, y: gRow(0), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.run, 'Run', !!globalState.run);
+		globalChipGeo.run = { x: g1x, y: gRow(0), w: g1dcw, h: gChipH };
+		globalChipGeo.ind = { x: g1x + g1dcw + 2, y: gRow(0), w: g1dcw, h: gChipH };
+		drawChip(globalChipGeo.run, 'Run', !!globalState.run, undefined, undefined, undefined, 'toggle');
+		drawChip(globalChipGeo.ind, 'Ind', globalState.indep, undefined, undefined, undefined, 'toggle');
 	}
 	if (gFits(1)) {
-		globalChipGeo.ind = { x: g1x, y: gRow(1), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.ind, 'Ind', globalState.indep);
+		globalChipGeo.flt = { x: g1x, y: gRow(1), w: g1dcw, h: gChipH };
+		globalChipGeo.lck = { x: g1x + g1dcw + 2, y: gRow(1), w: g1dcw, h: gChipH };
+		drawChip(globalChipGeo.flt, 'Flt', globalState.filtered, undefined, undefined, undefined, 'toggle');
+		drawChip(globalChipGeo.lck, 'Lck', !!globalState.locked, undefined, undefined, undefined, 'toggle');
 	}
 	if (gFits(2)) {
-		globalChipGeo.flt = { x: g1x, y: gRow(2), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.flt, 'Flt', globalState.filtered);
-	}
-	if (gFits(3)) {
-		globalChipGeo.lck = { x: g1x, y: gRow(3), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.lck, 'Lck', !!globalState.locked);
-	}
-	if (gFits(4)) {
-		globalChipGeo.dir = { x: g1x, y: gRow(4), w: g1w, h: gChipH };
+		globalChipGeo.dir = { x: g1x, y: gRow(2), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.dir, DIR_ABBR[Math.round(globalState.dir)] || '?', false);
 	}
-	if (gFits(5)) {
-		globalChipGeo.patron = { x: g1x, y: gRow(5), w: g1w, h: gChipH };
+	if (gFits(3)) {
+		globalChipGeo.patron = { x: g1x, y: gRow(3), w: g1w, h: gChipH };
 		var gPatronOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gpatron';
-		drawChip(globalChipGeo.patron, PATRON_ABBR[Math.round(globalState.patron)] || '?', gPatronOpen);
+		drawChip(globalChipGeo.patron, PATRON_ABBR[Math.round(globalState.patron)] || '?', gPatronOpen, undefined, undefined, undefined, 'menu');
 		if (gPatronOpen) pendingMenu = { v: -1, kind: 'gpatron', anchor: globalChipGeo.patron, items: READ_NAMES, cur: Math.round(globalState.patron) };
 	}
-	if (gFits(6)) {
-		globalChipGeo.enlace = { x: g1x, y: gRow(6), w: g1w, h: gChipH };
+	if (gFits(4)) {
+		globalChipGeo.enlace = { x: g1x, y: gRow(4), w: g1w, h: gChipH };
 		// Dimmed (idem Rasg/Dir Rasg en col 5) mientras Prog Favoritos maneja la progresion con la
 		// lista llena -- advanceFavSeq() nunca consulta linkMin. Con la lista vacia (favSeqTrap)
 		// Enlace SI revive (cae a advanceInOrder()), asi que no se dimea ahi.
 		drawChip(globalChipGeo.enlace, 'Enl ' + globalState.enlace, false, favSeqActive);
 	}
-	// Rows 7-8 -- Modo Toque y Sub, los dos GATES de la columna Groove, por eso van aca arriba y
+	// Rows 5-6 -- Modo Toque y Sub, los dos GATES de la columna Groove, por eso van aca arriba y
 	// siempre visibles: una columna condicional no puede alojar su propio gate (desapareceria con
 	// el, y no habria como volver). Modo Toque ademas ya se leia (hstatus lo trae desde siempre) y
 	// gobierna varios moot por voz; lo que faltaba era poder escribirlo, que ahora si tiene camino
 	// probado (fs2_mode obj-19 -> prepend setmode -> motor, dentro de fs2pages.maxpat).
-	if (gFits(7)) {
-		globalChipGeo.modo = { x: g1x, y: gRow(7), w: g1w, h: gChipH };
+	if (gFits(5)) {
+		globalChipGeo.modo = { x: g1x, y: gRow(5), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.modo, MODE_NAMES[Math.round(globalState.mode)] || '?', false);
 	}
 	// Sub va de dropdown, no de chip que cicla: su widget real ES un live.menu de seis items, asi
 	// que la lista es el espejo exacto -- y ciclar +1 por click obliga a dar la vuelta entera para
 	// bajar de 8 a 2. El dropdown ya se da vuelta solo si no entra hacia abajo (ver pendingMenu),
 	// que importa justo aca por ser la ultima fila de la columna.
-	if (gFits(8)) {
-		globalChipGeo.sub = { x: g1x, y: gRow(8), w: g1w, h: gChipH };
+	if (gFits(6)) {
+		globalChipGeo.sub = { x: g1x, y: gRow(6), w: g1w, h: gChipH };
 		var gSubOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gsub';
-		drawChip(globalChipGeo.sub, 'Sub ' + globalState.sub, gSubOpen);
+		drawChip(globalChipGeo.sub, 'Sub ' + globalState.sub, gSubOpen, undefined, undefined, undefined, 'menu');
 		if (gSubOpen) pendingMenu = { v: -1, kind: 'gsub', anchor: globalChipGeo.sub, items: SUB_LABELS, cur: subIndexOf(globalState.sub) };
 	}
-	// Rows 9-13 (Ola 4) -- Registro y recorrido, agregadas a col 1 en vez de a una columna propia
+	// Rows 7-11 (Ola 4) -- Registro y recorrido, agregadas a col 1 en vez de a una columna propia
 	// (ver la charla del plan): Sec Raiz sola; Oct Maestra y Drum emparejadas (Drum es el gate mas
 	// agresivo del device, apaga Oct Maestra, la octava por voz Y Rango -- ver col 2 mas abajo); Pad
 	// OCULTO (no dimeado, no aporta lectura) salvo con Drum on, mismo idioma que Pulsos/Giro bajo
@@ -1620,35 +1739,34 @@ function paint() {
 	// Acordes (rotShape solo gobierna el auto-avance de `rotation`, que step() ni toca en modo
 	// acorde); Salto Coprimo OCULTO salvo con Patron===Coprimo, ultima fila, no empuja nada.
 	var drumOn = !!globalState.drum;
-	if (gFits(9)) {
-		globalChipGeo.rootseq = { x: g1x, y: gRow(9), w: g1w, h: gChipH };
+	if (gFits(7)) {
+		globalChipGeo.rootseq = { x: g1x, y: gRow(7), w: g1w, h: gChipH };
 		var gRootSeqOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grootseq';
-		drawChip(globalChipGeo.rootseq, ROOTSEQ_NAMES[Math.round(globalState.rootSeq)] || '?', gRootSeqOpen);
+		drawChip(globalChipGeo.rootseq, ROOTSEQ_NAMES[Math.round(globalState.rootSeq)] || '?', gRootSeqOpen, undefined, undefined, undefined, 'menu');
 		if (gRootSeqOpen) pendingMenu = { v: -1, kind: 'grootseq', anchor: globalChipGeo.rootseq, items: ROOTSEQ_NAMES, cur: Math.round(globalState.rootSeq) };
 	}
-	if (gFits(10)) {
-		var g1dcw = (g1w - 2) / 2;
-		globalChipGeo.octm = { x: g1x, y: gRow(10), w: g1dcw, h: gChipH };
-		globalChipGeo.drum = { x: g1x + g1dcw + 2, y: gRow(10), w: g1dcw, h: gChipH };
+	if (gFits(8)) {
+		globalChipGeo.octm = { x: g1x, y: gRow(8), w: g1dcw, h: gChipH };
+		globalChipGeo.drum = { x: g1x + g1dcw + 2, y: gRow(8), w: g1dcw, h: gChipH };
 		drawChip(globalChipGeo.octm, 'O' + (globalState.octMaestra > 0 ? '+' : '') + globalState.octMaestra, false, drumOn);
-		drawChip(globalChipGeo.drum, 'Drum', drumOn);
+		drawChip(globalChipGeo.drum, 'Drum', drumOn, undefined, undefined, undefined, 'toggle');
 	}
-	if (drumOn && gFits(11)) {
-		globalChipGeo.pad = { x: g1x, y: gRow(11), w: g1w, h: gChipH };
+	if (drumOn && gFits(9)) {
+		globalChipGeo.pad = { x: g1x, y: gRow(9), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.pad, 'Pad ' + globalState.pad, false);
 	} else {
 		globalChipGeo.pad = null;
 	}
-	if (gFits(12)) {
-		globalChipGeo.rotacion = { x: g1x, y: gRow(12), w: g1w, h: gChipH };
+	if (gFits(10)) {
+		globalChipGeo.rotacion = { x: g1x, y: gRow(10), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.rotacion, 'Rot ' + globalState.rotacion, false);
 	}
-	if (gFits(13)) {
-		globalChipGeo.rotarx = { x: g1x, y: gRow(13), w: g1w, h: gChipH };
-		drawChip(globalChipGeo.rotarx, 'Rot x Camb', !!globalState.rotarx, chordLive);
+	if (gFits(11)) {
+		globalChipGeo.rotarx = { x: g1x, y: gRow(11), w: g1w, h: gChipH };
+		drawChip(globalChipGeo.rotarx, 'Rot x Camb', !!globalState.rotarx, chordLive, undefined, undefined, 'toggle');
 	}
-	if (Math.round(globalState.patron) === READ_COPRIMO && gFits(14)) {
-		globalChipGeo.salto = { x: g1x, y: gRow(14), w: g1w, h: gChipH };
+	if (Math.round(globalState.patron) === READ_COPRIMO && gFits(12)) {
+		globalChipGeo.salto = { x: g1x, y: gRow(12), w: g1w, h: gChipH };
 		drawChip(globalChipGeo.salto, 'Salto ' + globalState.salto, false);
 	} else {
 		globalChipGeo.salto = null;
@@ -1672,7 +1790,7 @@ function paint() {
 	if (gFits(3)) {
 		globalChipGeo.orden = { x: g2x, y: gRow(3), w: g2w, h: gChipH };
 		var gOrdenOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gorden';
-		drawChip(globalChipGeo.orden, ORDER_NAMES[Math.round(globalState.orden)] || '?', gOrdenOpen);
+		drawChip(globalChipGeo.orden, ORDER_NAMES[Math.round(globalState.orden)] || '?', gOrdenOpen, undefined, undefined, undefined, 'menu');
 		if (gOrdenOpen) pendingMenu = { v: -1, kind: 'gorden', anchor: globalChipGeo.orden, items: ORDER_NAMES, cur: Math.round(globalState.orden) };
 	}
 	if (gFits(4)) {
@@ -1680,13 +1798,13 @@ function paint() {
 		var gRangoOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'grango';
 		// Dimmed con Drum on (Ola 4) -- drumOn cambia a padFor(pc), Rango deja de tener efecto, y
 		// ya esta en pantalla (ver el bloque de col 1, filas 9-13, mas arriba).
-		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen, drumOn);
+		drawChip(globalChipGeo.rango, RANGE_NAMES[Math.round(globalState.rango)] || '?', gRangoOpen, drumOn, undefined, undefined, 'menu');
 		if (gRangoOpen) pendingMenu = { v: -1, kind: 'grango', anchor: globalChipGeo.rango, items: RANGE_NAMES, cur: Math.round(globalState.rango) };
 	}
 	if (gFits(5)) {
 		globalChipGeo.silpre = { x: g2x, y: gRow(5), w: g2w, h: gChipH };
 		var gSilpreOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gsilpre';
-		drawChip(globalChipGeo.silpre, SILPRE_NAMES[Math.round(globalState.silpre)] || '?', gSilpreOpen);
+		drawChip(globalChipGeo.silpre, SILPRE_NAMES[Math.round(globalState.silpre)] || '?', gSilpreOpen, undefined, undefined, undefined, 'menu');
 		if (gSilpreOpen) pendingMenu = { v: -1, kind: 'gsilpre', anchor: globalChipGeo.silpre, items: SILPRE_NAMES, cur: Math.round(globalState.silpre) };
 	}
 	// Row 6 -- Silencio Normal/Acento (groupSilence), side by side like Notas/Base in col 3 -- a
@@ -1708,7 +1826,7 @@ function paint() {
 		if (gFits(0)) {
 			globalChipGeo.ornt = { x: g3x, y: gRow(0), w: g3w, h: gChipH };
 			var gOrntOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornt';
-			drawChip(globalChipGeo.ornt, ORN_TYPE_NAMES[Math.round(globalState.ornType)] || '?', gOrntOpen);
+			drawChip(globalChipGeo.ornt, ORN_TYPE_NAMES[Math.round(globalState.ornType)] || '?', gOrntOpen, undefined, undefined, undefined, 'menu');
 			if (gOrntOpen) pendingMenu = { v: -1, kind: 'gornt', anchor: globalChipGeo.ornt, items: ORN_TYPE_NAMES, cur: Math.round(globalState.ornType) };
 		}
 		if (gFits(1)) {
@@ -1721,7 +1839,7 @@ function paint() {
 		if (gFits(2)) {
 			globalChipGeo.ornbasemode = { x: g3x, y: gRow(2), w: g3w, h: gChipH };
 			var gObmOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornbasemode';
-			drawChip(globalChipGeo.ornbasemode, ORN_BASE_MODE_NAMES[Math.round(globalState.ornBaseMode)] || '?', gObmOpen);
+			drawChip(globalChipGeo.ornbasemode, ORN_BASE_MODE_NAMES[Math.round(globalState.ornBaseMode)] || '?', gObmOpen, undefined, undefined, undefined, 'menu');
 			if (gObmOpen) pendingMenu = { v: -1, kind: 'gornbasemode', anchor: globalChipGeo.ornbasemode, items: ORN_BASE_MODE_NAMES, cur: Math.round(globalState.ornBaseMode) };
 		}
 		// Row 3 -- Orn Base Cuarteto's own scheme, ONLY while ornBaseMode IS Cuarteto (its real panel
@@ -1732,7 +1850,7 @@ function paint() {
 		if (Math.round(globalState.ornBaseMode) === ORN_BASE_QUADRITONE && gFits(3)) {
 			globalChipGeo.ornquad = { x: g3x, y: gRow(3), w: g3w, h: gChipH };
 			var gOrnQuadOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gornquad';
-			drawChip(globalChipGeo.ornquad, QUAD_SCHEME_NAMES[Math.round(globalState.ornQuad)] || '?', gOrnQuadOpen);
+			drawChip(globalChipGeo.ornquad, QUAD_SCHEME_NAMES[Math.round(globalState.ornQuad)] || '?', gOrnQuadOpen, undefined, undefined, undefined, 'menu');
 			if (gOrnQuadOpen) pendingMenu = { v: -1, kind: 'gornquad', anchor: globalChipGeo.ornquad, items: QUAD_SCHEME_NAMES, cur: Math.round(globalState.ornQuad) };
 		}
 		// Row 3 -- Orn Base Paso, ONLY while ornBaseMode IS Grados (ORN_BASE_DEGREES). Same rule and
@@ -1779,7 +1897,7 @@ function paint() {
 		if (gFits(1)) {
 			globalChipGeo.maskmode = { x: g4x, y: gRow(1), w: g4w, h: gChipH };
 			var gMaskModeOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gmaskmode';
-			drawChip(globalChipGeo.maskmode, MASK_MODE_NAMES[Math.round(globalState.maskMode)] || '?', gMaskModeOpen);
+			drawChip(globalChipGeo.maskmode, MASK_MODE_NAMES[Math.round(globalState.maskMode)] || '?', gMaskModeOpen, undefined, undefined, undefined, 'menu');
 			if (gMaskModeOpen) pendingMenu = { v: -1, kind: 'gmaskmode', anchor: globalChipGeo.maskmode, items: MASK_MODE_NAMES, cur: Math.round(globalState.maskMode) };
 		}
 		// Row 2 -- Mask Fit always (the "let a set transpose to satisfy the mask" adjustment applies
@@ -1794,7 +1912,7 @@ function paint() {
 			} else {
 				globalChipGeo.maskfit = { x: g4x, y: gRow(2), w: g4w, h: gChipH };
 			}
-			drawChip(globalChipGeo.maskfit, 'Fit', !!globalState.maskFit);
+			drawChip(globalChipGeo.maskfit, 'Fit', !!globalState.maskFit, undefined, undefined, undefined, 'toggle');
 		}
 		// Rows 3-8 -- IC1-6 Min|Max, side by side like n min/n max at row 0. A Min above its own Max
 		// lets nothing through (the engine still just warns on the console instead of freezing the
@@ -1824,7 +1942,7 @@ function paint() {
 		}
 		if (gFits(10)) {
 			globalChipGeo.randmask = { x: g4x, y: gRow(10), w: g4w, h: gChipH };
-			drawChip(globalChipGeo.randmask, 'Azar Mask', false);
+			drawChip(globalChipGeo.randmask, 'Azar Mask', false, undefined, undefined, undefined, 'action');
 		}
 	}   // else: globalChipGeo.nmin/nmax/maskmode/maskk/maskfit/vmin*/vmax*/randmaskpct/randmask
 		// simply stay unset (fresh {} above)
@@ -1888,11 +2006,11 @@ function paint() {
 		globalChipGeo.ciclo = { x: g6x, y: gRow(0), w: cdcw, h: gChipH };
 		globalChipGeo.tie = { x: g6x + cdcw + 2, y: gRow(0), w: cdcw, h: gChipH };
 		drawChip(globalChipGeo.ciclo, 'C' + globalState.accCiclo, false, !!globalState.accTie);
-		drawChip(globalChipGeo.tie, 'Tie', !!globalState.accTie);
+		drawChip(globalChipGeo.tie, 'Tie', !!globalState.accTie, undefined, undefined, undefined, 'toggle');
 	}
 	if (gFits(1)) {
 		globalChipGeo.euc = { x: g6x, y: gRow(1), w: g6w, h: gChipH };
-		drawChip(globalChipGeo.euc, 'Euclid', !!globalState.euclidOn);
+		drawChip(globalChipGeo.euc, 'Euclid', !!globalState.euclidOn, undefined, undefined, undefined, 'toggle');
 	}
 	if (globalState.euclidOn && gFits(2)) {
 		var edcw = (g6w - 2) / 2;
@@ -1927,6 +2045,9 @@ function paint() {
 	// No gate propio (caminoOpen is always true, see its definition up top) -- always drawn, FIXED
 	// rows 0-5 like col 1/2/6. This is the column where dimming is the whole point of the ola (see
 	// plan): a control that LOOKS live but currently has no effect on advanceSet()'s outcome.
+	// Collapsed (density/clarity pass): skip the whole body, the header block above already drew
+	// the narrow strip + "in use" dot for this frame.
+	if (!collapsedCols.camino) {
 	if (gFits(0)) {
 		globalChipGeo.tension = { x: g7x, y: gRow(0), w: g7w, h: gChipH };
 		// Alarm (not dim) when the fav-progression trap is live: Prog Favoritos on with an empty
@@ -1940,7 +2061,7 @@ function paint() {
 		// tensionAt() (inside advanceByTension()) is the only reader of tensShape -- dead at
 		// Tension 0 regardless of Prog Favoritos, same as favSeqActive/Trap dim it for the same reason.
 		drawChip(globalChipGeo.curva, CURVA_NAMES[Math.round(globalState.curva)] || '?', gCurvaOpen,
-			favSeqActive || favSeqTrap || Math.round(globalState.tension) === 0);
+			favSeqActive || favSeqTrap || Math.round(globalState.tension) === 0, undefined, undefined, 'menu');
 		if (gCurvaOpen) pendingMenu = { v: -1, kind: 'gcurva', anchor: globalChipGeo.curva, items: CURVA_NAMES, cur: Math.round(globalState.curva) };
 	}
 	if (gFits(2)) {
@@ -1948,7 +2069,7 @@ function paint() {
 		var gTensModelOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gtensmodel';
 		// Modelo does NOT dim with Tension at 0 -- settensmodel() always calls requestFilter() and
 		// moves consLow/consHigh/Orden's own consonance ordering regardless of the curve being live.
-		drawChip(globalChipGeo.tensmodel, TENSMODEL_NAMES[Math.round(globalState.tensmodel)] || '?', gTensModelOpen, favSeqActive || favSeqTrap);
+		drawChip(globalChipGeo.tensmodel, TENSMODEL_NAMES[Math.round(globalState.tensmodel)] || '?', gTensModelOpen, favSeqActive || favSeqTrap, undefined, undefined, 'menu');
 		if (gTensModelOpen) pendingMenu = { v: -1, kind: 'gtensmodel', anchor: globalChipGeo.tensmodel, items: TENSMODEL_NAMES, cur: Math.round(globalState.tensmodel) };
 	}
 	if (gFits(3)) {
@@ -1957,18 +2078,19 @@ function paint() {
 		globalChipGeo.favonly = { x: g7x + pfdcw + 2, y: gRow(3), w: pfdcw, h: gChipH };
 		// Alarm on the Prog Favoritos chip itself -- the trap is about THIS control looking on and
 		// harmless while quietly killing Tension/Curva/Enlace next to it.
-		drawChip(globalChipGeo.progfav, 'Fav Sq', !!globalState.progfav, false, undefined, favSeqTrap);
-		drawChip(globalChipGeo.favonly, 'S.Fav', !!globalState.favonly);
+		drawChip(globalChipGeo.progfav, 'Fav Sq', !!globalState.progfav, false, undefined, favSeqTrap, 'toggle');
+		drawChip(globalChipGeo.favonly, 'S.Fav', !!globalState.favonly, undefined, undefined, undefined, 'toggle');
 	}
 	if (gFits(4)) {
 		globalChipGeo.fav = { x: g7x, y: gRow(4), w: g7w, h: gChipH };
-		drawChip(globalChipGeo.fav, 'Fav', !!globalState.fav);
+		drawChip(globalChipGeo.fav, 'Fav', !!globalState.fav, undefined, undefined, undefined, 'toggle');
 	}
 	if (gFits(5)) {
 		globalChipGeo.clearfavs = { x: g7x, y: gRow(5), w: g7w, h: gChipH };
 		// Accion, no estado -- nunca "on" (rule 8), pero se apaga sola si no hay nada que limpiar.
-		drawChip(globalChipGeo.clearfavs, 'Lim favs', false, globalState.favSeqLen === 0);
+		drawChip(globalChipGeo.clearfavs, 'Lim favs', false, globalState.favSeqLen === 0, undefined, undefined, 'action');
 	}
+	} // !collapsedCols.camino
 
 	// Column 8 -- Modulacion (Ola 6), FIXED rows 0-3, one row per modulator -- the matrix the plan
 	// asks for instead of 20 loose chips (see the file-header comment for the full rationale).
@@ -1978,7 +2100,7 @@ function paint() {
 	// setmodphase/setmoddest take. Cells are prefixed the same way every other narrow numeric chip in
 	// this sidebar already is ("n"+cardMin, "k"+maskK, "i1n"+val) instead of a separate field-header
 	// row, which would not fit above only 4 rows.
-	if (modOpen) {
+	if (modOpen && !collapsedCols.mod) {
 		var ROWTAG_W = 12;
 		var mCellW = (g8w - ROWTAG_W - 4) / 5;   // 4 = the four 1px gaps between 5 cells
 		var MOD_ROWS = [
@@ -1995,7 +2117,7 @@ function paint() {
 				phaseV = globalState[fPhase], destV = globalState[fDest];
 			var my = gRow(mr);
 			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-			mgraphics.set_font_size(8);
+			mgraphics.set_font_size(10);
 			mgraphics.move_to(g8x, my + gChipH - 5);
 			mgraphics.show_text('M' + mk);
 
@@ -2012,7 +2134,7 @@ function paint() {
 			var cx = g8x + ROWTAG_W;
 			globalChipGeo[fShape] = { x: cx, y: my, w: mCellW, h: gChipH };
 			var mShapeOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'g' + fShape;
-			drawChip(globalChipGeo[fShape], MOD_SHAPE_ABBR[Math.round(shapeV)] || '?', mShapeOpen, false, mDim);
+			drawChip(globalChipGeo[fShape], MOD_SHAPE_ABBR[Math.round(shapeV)] || '?', mShapeOpen, false, mDim, undefined, 'menu');
 			if (mShapeOpen) pendingMenu = { v: -1, kind: 'g' + fShape, anchor: globalChipGeo[fShape], items: MOD_SHAPE_NAMES, cur: Math.round(shapeV) };
 			cx += mCellW + 1;
 
@@ -2030,7 +2152,7 @@ function paint() {
 
 			globalChipGeo[fDest] = { x: cx, y: my, w: mCellW, h: gChipH };
 			var mDestOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'g' + fDest;
-			drawChip(globalChipGeo[fDest], MOD_DEST_ABBR[Math.round(destV)] || '?', mDestOpen, false, mDim);
+			drawChip(globalChipGeo[fDest], MOD_DEST_ABBR[Math.round(destV)] || '?', mDestOpen, false, mDim, undefined, 'menu');
 			if (mDestOpen) pendingMenu = { v: -1, kind: 'g' + fDest, anchor: globalChipGeo[fDest], items: MOD_DEST_NAMES, cur: Math.round(destV) };
 		}
 	}
@@ -2039,26 +2161,26 @@ function paint() {
 	// (action) / Slot (drag-scrub) / Guardar+Cargar (paired actions) / Borrar (action). Same chip
 	// idiom as every other column rather than the toolbar the plan first floated -- cheaper, and
 	// nothing here needs more room than one 86px column already gives every other family.
-	if (sesOpen) {
+	if (sesOpen && !collapsedCols.ses) {
 		if (gFits(0)) {
 			globalChipGeo.escuchar = { x: g9x, y: gRow(0), w: g9w, h: gChipH };
 			var gEscOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gescuchar';
-			drawChip(globalChipGeo.escuchar, ESCUCHAR_NAMES[Math.round(globalState.listen)] || '?', gEscOpen);
+			drawChip(globalChipGeo.escuchar, ESCUCHAR_NAMES[Math.round(globalState.listen)] || '?', gEscOpen, undefined, undefined, undefined, 'menu');
 			if (gEscOpen) pendingMenu = { v: -1, kind: 'gescuchar', anchor: globalChipGeo.escuchar, items: ESCUCHAR_NAMES, cur: Math.round(globalState.listen) };
 		}
 		if (gFits(1)) {
 			var g9dcw = (g9w - 2) / 2;
 			globalChipGeo.emit = { x: g9x, y: gRow(1), w: g9dcw, h: gChipH };
 			globalChipGeo.seguir = { x: g9x + g9dcw + 2, y: gRow(1), w: g9dcw, h: gChipH };
-			drawChip(globalChipGeo.emit, 'Emit', !!globalState.emit);
+			drawChip(globalChipGeo.emit, 'Emit', !!globalState.emit, undefined, undefined, undefined, 'toggle');
 			// Seguir es inerte salvo que otro motor en el MISMO Bus tenga Emitir on -- no verificable
 			// desde aca (ver el plan, Ola 7), asi que no se dimea: el chip solo dice lo que ESTE
 			// device tiene prendido, no si sirve de algo ahora mismo.
-			drawChip(globalChipGeo.seguir, 'Seg', !!globalState.seguir);
+			drawChip(globalChipGeo.seguir, 'Seg', !!globalState.seguir, undefined, undefined, undefined, 'toggle');
 		}
 		if (gFits(2)) {
 			globalChipGeo.panic = { x: g9x, y: gRow(2), w: g9w, h: gChipH };
-			drawChip(globalChipGeo.panic, 'Panic', false);
+			drawChip(globalChipGeo.panic, 'Panic', false, undefined, undefined, undefined, 'action');
 		}
 		if (gFits(3)) {
 			globalChipGeo.slot = { x: g9x, y: gRow(3), w: g9w, h: gChipH };
@@ -2068,15 +2190,16 @@ function paint() {
 			var g9pcw = (g9w - 2) / 2;
 			globalChipGeo.pguardar = { x: g9x, y: gRow(4), w: g9pcw, h: gChipH };
 			globalChipGeo.pcargar = { x: g9x + g9pcw + 2, y: gRow(4), w: g9pcw, h: gChipH };
-			drawChip(globalChipGeo.pguardar, 'Guard', false);
-			drawChip(globalChipGeo.pcargar, 'Carg', false);
+			drawChip(globalChipGeo.pguardar, 'Guard', false, undefined, undefined, undefined, 'action');
+			drawChip(globalChipGeo.pcargar, 'Carg', false, undefined, undefined, undefined, 'action');
 		}
 		if (gFits(5)) {
 			globalChipGeo.pborrar = { x: g9x, y: gRow(5), w: g9w, h: gChipH };
-			drawChip(globalChipGeo.pborrar, 'Borrar', false);
+			drawChip(globalChipGeo.pborrar, 'Borrar', false, undefined, undefined, undefined, 'action');
 		}
 	}
 
+	chipFontSize = CHIP_FONT;   // sidebar's text-size bump ends here -- per-voice grid keeps its own size
 	for (var v = 0; v < nRows; v++) {
 		var y = headH + v * rowH;
 		var P = pat[v] || { kind: 1, cols: 0, cells: [] };
