@@ -799,183 +799,346 @@ var chipFontSize = CHIP_FONT;
 // fields need it because setvoicearticulation() takes all 4 at once, so nudging just one still has
 // to resend the other 3 unchanged (reading them back out of the same row's current vkeyInfo).
 var DRAG_SPECS = {
-	setbox: { min: 1, max: 351, field: 'setIdx', pxPerUnit: 4,
+	setbox: { min: 1, max: 351, field: 'setIdx', def: 1, pxPerUnit: 4,
 		send: function (v, nv) { outlet(0, ['setvoicesetindex', v + 1, nv]); } },
-	ornnotas: { min: 1, max: 4, field: 'ornN', pxPerUnit: 16,
+	ornnotas: { min: 1, max: 4, field: 'ornN', def: 1, pxPerUnit: 16,
 		send: function (v, nv) { outlet(0, ['setvoiceorncount', v + 1, nv]); } },
-	ornbase: { min: 1, max: 14, field: 'ornB', pxPerUnit: 10,
+	ornbase: { min: 1, max: 14, field: 'ornB', def: 4, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoiceornbase', v + 1, nv]); } },
-	grado: { min: -8, max: 8, field: 'grado', pxPerUnit: 8,
+	grado: { min: -8, max: 8, field: 'grado', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoicedegoffset', v + 1, nv]); } },
-	div: { min: 1, max: 16, field: 'div', pxPerUnit: 10,
+	div: { min: 1, max: 16, field: 'div', def: 1, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoicediv', v + 1, nv]); } },
-	euclen: { min: 0, max: 16, field: 'euLarg', pxPerUnit: 8,
+	euclen: { min: 0, max: 16, field: 'euLarg', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoiceeuclen', v + 1, nv]); } },
-	euck: { min: 0, max: 16, field: 'euPuls', pxPerUnit: 8,
+	euck: { min: 0, max: 16, field: 'euPuls', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoiceeuck', v + 1, nv]); } },
-	eucrot: { min: 0, max: 15, field: 'euGir', pxPerUnit: 10,
+	eucrot: { min: 0, max: 15, field: 'euGir', def: 0, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoiceeucrot', v + 1, nv]); } },
-	artvmin: { min: 1, max: 127, field: 'velMin', pxPerUnit: 3,
+	artvmin: { min: 1, max: 127, field: 'velMin', def: 55, pxPerUnit: 3,
 		send: function (v, nv, vk) { outlet(0, ['setvoicearticulation', v + 1, nv, vk.velMax, vk.durDiv, vk.silence]); } },
-	artvmax: { min: 1, max: 127, field: 'velMax', pxPerUnit: 3,
+	artvmax: { min: 1, max: 127, field: 'velMax', def: 80, pxPerUnit: 3,
 		send: function (v, nv, vk) { outlet(0, ['setvoicearticulation', v + 1, vk.velMin, nv, vk.durDiv, vk.silence]); } },
-	artdur: { min: 1, max: 32, field: 'durDiv', pxPerUnit: 6,
+	artdur: { min: 1, max: 32, field: 'durDiv', def: 16, pxPerUnit: 6,
 		send: function (v, nv, vk) { outlet(0, ['setvoicearticulation', v + 1, vk.velMin, vk.velMax, nv, vk.silence]); } },
-	artsil: { min: 0, max: 100, field: 'silence', pxPerUnit: 4,
+	artsil: { min: 0, max: 100, field: 'silence', def: 0, pxPerUnit: 4,
 		send: function (v, nv, vk) { outlet(0, ['setvoicearticulation', v + 1, vk.velMin, vk.velMax, vk.durDiv, nv]); } },
 	// Global sidebar (v === -1 sentinel, no voice index in the outgoing message) -- see paint()'s
 	// global-column block and onclick()'s v===-1 branch.
-	gset: { min: 1, max: 351, field: 'setIdx', pxPerUnit: 4, global: true,
+	gset: { min: 1, max: 351, field: 'setIdx', def: 1, pxPerUnit: 4, global: true,
 		send: function (v, nv) { outlet(0, ['setlockindex', nv]); } },
-	groot: { min: -24, max: 24, field: 'root', pxPerUnit: 4, global: true,
+	groot: { min: -24, max: 24, field: 'root', def: 0, pxPerUnit: 4, global: true,
 		send: function (v, nv) { outlet(0, ['setroot', nv]); } },
-	gornnotas: { min: 1, max: 4, field: 'ornCount', pxPerUnit: 16, global: true,
+	gornnotas: { min: 1, max: 4, field: 'ornCount', def: 1, pxPerUnit: 16, global: true,
 		send: function (v, nv) { outlet(0, ['setorncount', nv]); } },
-	gornbase: { min: 1, max: 14, field: 'ornBase', pxPerUnit: 10, global: true,
+	gornbase: { min: 1, max: 14, field: 'ornBase', def: 4, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setornbaseinterval', nv]); } },
-	gharm: { min: 0, max: 64, field: 'harmRate', pxPerUnit: 6, global: true,
+	gharm: { min: 0, max: 64, field: 'harmRate', def: 0, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setharmrate', nv]); } },
 	// Col 3's mode-specific rows (Grados/Serie), same global-sidebar idiom -- see paint()'s col 3
 	// block for which one is actually drawn (mutually exclusive, gated by globalState.ornBaseMode).
-	gornstep: { min: 1, max: 4, field: 'ornStep', pxPerUnit: 16, global: true,
+	gornstep: { min: 1, max: 4, field: 'ornStep', def: 1, pxPerUnit: 16, global: true,
 		send: function (v, nv) { outlet(0, ['setornbasestep', nv]); } },
-	gserstart: { min: 1, max: 6, field: 'ornSeriesStart', pxPerUnit: 12, global: true,
+	gserstart: { min: 1, max: 6, field: 'ornSeriesStart', def: 1, pxPerUnit: 12, global: true,
 		send: function (v, nv) { outlet(0, ['setornseriesstart', nv]); } },
-	gserstep: { min: 1, max: 4, field: 'ornSeriesStep', pxPerUnit: 16, global: true,
+	gserstep: { min: 1, max: 4, field: 'ornSeriesStep', def: 1, pxPerUnit: 16, global: true,
 		send: function (v, nv) { outlet(0, ['setornseriesstep', nv]); } },
-	gserpeak: { min: 1, max: 8, field: 'ornSeriesPeak', pxPerUnit: 8, global: true,
+	gserpeak: { min: 1, max: 8, field: 'ornSeriesPeak', def: 4, pxPerUnit: 8, global: true,
 		send: function (v, nv) { outlet(0, ['setornseriespeak', nv]); } },
 	// Col 1's Enlace and col 2's Silencio Normal/Acento -- same global-sidebar idiom, see paint().
-	genlace: { min: 0, max: 6, field: 'enlace', pxPerUnit: 14, global: true,
+	genlace: { min: 0, max: 6, field: 'enlace', def: 0, pxPerUnit: 14, global: true,
 		send: function (v, nv) { outlet(0, ['setlink', nv]); } },
-	gsilnorm: { min: 0, max: 100, field: 'silNorm', pxPerUnit: 3, global: true,
+	gsilnorm: { min: 0, max: 100, field: 'silNorm', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupsilence', 0, nv]); } },
-	gsilacc: { min: 0, max: 100, field: 'silAcc', pxPerUnit: 3, global: true,
+	gsilacc: { min: 0, max: 100, field: 'silAcc', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupsilence', 1, nv]); } },
 	// Col 4 (Filtro cluster), same global-sidebar idiom, see paint()'s filtOpen block.
-	gnmin: { min: 1, max: 12, field: 'cardMin', pxPerUnit: 10, global: true,
+	gnmin: { min: 1, max: 12, field: 'cardMin', def: 1, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setcardmin', nv]); } },
-	gnmax: { min: 1, max: 12, field: 'cardMax', pxPerUnit: 10, global: true,
+	gnmax: { min: 1, max: 12, field: 'cardMax', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setcardmax', nv]); } },
-	gmaskk: { min: 1, max: 12, field: 'maskK', pxPerUnit: 10, global: true,
+	gmaskk: { min: 1, max: 12, field: 'maskK', def: 1, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setmaskk', nv]); } },
 	// IC1-6 Min/Max (Ola 5), still col 4 -- 12 specs, one per numbox, setvecmin/setvecmax take the
 	// interval-class index as their first argument (same "index, then value" shape as setratchet/
 	// setgroupvelmin above), so each IC gets its own min spec and its own max spec.
-	gvmin1: { min: 0, max: 12, field: 'vecMin1', pxPerUnit: 10, global: true,
+	gvmin1: { min: 0, max: 12, field: 'vecMin1', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 1, nv]); } },
-	gvmax1: { min: 0, max: 12, field: 'vecMax1', pxPerUnit: 10, global: true,
+	gvmax1: { min: 0, max: 12, field: 'vecMax1', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 1, nv]); } },
-	gvmin2: { min: 0, max: 12, field: 'vecMin2', pxPerUnit: 10, global: true,
+	gvmin2: { min: 0, max: 12, field: 'vecMin2', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 2, nv]); } },
-	gvmax2: { min: 0, max: 12, field: 'vecMax2', pxPerUnit: 10, global: true,
+	gvmax2: { min: 0, max: 12, field: 'vecMax2', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 2, nv]); } },
-	gvmin3: { min: 0, max: 12, field: 'vecMin3', pxPerUnit: 10, global: true,
+	gvmin3: { min: 0, max: 12, field: 'vecMin3', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 3, nv]); } },
-	gvmax3: { min: 0, max: 12, field: 'vecMax3', pxPerUnit: 10, global: true,
+	gvmax3: { min: 0, max: 12, field: 'vecMax3', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 3, nv]); } },
-	gvmin4: { min: 0, max: 12, field: 'vecMin4', pxPerUnit: 10, global: true,
+	gvmin4: { min: 0, max: 12, field: 'vecMin4', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 4, nv]); } },
-	gvmax4: { min: 0, max: 12, field: 'vecMax4', pxPerUnit: 10, global: true,
+	gvmax4: { min: 0, max: 12, field: 'vecMax4', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 4, nv]); } },
-	gvmin5: { min: 0, max: 12, field: 'vecMin5', pxPerUnit: 10, global: true,
+	gvmin5: { min: 0, max: 12, field: 'vecMin5', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 5, nv]); } },
-	gvmax5: { min: 0, max: 12, field: 'vecMax5', pxPerUnit: 10, global: true,
+	gvmax5: { min: 0, max: 12, field: 'vecMax5', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 5, nv]); } },
-	gvmin6: { min: 0, max: 12, field: 'vecMin6', pxPerUnit: 10, global: true,
+	gvmin6: { min: 0, max: 12, field: 'vecMin6', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmin', 6, nv]); } },
-	gvmax6: { min: 0, max: 12, field: 'vecMax6', pxPerUnit: 10, global: true,
+	gvmax6: { min: 0, max: 12, field: 'vecMax6', def: 12, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setvecmax', 6, nv]); } },
-	grandmaskpct: { min: 0, max: 100, field: 'randMaskPct', pxPerUnit: 3, global: true,
+	grandmaskpct: { min: 0, max: 100, field: 'randMaskPct', def: 50, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setrandmaskpct', nv]); } },
 	// Col 5 (Groove), same global-sidebar idiom. setratchet takes the group index first, so Rat N
 	// and Rat A are two specs over the same setter -- the same shape gsilnorm/gsilacc already use.
-	gswing: { min: 50, max: 75, field: 'swing', pxPerUnit: 5, global: true,
+	gswing: { min: 50, max: 75, field: 'swing', def: 50, pxPerUnit: 5, global: true,
 		send: function (v, nv) { outlet(0, ['setswing', nv]); } },
-	ghuman: { min: 0, max: 100, field: 'human', pxPerUnit: 3, global: true,
+	ghuman: { min: 0, max: 100, field: 'human', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['sethumanize', nv]); } },
-	grasg: { min: 0, max: 8, field: 'rasg', pxPerUnit: 12, global: true,
+	grasg: { min: 0, max: 8, field: 'rasg', def: 0, pxPerUnit: 12, global: true,
 		send: function (v, nv) { outlet(0, ['setstrum', nv]); } },
-	gratn: { min: 1, max: 4, field: 'ratN', pxPerUnit: 16, global: true,
+	gratn: { min: 1, max: 4, field: 'ratN', def: 1, pxPerUnit: 16, global: true,
 		send: function (v, nv) { outlet(0, ['setratchet', 0, nv]); } },
-	grata: { min: 1, max: 4, field: 'ratA', pxPerUnit: 16, global: true,
+	grata: { min: 1, max: 4, field: 'ratA', def: 1, pxPerUnit: 16, global: true,
 		send: function (v, nv) { outlet(0, ['setratchet', 1, nv]); } },
-	gratprob: { min: 0, max: 100, field: 'ratProb', pxPerUnit: 3, global: true,
+	gratprob: { min: 0, max: 100, field: 'ratProb', def: 100, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setratchetprob', nv]); } },
-	gratcaida: { min: 0, max: 100, field: 'ratCaida', pxPerUnit: 3, global: true,
+	gratcaida: { min: 0, max: 100, field: 'ratCaida', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setratchetdecay', nv]); } },
 	// Col 6 (Acentos), same global-sidebar idiom. VelMin/VelMax/Figura take the group index first
 	// (setgroupvelmin/setgroupvelmax/setgroupdur), so Normal and Acento are two specs over the same
 	// setter each -- same shape gsilnorm/gsilacc and gratn/grata already use.
-	gciclo: { min: 1, max: 16, field: 'accCiclo', pxPerUnit: 10, global: true,
+	gciclo: { min: 1, max: 16, field: 'accCiclo', def: 4, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setaccentcycle', nv]); } },
-	geuck: { min: 0, max: 16, field: 'euclidK', pxPerUnit: 10, global: true,
+	geuck: { min: 0, max: 16, field: 'euclidK', def: 4, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['seteuclidk', nv]); } },
-	geurot: { min: 0, max: 15, field: 'euclidRot', pxPerUnit: 10, global: true,
+	geurot: { min: 0, max: 15, field: 'euclidRot', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['seteuclidrot', nv]); } },
-	gvelminn: { min: 1, max: 127, field: 'velMinN', pxPerUnit: 3, global: true,
+	gvelminn: { min: 1, max: 127, field: 'velMinN', def: 55, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupvelmin', 0, nv]); } },
-	gvelmina: { min: 1, max: 127, field: 'velMinA', pxPerUnit: 3, global: true,
+	gvelmina: { min: 1, max: 127, field: 'velMinA', def: 95, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupvelmin', 1, nv]); } },
-	gvelmaxn: { min: 1, max: 127, field: 'velMaxN', pxPerUnit: 3, global: true,
+	gvelmaxn: { min: 1, max: 127, field: 'velMaxN', def: 80, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupvelmax', 0, nv]); } },
-	gvelmaxa: { min: 1, max: 127, field: 'velMaxA', pxPerUnit: 3, global: true,
+	gvelmaxa: { min: 1, max: 127, field: 'velMaxA', def: 115, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupvelmax', 1, nv]); } },
-	gfign: { min: 1, max: 32, field: 'figN', pxPerUnit: 6, global: true,
+	gfign: { min: 1, max: 32, field: 'figN', def: 16, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupdur', 0, nv]); } },
-	gfiga: { min: 1, max: 32, field: 'figA', pxPerUnit: 6, global: true,
+	gfiga: { min: 1, max: 32, field: 'figA', def: 4, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setgroupdur', 1, nv]); } },
 	// Col 7 (Camino armonico), same global-sidebar idiom. Curva/Modelo are dropdowns (openMenu), not
 	// drag-scrubs -- see onclick()'s v===-1 branch and paint()'s Camino block.
-	gtension: { min: 0, max: 16, field: 'tension', pxPerUnit: 10, global: true,
+	gtension: { min: 0, max: 16, field: 'tension', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['settension', nv]); } },
 	// Col 1 filas 9-13 (Registro/Recorrido, Ola 4), mismo idioma global-sidebar. Rotacion no tiene un
 	// rango fijo en el motor (wrap mod la cardinalidad del set activo, ver setrotation()) -- 0-11
 	// cubre cualquier cardinalidad real y el motor mismo hace el wrap final, asi que un arrastre mas
 	// alla del set actual simplemente se clampea aca, sin desincronizar nada.
-	goctm: { min: -5, max: 5, field: 'octMaestra', pxPerUnit: 8, global: true,
+	goctm: { min: -5, max: 5, field: 'octMaestra', def: 0, pxPerUnit: 8, global: true,
 		send: function (v, nv) { outlet(0, ['setmasteroctave', nv]); } },
-	gpad: { min: 0, max: 115, field: 'pad', pxPerUnit: 3, global: true,
+	gpad: { min: 0, max: 115, field: 'pad', def: 36, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setdrumbase', nv]); } },
-	grotacion: { min: 0, max: 11, field: 'rotacion', pxPerUnit: 10, global: true,
+	grotacion: { min: 0, max: 11, field: 'rotacion', def: 0, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setrotation', nv]); } },
-	gsalto: { min: 1, max: 11, field: 'salto', pxPerUnit: 10, global: true,
+	gsalto: { min: 1, max: 11, field: 'salto', def: 2, pxPerUnit: 10, global: true,
 		send: function (v, nv) { outlet(0, ['setcoprime', nv]); } },
 	// Col 8 (Modulacion, Ola 6), same global-sidebar idiom. Forma/Dest are dropdowns (openMenu), not
 	// drag-scrubs -- see onclick()'s v===-1 branch and paint()'s Modulacion block. setmod* all take
 	// the modulator index k=1..4 as their first argument, same "index, then value" shape as
 	// setvecmin/setvecmax/setratchet above.
-	gmod1cycle: { min: 1, max: 64, field: 'mod1cycle', pxPerUnit: 6, global: true,
+	gmod1cycle: { min: 1, max: 64, field: 'mod1cycle', def: 8, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setmodcycle', 1, nv]); } },
-	gmod1depth: { min: -100, max: 100, field: 'mod1depth', pxPerUnit: 2, global: true,
+	gmod1depth: { min: -100, max: 100, field: 'mod1depth', def: 0, pxPerUnit: 2, global: true,
 		send: function (v, nv) { outlet(0, ['setmoddepth', 1, nv]); } },
-	gmod1phase: { min: 0, max: 100, field: 'mod1phase', pxPerUnit: 3, global: true,
+	gmod1phase: { min: 0, max: 100, field: 'mod1phase', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setmodphase', 1, nv]); } },
-	gmod2cycle: { min: 1, max: 64, field: 'mod2cycle', pxPerUnit: 6, global: true,
+	gmod2cycle: { min: 1, max: 64, field: 'mod2cycle', def: 8, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setmodcycle', 2, nv]); } },
-	gmod2depth: { min: -100, max: 100, field: 'mod2depth', pxPerUnit: 2, global: true,
+	gmod2depth: { min: -100, max: 100, field: 'mod2depth', def: 0, pxPerUnit: 2, global: true,
 		send: function (v, nv) { outlet(0, ['setmoddepth', 2, nv]); } },
-	gmod2phase: { min: 0, max: 100, field: 'mod2phase', pxPerUnit: 3, global: true,
+	gmod2phase: { min: 0, max: 100, field: 'mod2phase', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setmodphase', 2, nv]); } },
-	gmod3cycle: { min: 1, max: 64, field: 'mod3cycle', pxPerUnit: 6, global: true,
+	gmod3cycle: { min: 1, max: 64, field: 'mod3cycle', def: 8, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setmodcycle', 3, nv]); } },
-	gmod3depth: { min: -100, max: 100, field: 'mod3depth', pxPerUnit: 2, global: true,
+	gmod3depth: { min: -100, max: 100, field: 'mod3depth', def: 0, pxPerUnit: 2, global: true,
 		send: function (v, nv) { outlet(0, ['setmoddepth', 3, nv]); } },
-	gmod3phase: { min: 0, max: 100, field: 'mod3phase', pxPerUnit: 3, global: true,
+	gmod3phase: { min: 0, max: 100, field: 'mod3phase', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setmodphase', 3, nv]); } },
-	gmod4cycle: { min: 1, max: 64, field: 'mod4cycle', pxPerUnit: 6, global: true,
+	gmod4cycle: { min: 1, max: 64, field: 'mod4cycle', def: 8, pxPerUnit: 6, global: true,
 		send: function (v, nv) { outlet(0, ['setmodcycle', 4, nv]); } },
-	gmod4depth: { min: -100, max: 100, field: 'mod4depth', pxPerUnit: 2, global: true,
+	gmod4depth: { min: -100, max: 100, field: 'mod4depth', def: 0, pxPerUnit: 2, global: true,
 		send: function (v, nv) { outlet(0, ['setmoddepth', 4, nv]); } },
-	gmod4phase: { min: 0, max: 100, field: 'mod4phase', pxPerUnit: 3, global: true,
+	gmod4phase: { min: 0, max: 100, field: 'mod4phase', def: 0, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setmodphase', 4, nv]); } },
 	// Col 9 (Sesion, Ola 7), same global-sidebar idiom. Escuchar is a dropdown (openMenu), not a
 	// drag-scrub -- see onclick()'s v===-1 branch and paint()'s Sesion block. Emit/Seguir are plain
 	// toggle chips (click, no drag), and Panic/Guardar/Cargar/Borrar are actions (no sync at all,
 	// rule 8) -- only Slot needs a DRAG_SPECS entry.
-	gslot: { min: 1, max: 20, field: 'slot', pxPerUnit: 14, global: true,
+	gslot: { min: 1, max: 20, field: 'slot', def: 1, pxPerUnit: 14, global: true,
 		send: function (v, nv) { outlet(0, ['setpresetslot', nv]); } }
 };
+
+// Same shape as DRAG_SPECS (field/def/send, `global: true` for the v===-1 sidebar) but for the
+// dropdown/toggle/cycle controls onclick() drives directly instead of through dragBox -- those
+// never had a table because a click just flips/opens them in place. ondblclick() below needs a
+// `def` for every one of them too, so they get the same {field, def, global, send} shape here
+// rather than a second bespoke mechanism. Keys mirror onclick()'s own openMenu 'kind' strings
+// where one already exists (gpatron/patron, gornt/ornt); every other key is new, named after its
+// globalChipGeo/chipGeo property with a leading g for the sidebar (global) side, none for the
+// per-voice side, exactly like DRAG_SPECS's own setbox/gset pairing. Run, and the momentary
+// actions (Panic/Guardar/Cargar/Borrar/Limpiar favs/Azar Mascara/Trig), are deliberately absent --
+// there is no "default" for a transport switch or a one-shot command.
+var TOGGLE_SPECS = {
+	// Global dropdowns (openMenu 'kind' tokens) -- def is the menu ITEM INDEX, same domain onclick()
+	// itself writes on selection. gsub is the one exception: its field holds the real divisor value
+	// (see openMenu's own 'gsub' branch), not the item index, so def is SUB_VALUES[0] === 1.
+	gpatron: { field: 'patron', def: 0, global: true, send: function (v, nv) { outlet(0, ['setreadmode', nv]); } },
+	gornt: { field: 'ornType', def: 0, global: true, send: function (v, nv) { outlet(0, ['setorntype', nv]); } },
+	gornbasemode: { field: 'ornBaseMode', def: 0, global: true, send: function (v, nv) { outlet(0, ['setornbasemode', nv]); } },
+	gorden: { field: 'orden', def: 0, global: true, send: function (v, nv) { outlet(0, ['setorder', nv]); } },
+	grango: { field: 'rango', def: 0, global: true, send: function (v, nv) { outlet(0, ['setrangetemplate', nv]); } },
+	gsilpre: { field: 'silpre', def: 0, global: true, send: function (v, nv) { outlet(0, ['setsilencepreset', nv]); } },
+	gornquad: { field: 'ornQuad', def: 0, global: true, send: function (v, nv) { outlet(0, ['setornquadscheme', nv]); } },
+	gmaskmode: { field: 'maskMode', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmaskmode', nv]); } },
+	gsub: { field: 'sub', def: 1, global: true, send: function (v, nv) { outlet(0, ['setsub', nv]); } },
+	gcurva: { field: 'curva', def: 0, global: true, send: function (v, nv) { outlet(0, ['settenshape', nv]); } },
+	gtensmodel: { field: 'tensmodel', def: 0, global: true, send: function (v, nv) { outlet(0, ['settensmodel', nv]); } },
+	grootseq: { field: 'rootSeq', def: 0, global: true, send: function (v, nv) { outlet(0, ['setrootseq', nv]); } },
+	gmod1shape: { field: 'mod1shape', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmodshape', 1, nv]); } },
+	gmod1dest: { field: 'mod1dest', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmoddest', 1, nv]); } },
+	gmod2shape: { field: 'mod2shape', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmodshape', 2, nv]); } },
+	gmod2dest: { field: 'mod2dest', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmoddest', 2, nv]); } },
+	gmod3shape: { field: 'mod3shape', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmodshape', 3, nv]); } },
+	gmod3dest: { field: 'mod3dest', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmoddest', 3, nv]); } },
+	gmod4shape: { field: 'mod4shape', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmodshape', 4, nv]); } },
+	gmod4dest: { field: 'mod4dest', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmoddest', 4, nv]); } },
+	gescuchar: { field: 'listen', def: 0, global: true, send: function (v, nv) { outlet(0, ['setlisten', nv]); } },
+	// Global plain toggle/cycle chips -- def matches globalState's own init object above.
+	gind: { field: 'indep', def: false, global: true, send: function (v, nv) { outlet(0, ['setvoiceindep', nv ? 1 : 0]); } },
+	gflt: { field: 'filtered', def: false, global: true, send: function (v, nv) { outlet(0, ['setfilter', nv ? 1 : 0]); } },
+	glck: { field: 'locked', def: 0, global: true, send: function (v, nv) { outlet(0, ['setlock', nv]); } },
+	gdir: { field: 'dir', def: 0, global: true, send: function (v, nv) { outlet(0, ['setreaddir', nv]); } },
+	gdrum: { field: 'drum', def: 0, global: true, send: function (v, nv) { outlet(0, ['setdrum', nv]); } },
+	grotarx: { field: 'rotarx', def: 0, global: true, send: function (v, nv) { outlet(0, ['setshape', nv]); } },
+	gmaskfit: { field: 'maskFit', def: 1, global: true, send: function (v, nv) { outlet(0, ['setmaskfit', nv]); } },
+	gmodo: { field: 'mode', def: 1, global: true, send: function (v, nv) { outlet(0, ['setmode', nv]); } },
+	gdirrasg: { field: 'dirRasg', def: 0, global: true, send: function (v, nv) { outlet(0, ['setstrumdir', nv]); } },
+	gtie: { field: 'accTie', def: 0, global: true, send: function (v, nv) { outlet(0, ['setaccenttie', nv]); } },
+	geuc: { field: 'euclidOn', def: 0, global: true, send: function (v, nv) { outlet(0, ['seteuclid', nv]); } },
+	gprogfav: { field: 'progfav', def: 0, global: true, send: function (v, nv) { outlet(0, ['setfavseq', nv]); } },
+	gfavonly: { field: 'favonly', def: 0, global: true, send: function (v, nv) { outlet(0, ['setfavonly', nv]); } },
+	gfav: { field: 'fav', def: 0, global: true, send: function (v, nv) { outlet(0, ['setfav', nv]); } },
+	gemit: { field: 'emit', def: 0, global: true, send: function (v, nv) { outlet(0, ['setbroadcast', nv]); } },
+	gseguir: { field: 'seguir', def: 0, global: true, send: function (v, nv) { outlet(0, ['setfollow', nv]); } },
+	// Per-voice toggles/dropdowns/cycles -- def matches the same neutral values DRAG_SPECS' own
+	// per-voice entries use (0/false "own copy off", or the first list item).
+	on: { field: 'muted', def: false, send: function (v, nv) { outlet(0, ['setvoicemute', v + 1, nv ? 1 : 0]); } },
+	ext: { field: 'ext', def: false, send: function (v, nv) { outlet(0, ['setvoiceexternal', v + 1, nv ? 1 : 0]); } },
+	art: { field: 'artOwn', def: false, send: function (v, nv) { outlet(0, ['setvoiceartown', v + 1, nv ? 1 : 0]); } },
+	lec: { field: 'readOwn', def: false, send: function (v, nv) { outlet(0, ['setvoicereadown', v + 1, nv ? 1 : 0]); } },
+	ton: { field: 'keyOwn', def: false, send: function (v, nv) { outlet(0, ['setvoicekeyown', v + 1, nv ? 1 : 0]); } },
+	fijar: { field: 'keyLock', def: 0, send: function (v, nv) { outlet(0, ['setvoicekeylock', v + 1, nv]); } },
+	patron: { field: 'patron', def: 0, send: function (v, nv) { outlet(0, ['setvoicereadmode', v + 1, nv]); } },
+	dir: { field: 'dir', def: 0, send: function (v, nv) { outlet(0, ['setvoicereaddir', v + 1, nv]); } },
+	ornt: { field: 'ornT', def: 0, send: function (v, nv) { outlet(0, ['setvoiceorntype', v + 1, nv]); } }
+};
+
+// Sets `spec.field` on the right state object (globalState for v===-1, else vkeyInfo[v]) back to
+// `spec.def` and fires its own `send`, looking `kind` up in whichever of DRAG_SPECS/TOGGLE_SPECS
+// has it -- the two tables never share a key, so this is safe as a single lookup chain. Returns
+// whether anything was actually reset, so ondblclick() knows whether a redraw is owed.
+function resetControl(kind, v) {
+	var spec = DRAG_SPECS[kind] || TOGGLE_SPECS[kind];
+	if (!spec) return false;
+	var state = (v === -1) ? globalState : vkeyInfo[v];
+	if (!state) return false;
+	state[spec.field] = spec.def;
+	spec.send(v, spec.def, state);
+	return true;
+}
+
+// Double-click anywhere onclick() would arm a drag, open a dropdown, or flip a toggle/cycle chip:
+// reset that one control to its default instead. Mirrors onclick()'s own hit-test order (global
+// sidebar, then the per-voice row under the click) but table-driven via resetControl() rather than
+// onclick()'s per-control if-chain, since here every hit does the same thing (reset) instead of a
+// different thing per control kind. Momentary actions (Panic, Trig, Limpiar favs...) and Run have
+// no entry in either table and so are silently ignored, same as clicking empty space.
+function ondblclick(x, y) {
+	if (!rowGeo) return;
+	// Whatever the first click of this double-click already armed/opened is stale now.
+	openMenu = null; menuItemGeo = []; dragBox = null;
+
+	var G = globalChipGeo;
+	var globalHits = [
+		['gind', G.ind], ['gflt', G.flt], ['glck', G.lck],
+		['gpatron', G.patron], ['gdir', G.dir],
+		['gornt', G.ornt], ['gornnotas', G.ornnotas], ['gornbase', G.ornbase], ['gornbasemode', G.ornbasemode],
+		['gset', G.set], ['groot', G.root], ['gharm', G.harm],
+		['gorden', G.orden], ['grango', G.rango], ['gsilpre', G.silpre],
+		['gornquad', G.ornquad], ['gornstep', G.ornstep],
+		['gserstart', G.serstart], ['gserstep', G.serstep], ['gserpeak', G.serpeak],
+		['genlace', G.enlace], ['gsilnorm', G.silnorm], ['gsilacc', G.silacc],
+		['gnmin', G.nmin], ['gnmax', G.nmax],
+		['gmaskmode', G.maskmode], ['gmaskk', G.maskk],
+		['gvmin1', G.vmin1], ['gvmax1', G.vmax1], ['gvmin2', G.vmin2], ['gvmax2', G.vmax2],
+		['gvmin3', G.vmin3], ['gvmax3', G.vmax3], ['gvmin4', G.vmin4], ['gvmax4', G.vmax4],
+		['gvmin5', G.vmin5], ['gvmax5', G.vmax5], ['gvmin6', G.vmin6], ['gvmax6', G.vmax6],
+		['grandmaskpct', G.randmaskpct],
+		['gmodo', G.modo], ['gsub', G.sub],
+		['grootseq', G.rootseq], ['goctm', G.octm], ['gdrum', G.drum], ['gpad', G.pad],
+		['grotacion', G.rotacion], ['grotarx', G.rotarx], ['gsalto', G.salto],
+		['gswing', G.swing], ['ghuman', G.human], ['grasg', G.rasg], ['gdirrasg', G.dirrasg],
+		['gratn', G.ratn], ['grata', G.rata], ['gratprob', G.ratprob], ['gratcaida', G.ratcaida],
+		['gmaskfit', G.maskfit],
+		['gciclo', G.ciclo], ['gtie', G.tie], ['geuc', G.euc], ['geuck', G.eupuls], ['geurot', G.eugir],
+		['gvelminn', G.velminn], ['gvelmina', G.velmina], ['gvelmaxn', G.velmaxn], ['gvelmaxa', G.velmaxa],
+		['gfign', G.fign], ['gfiga', G.figa],
+		['gtension', G.tension], ['gcurva', G.curva], ['gtensmodel', G.tensmodel],
+		['gprogfav', G.progfav], ['gfavonly', G.favonly], ['gfav', G.fav],
+		['gmod1shape', G.mod1shape], ['gmod1cycle', G.mod1cycle], ['gmod1depth', G.mod1depth], ['gmod1phase', G.mod1phase], ['gmod1dest', G.mod1dest],
+		['gmod2shape', G.mod2shape], ['gmod2cycle', G.mod2cycle], ['gmod2depth', G.mod2depth], ['gmod2phase', G.mod2phase], ['gmod2dest', G.mod2dest],
+		['gmod3shape', G.mod3shape], ['gmod3cycle', G.mod3cycle], ['gmod3depth', G.mod3depth], ['gmod3phase', G.mod3phase], ['gmod3dest', G.mod3dest],
+		['gmod4shape', G.mod4shape], ['gmod4cycle', G.mod4cycle], ['gmod4depth', G.mod4depth], ['gmod4phase', G.mod4phase], ['gmod4dest', G.mod4dest],
+		['gescuchar', G.escuchar], ['gemit', G.emit], ['gseguir', G.seguir], ['gslot', G.slot]
+	];
+	for (var gi = 0; gi < globalHits.length; gi++) {
+		if (ptIn(globalHits[gi][1], x, y)) {
+			if (resetControl(globalHits[gi][0], -1)) mgraphics.redraw();
+			return;
+		}
+	}
+
+	if (y < rowGeo.headH) return;
+	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
+	if (v < 0 || v >= rowGeo.nRows) return;
+	var vk = vkeyInfo[v], cg = chipGeo[v];
+	if (!vk || !cg) return;
+
+	if (ptIn(cg.on, x, y)) { resetControl('on', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.ext, x, y)) { resetControl('ext', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.art, x, y)) { resetControl('art', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.lec, x, y)) { resetControl('lec', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.ton, x, y)) {
+		resetControl('ton', v);
+		resetControl('fijar', v);   // Fijar has no effect without TonProp -- same rule onclick()'s Ton branch enforces
+		mgraphics.redraw(); return;
+	}
+	if (vk.keyOwn && ptIn(cg.fijar, x, y)) { resetControl('fijar', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && ptIn(cg.patron, x, y)) { resetControl('patron', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && ptIn(cg.dir, x, y)) { resetControl('dir', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornt, x, y)) { resetControl('ornt', v); mgraphics.redraw(); return; }
+	if (vk.keyOwn && ptIn(cg.setbox, x, y)) { resetControl('setbox', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornnotas, x, y)) { resetControl('ornnotas', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornbase, x, y)) { resetControl('ornbase', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.grado, x, y)) { resetControl('grado', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.div, x, y)) { resetControl('div', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.euclen, x, y)) { resetControl('euclen', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.euck, x, y)) { resetControl('euck', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.eucrot, x, y)) { resetControl('eucrot', v); mgraphics.redraw(); return; }
+	if (vk.artOwn && ptIn(cg.artvmin, x, y)) { resetControl('artvmin', v); mgraphics.redraw(); return; }
+	if (vk.artOwn && ptIn(cg.artvmax, x, y)) { resetControl('artvmax', v); mgraphics.redraw(); return; }
+	if (vk.artOwn && ptIn(cg.artdur, x, y)) { resetControl('artdur', v); mgraphics.redraw(); return; }
+	if (vk.artOwn && ptIn(cg.artsil, x, y)) { resetControl('artsil', v); mgraphics.redraw(); return; }
+}
 
 // "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
 // add_fs2_gotopage.py for how these were measured. On/mute (cg.on) has no page: its control is
