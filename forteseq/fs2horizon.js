@@ -1997,10 +1997,13 @@ function paint() {
 	}
 	// Row 8 -- Ritmo Raiz, same idiom as R.Arm (row 2): 0 means Sec Raiz still walks tied to the
 	// harmony (advanceOnPass()/harmonyStep()), same as before this control existed; >0 puts it on
-	// its own step-count clock (rootStep() in forteseq2.js), independent of the set.
+	// its own step-count clock (rootStep() in forteseq2.js), independent of the set. Dimmed when
+	// Sec Raiz is 'Raiz fija' (rootSeq===0) -- ROOT_SEQUENCES[0] is null, so rootSeqAdvance() never
+	// moves the root regardless of Ritmo Raiz's value there (same dim-not-hide idiom as Rango with
+	// Drum on, row 4 col 2: it stays reachable, it just stops doing anything).
 	if (gFits(8)) {
 		globalChipGeo.raizrate = { x: g2x, y: gRow(8), w: g2w, h: gChipH };
-		drawChip(globalChipGeo.raizrate, 'RR' + globalState.rootRate, false);
+		drawChip(globalChipGeo.raizrate, 'RR' + globalState.rootRate, false, Math.round(globalState.rootSeq) === 0);
 	}
 
 	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron
