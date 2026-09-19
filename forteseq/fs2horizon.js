@@ -750,7 +750,7 @@ function statusText() {
 	return md + '   ·   ' + rm + '   ·   ' + rd + '   ·   Set ' + status[2] + shp;
 }
 
-function drawCell(x, y, w, h, note, dim, label) {
+function drawCell(x, y, w, h, note, dim, label, restMark) {
 	var pc = note < 0 ? -1 : (((note % 12) + 12) % 12);
 	if (pc < 0) {
 		mgraphics.set_source_rgba([0.155, 0.155, 0.165, 1]);
@@ -763,6 +763,15 @@ function drawCell(x, y, w, h, note, dim, label) {
 	}
 	mgraphics.rectangle(x + 1, y + 1, w - 2, h - 2);
 	mgraphics.fill();
+	// restMark: a rest was actually reported at this slot (vs. no step having happened here
+	// yet) -- a short tick so it reads as "silence played", not "empty/no data".
+	if (restMark) {
+		mgraphics.set_source_rgba([0.4, 0.4, 0.45, 1]);
+		mgraphics.set_line_width(1.5);
+		mgraphics.move_to(x + w / 2 - 4, y + h / 2);
+		mgraphics.line_to(x + w / 2 + 4, y + h / 2);
+		mgraphics.stroke();
+	}
 	if (pc >= 0 && label && w >= 15) {
 		var lum = colorOn
 			? (PC_RGB[pc][0] * 0.299 + PC_RGB[pc][1] * 0.587 + PC_RGB[pc][2] * 0.114) * dim
@@ -2639,7 +2648,12 @@ function paint() {
 			var age = hslot;                        // hslot 0 = age 0 = newest, pinned next to the grid
 			var note = (age < hv.length) ? hv[age] : -1;
 			var dim = (0.55 - 0.15 * (hslot / (HIST_MAX - 1))) * rowDim;   // newest bright, oldest dim
-			drawCell(histX + hidx * histCW, y, histCW, rowH, note, dim, histCW >= 20);
+			// A slot within hv.length is a real report from the engine -- note<0 there means a
+			// rest actually sounded (or didn't) at that step. Beyond hv.length there's simply no
+			// step yet (startup padding). Both paint the same dark cell in drawCell; restMark
+			// tells it to add a tick so an actual rest doesn't read as "nothing happened here".
+			var restMark = (age < hv.length) && note < 0;
+			drawCell(histX + hidx * histCW, y, histCW, rowH, note, dim, histCW >= 20, restMark);
 		}
 
 		// pattern grid

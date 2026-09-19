@@ -3474,13 +3474,6 @@ function nearNote(pc, ref) {
 // cells borrow the octave nearest the note sounding now (nearNote). pcs/n may be absent
 // (all-silent path): every voice reports silence and history is left intact. ctxPcs/ctxDeg,
 // when given by the shared path, name the set + degree the peek offset is measured against.
-// true while noteHist still holds a real note -- used to stop draining a muted voice's
-// history once it has scrolled fully blank, so it does not churn the array every step.
-function noteHistHasNote(h) {
-	for (var i = 0; i < h.length; i++) if (h[i] >= 0) return true;
-	return false;
-}
-
 // onlyV, when given, restricts the pass to that one voice -- triggervoice() uses it so an
 // external trigger refreshes its own column-monitor row without recomputing the clock-driven
 // voices' forward cells against the raw set (the shared path passes a rotated context set, so a
@@ -3498,20 +3491,21 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg, onlyV) {
 	var vHi = (onlyV === undefined || onlyV === null) ? NUM_VOICES : onlyV + 1;
 	for (var v = vLo; v < vHi; v++) {
 		var cur = (monScratch[v] === MON_SILENT) ? -1 : monScratch[v];   // full MIDI note now
-		// history shifts only on a real change to a new sounding note; rests leave it be
+		// history shifts on a real change to a new sounding note, OR logs a fresh blank slot for
+		// every silent step -- Sil% rest, the voice's own off-beat, or muted, all read the same
+		// way here. A silent step also resets colLastCur so a repeated pitch right after it is
+		// recognized as a new onset instead of mistaken for a tie across the gap (and so a muted
+		// voice that resumes on the same pitch it left off on logs correctly too).
 		if (cur !== -1 && cur !== colLastCur[v]) {
 			noteHist[v].unshift(cur);                     // deep history for fs2horizon.js, newest first --
 			if (noteHist[v].length > HIST_MAX) noteHist[v].pop();   // the note sounding NOW, not the one before it
 			colHist[v][1] = colHist[v][0];
 			colHist[v][0] = colLastCur[v];
 			colLastCur[v] = cur;
-		} else if (voiceMute[v] && noteHistHasNote(noteHist[v])) {
-			// A voice that is OFF receives nothing: roll its fs2horizon.js history toward blank,
-			// one gap per step, so the floating viewer visibly drains instead of freezing on
-			// stale notes -- making it read as "no notes arriving here". The small colmon strip
-			// (colHist/colLastCur) is left as-is; only the deep history scrolls.
+		} else if (cur === -1) {
 			noteHist[v].unshift(-1);
 			if (noteHist[v].length > HIST_MAX) noteHist[v].pop();
+			colLastCur[v] = -1;
 		}
 		var f1 = -1, f2 = -1;
 		if (haveArp && cur !== -1) {
