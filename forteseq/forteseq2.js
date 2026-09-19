@@ -3319,6 +3319,26 @@ function articulationFor(v, pos, n) {
 	};
 }
 
+// Same accent-group/own-silence resolution as articulationFor() above, minus the actual coin flip
+// (Math.random()) -- used by the horizon lookahead (querynext(), below) to show each upcoming
+// cell's REST CHANCE instead of guessing a single yes/no for something that is genuinely decided
+// at play time. accentGrid/voicePhase/accentCycle are already deterministic and known ahead, so
+// this is exact; modAt(D_SIL) uses its CURRENT value rather than running the modulator forward,
+// same approximation peekSharedPc/peekVoiceNote already make for modDeg() above.
+function peekSilPct(v, pos, n) {
+	var len = accentTieToN ? n : accentCycle;
+	if (!(len > 0)) len = 1;
+	if (len > ACCENT_MAX) len = ACCENT_MAX;
+	var idx = (Math.round(pos) + voicePhase[v]) % len;
+	if (idx < 0) idx += len;
+	var g = accentGrid[idx] ? GROUP_ACCENT : GROUP_NORMAL;
+	var own = voiceArtOwn[v];
+	var sil = (own ? voiceSilence[v] : groupSilence[g]) + modAt(D_SIL);
+	if (sil < 0) sil = 0;
+	if (sil > 100) sil = 100;
+	return Math.round(sil);
+}
+
 // --- the per-voice monitor --------------------------------------------------------------------
 // One comment showing what each voice is playing. It used to be rebuilt and resent on every step:
 // NUM_VOICES strings plus a list message plus a comment redraw, per note. Two things changed.
@@ -3540,6 +3560,14 @@ function emitColMon(pcs, n, ctxPcs, ctxDeg, onlyV) {
 //       kind 0). 2 atomos, se manda cada paso. Es lo unico frecuente.
 //   hist <v> <h0> <h1> ...                      hasta HIST_MAX notas ya tocadas, la mas reciente
 //       primero. EXACTA (se llena en emitColMon en el paso real, no se predice).
+//   hsilprob <v> <s0> <s1> ...                  una entrada por celda de hpattern (mismo orden,
+//       misma longitud = cols), 0-100 = probabilidad de que ESA nota salga silenciada (accent-group
+//       + Silencio propio/de grupo + modAt(D_SIL), ver peekSilPct() -- el mismo calculo que
+//       articulationFor() hace en el paso real, sin el sorteo). A diferencia del pitch, el silencio
+//       nunca es un "si/no" por adelantado -- es un sorteo en cada paso real -- asi que esto es la
+//       CHANCE, no una prediccion; fs2horizon.js la usa para atenuar la celda en vez de mostrarla
+//       siempre solida. Mensaje aparte (no una columna mas de hpattern) para no tocar el contrato
+//       de hpattern que ya prueban los tests de harness.js.
 //   hshape <n> <cols> <rawL> <d0> <d1> ...      la FORMA de lectura, una fila compartida: el
 //       indice de grado en cada posicion del ciclo global (submuestreado a SHAPE_MAX). Estatica,
 //       se manda solo al cambiar readMode/readDir/n. cols 0 = esconder (Acordes).
@@ -3554,7 +3582,7 @@ var PATTERN_MAX = 48;                       // tope del ancho de grilla en modo 
 var SHAPE_MAX = 256;                        // tope de celdas de la tira "forma" (se submuestrea si es mas larga)
 var HORIZON_STATUS = 1;                     // 0 = no emitir la linea de estado (modo / dir / set)
 var HORIZON_SHAPE = 1;                      // 0 = no emitir la tira "forma"
-var qnPatShown = [], qnCurShown = [], qnHistShown = [];
+var qnPatShown = [], qnCurShown = [], qnHistShown = [], qnSilShown = [];
 var qnVoicesShown = -1;
 var qnStatusShown = "";
 var qnOrnBaseModeShown = -1;   // -1 forces the first querynext() to emit regardless of ornBaseMode's own default (0)
@@ -3593,7 +3621,7 @@ var qnRandMaskShown = -1;      // -1 forces the first querynext() to emit regard
 var qnModShown = ["", "", "", ""];   // firma "shape,cycle,depth,phase,dest" por modulador (1..4); "" = forzar
 var qnSesionShown = "";        // firma "listenMode,bcastOn,followOn,presetSlot"; "" = forzar
 var qnShapeShown = "", qnShapeCurShown = "";
-for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); }
+for (var _qi = 0; _qi < MAX_VOICES; _qi++) { qnPatShown.push(""); qnCurShown.push(""); qnHistShown.push(""); qnSilShown.push(""); }
 
 // El panel izquierdo del popup (fs2setpick.js) necesita saber que sets pasan el filtro y con que
 // color pintarlos. Se emite por outlet 3 junto al horizonte, con la misma disciplina de firma:
@@ -3625,7 +3653,7 @@ function shapeGridCols(rm, rd, card, ornTotal) {
 function querynext() {
 	if (NUM_VOICES !== qnVoicesShown) {
 		qnVoicesShown = NUM_VOICES;
-		for (var r = 0; r < MAX_VOICES; r++) { qnPatShown[r] = ""; qnCurShown[r] = ""; qnHistShown[r] = ""; qnVKeyShown[r] = ""; }
+		for (var r = 0; r < MAX_VOICES; r++) { qnPatShown[r] = ""; qnCurShown[r] = ""; qnHistShown[r] = ""; qnSilShown[r] = ""; qnVKeyShown[r] = ""; }
 		outlet(3, ["colvoices", NUM_VOICES]);   // ambos jsui de outlet 3 lo entienden
 	}
 
@@ -3918,6 +3946,7 @@ function querynext() {
 		var urnaReady = (vrm !== READ_URNA) || (urnBagN === card && urnBagPass === 0);
 
 		var patrow = ["hpattern", v, kind, cols];
+		var silrow = ["hsilprob", v];
 		for (var p = 0; p < cols; p++) {
 			var pos = (kind === 1) ? p : (cursor + p);   // ciclo completo desde 0; rodante desde el cursor vivo
 			var note = -1;
@@ -3931,9 +3960,15 @@ function querynext() {
 				}
 			}
 			patrow.push((isFinite(note) && note >= 0) ? Math.round(note) : -1);
+			silrow.push(card > 0 ? peekSilPct(v, pos, card) : 0);
 		}
 		var pkey = patrow.slice(2).join(",");
 		if (pkey !== qnPatShown[v]) { qnPatShown[v] = pkey; outlet(3, patrow); }
+		// Sent as its own message (not folded into patrow) so hpattern's format -- and every test/
+		// consumer keyed on "v kind cols c0 c1..." -- stays untouched; a rest-chance-only listener
+		// (fs2horizon.js) just ignores hsilprob if it doesn't care.
+		var skey = silrow.slice(1).join(",");
+		if (skey !== qnSilShown[v]) { qnSilShown[v] = skey; outlet(3, silrow); }
 
 		var hp = soundPos < 0 ? 0 : soundPos;
 		var hpos = (kind === 1 && cols > 0) ? (((hp % cols) + cols) % cols) : 0;

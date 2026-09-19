@@ -132,6 +132,10 @@
 //
 // Fed by forteseq2.js outlet 3 (shared with fs2colmon.js -- both dispatch on the selector):
 //   hpattern <v> <kind> <cols> <c0..>   -- MIDI notes, -1 = blank.
+//   hsilprob <v> <s0..>                 -- one entry per hpattern cell (same order/length), 0-100 =
+//            REST CHANCE for that step (accent-group + own/group Silencio %, see peekSilPct() in
+//            forteseq2.js). Silence is a coin flip at play time, never a certain yes/no ahead of
+//            it, so drawCell() dims the cell proportionally instead of showing it flatly solid.
 //   hcursor  <v> <pos>                  -- playhead column within the grid (0 in kind 0).
 //   hist     <v> <h0..>                 -- up to HIST_MAX played notes, newest first.
 //   hstatus  <readMode> <readDir> <setIdx1> <mode> <locked>  -- the config line at the bottom;
@@ -333,6 +337,7 @@ var ESCUCHAR_NAMES = ['Off', 'Sigue', 'Latch'];
 var voices = 4;
 var colorOn = 1;
 var pat = [];            // pat[v] = { kind, cols, cells:[...] }
+var silProb = [];        // silProb[v] = [s0, s1, ...] rest-chance 0-100 per pat[v].cells index
 var cur = [];            // cur[v] = playhead column
 var played = [];         // played[v] = [newest ... oldest]  (the `hist` message; array can't share the name)
 var pulse = [];          // bang flash amount per row
@@ -341,7 +346,7 @@ var shape = null;        // { n, cols, rawL, degs:[...] } -- the static reading-
 var shapeCur = 0;        // cursor column within the shape strip
 var vkeyInfo = [];       // vkeyInfo[v] = { forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted } or null
 var i;
-for (i = 0; i < MAXROWS; i++) { pat.push({ kind: 1, cols: 0, cells: [] }); cur.push(0); played.push([]); pulse.push(0); vkeyInfo.push(null); }
+for (i = 0; i < MAXROWS; i++) { pat.push({ kind: 1, cols: 0, cells: [] }); silProb.push([]); cur.push(0); played.push([]); pulse.push(0); vkeyInfo.push(null); }
 
 var PC_RGB = [];         // pitch class -> colour (the note grid)
 var DEG_RGB = [];        // degree index -> muted warm colour (the shape strip; deliberately unlike PC_RGB)
@@ -363,6 +368,19 @@ function hpattern() {
 	var cells = [];
 	for (var k = 0; k < cols; k++) cells.push(noteOrBlank(a[3 + k]));
 	pat[v] = { kind: kind, cols: cols, cells: cells };
+	mgraphics.redraw();
+}
+
+// Rest-chance per cell, same order/length as the hpattern this voice last received -- arrives as
+// its own message (see the format note above), so it can lag hpattern by one debounce tick without
+// desyncing anything visible: drawCell() only reads silProb[v][p] for p < cells.length.
+function hsilprob() {
+	var a = arrayfromargs(arguments);
+	var v = Math.round(a[0]);
+	if (!(v >= 0 && v < MAXROWS)) return;
+	var s = [];
+	for (var k = 1; k < a.length; k++) s.push(Math.max(0, Math.min(100, Math.round(a[k]))));
+	silProb[v] = s;
 	mgraphics.redraw();
 }
 
@@ -2423,10 +2441,66 @@ function paint() {
 		var readDim = readMoot ? 0.4 : 1.0;
 
 		// Font sizes scale with the room this row actually has (a tall window like this one should
-		// use it) instead of staying pinned at the smallest legible size regardless of space.
-		var fsV = Math.max(11, Math.min(18, rowH * 0.11));
-		var fsInfo = Math.max(10, Math.min(14, rowH * 0.085));
+		// use it) instead of staying pinned at the smallest legible size regardless of space. infoW
+		// is the full info-column width (TXT_W plus DETAIL_W when shown) -- safe to scale against now
+		// that the text is a background layer (see below) instead of a foreground block confined to
+		// the old TXT_W-only sliver.
+		var infoW = TXT_W + (showDetail ? DETAIL_W : 0) - 4;
+		var fsV = Math.max(11, Math.min(20, rowH * 0.11, infoW * 0.10));
+		var fsInfo = Math.max(10, Math.min(15, rowH * 0.085, infoW * 0.075));
 		var lh = fsInfo + 6;
+
+		// Voice tag + vkey readout, drawn FIRST so it sits BEHIND the gate/detail chips painted below
+		// (drawChip fills an opaque rect per chip) -- previously drawn last, on top of them, where a
+		// long line (e.g. the scale-name/percent lines) visibly bled over the Art/Lec/Ton/Fij chips
+		// since show_text is never clipped to TXT_W. Now it can freely span the whole info column
+		// width (infoW) as a watermark: the chips painted after cover their own cells, everything
+		// else still reads through the gaps instead of covering the controls.
+		mgraphics.set_source_rgba(anyOwn ? [1 * rowDim, 0.75 * rowDim, 0.3 * rowDim, 1] : [0.6 * rowDim, 0.6 * rowDim, 0.66 * rowDim, 1]);
+		mgraphics.set_font_size(fsV);
+		mgraphics.move_to(GLOBAL_W + GATE_W + 4, y + fsV + 2);
+		mgraphics.show_text('V' + (v + 1) + (vk && vk.muted ? ' ·mute' : ''));
+		if (vk && rowH >= 24) {
+			mgraphics.set_font_size(fsInfo);
+			mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
+			var ky = y + fsV + lh;
+			mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
+			// "*" ya marca TonProp (clave propia); "Fij" es la excepcion dentro de eso -- progresar
+			// (avanzar con cada cambio de armonia) es el estado por defecto y no necesita marca,
+			// solo la voz fijada (voiceKeyLock) la necesita. Dimmed (setDim) when Patron is Ornamento
+			// under a set-blind base mode, or (keyDim) when TonProp is on but this voice isn't
+			// self-cursored -- either way real but not what is actually sounding.
+			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : '') + (vk.keyLock === 1 ? ' ·Fij' : ''));
+			mgraphics.set_source_rgba([0.68 * rowDim * readDim, 0.68 * rowDim * readDim, 0.74 * rowDim * readDim, 1]);   // Patron/Dir/Orn below -- dimmed (readDim) when Lectura Propia is on but moot, same reasoning
+			if (rowH >= fsV + 2 * lh + 6) {
+				ky += lh;
+				var pname = READ_NAMES[vk.patron] || ('modo ' + vk.patron);
+				var dsuf = vk.dir ? (' ' + (DIR_NAMES[vk.dir] || vk.dir)) : '';
+				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
+				mgraphics.show_text(pname + dsuf + (vk.readOwn ? ' *' : ''));
+			}
+			if (rowH >= fsV + 3 * lh + 6 && vk.ornT >= 0) {
+				ky += lh;
+				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
+				mgraphics.show_text((ORN_TYPE_NAMES[vk.ornT] || ('orn ' + vk.ornT)) + ' ×' + vk.ornN + ' I' + vk.ornB + (vk.readOwn ? ' *' : ''));
+			}
+			if (rowH >= fsV + 4 * lh + 6) {
+				ky += lh;
+				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
+				mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
+				mgraphics.show_text('<' + vk.vec + '> ' + vk.diss + '%');
+			}
+			if (rowH >= fsV + 5 * lh + 6) {
+				ky += lh;
+				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
+				mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
+				var extras = [];
+				if (vk.zRel !== '-') extras.push(vk.zRel);
+				extras.push(vk.modality);
+				if (vk.mirror !== '-') extras.push(vk.mirror);
+				mgraphics.show_text(extras.join(' · '));
+			}
+		}
 
 		var chipH = 18, chipGap = 2;   // bumped from 15 so the bigger chip font (drawChip, now 11) has room
 		var cg = { on: { x: GLOBAL_W + 2, y: y + 2, w: GATE_W - 6, h: chipH },
@@ -2559,52 +2633,6 @@ function paint() {
 		}
 		chipGeo[v] = cg;
 
-		mgraphics.set_source_rgba(anyOwn ? [1 * rowDim, 0.75 * rowDim, 0.3 * rowDim, 1] : [0.6 * rowDim, 0.6 * rowDim, 0.66 * rowDim, 1]);
-		mgraphics.set_font_size(fsV);
-		mgraphics.move_to(GLOBAL_W + GATE_W + 4, y + fsV + 2);
-		mgraphics.show_text('V' + (v + 1) + (vk && vk.muted ? ' ·mute' : ''));
-		if (vk && rowH >= 24) {
-			mgraphics.set_font_size(fsInfo);
-			mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
-			var ky = y + fsV + lh;
-			mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
-			// "*" ya marca TonProp (clave propia); "Fij" es la excepcion dentro de eso -- progresar
-			// (avanzar con cada cambio de armonia) es el estado por defecto y no necesita marca,
-			// solo la voz fijada (voiceKeyLock) la necesita. Dimmed (setDim) when Patron is Ornamento
-			// under a set-blind base mode, or (keyDim) when TonProp is on but this voice isn't
-			// self-cursored -- either way real but not what is actually sounding.
-			mgraphics.show_text(vk.forte + ' ' + vk.tonic + (vk.keyOwn ? ' *' : '') + (vk.keyLock === 1 ? ' ·Fij' : ''));
-			mgraphics.set_source_rgba([0.68 * rowDim * readDim, 0.68 * rowDim * readDim, 0.74 * rowDim * readDim, 1]);   // Patron/Dir/Orn below -- dimmed (readDim) when Lectura Propia is on but moot, same reasoning
-			if (rowH >= fsV + 2 * lh + 6) {
-				ky += lh;
-				var pname = READ_NAMES[vk.patron] || ('modo ' + vk.patron);
-				var dsuf = vk.dir ? (' ' + (DIR_NAMES[vk.dir] || vk.dir)) : '';
-				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
-				mgraphics.show_text(pname + dsuf + (vk.readOwn ? ' *' : ''));
-			}
-			if (rowH >= fsV + 3 * lh + 6 && vk.ornT >= 0) {
-				ky += lh;
-				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
-				mgraphics.show_text((ORN_TYPE_NAMES[vk.ornT] || ('orn ' + vk.ornT)) + ' ×' + vk.ornN + ' I' + vk.ornB + (vk.readOwn ? ' *' : ''));
-			}
-			if (rowH >= fsV + 4 * lh + 6) {
-				ky += lh;
-				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
-				mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
-				mgraphics.show_text('<' + vk.vec + '> ' + vk.diss + '%');
-			}
-			if (rowH >= fsV + 5 * lh + 6) {
-				ky += lh;
-				mgraphics.move_to(GLOBAL_W + GATE_W + 4, ky);
-				mgraphics.set_source_rgba([0.68 * rowDim * setDim * keyDim, 0.68 * rowDim * setDim * keyDim, 0.74 * rowDim * setDim * keyDim, 1]);
-				var extras = [];
-				if (vk.zRel !== '-') extras.push(vk.zRel);
-				extras.push(vk.modality);
-				if (vk.mirror !== '-') extras.push(vk.mirror);
-				mgraphics.show_text(extras.join(' · '));
-			}
-		}
-
 		// history: newest is hv[0], drawn at the block's LEFT edge (against the grid); ages rightward
 		for (var hslot = 0; hslot < HIST_MAX; hslot++) {
 			var hidx = hslot;                       // 0..HIST_MAX-1, 0 = left edge of block (vs. grid)
@@ -2617,10 +2645,17 @@ function paint() {
 		// pattern grid
 		var cols = P.cols || 0;
 		var cellW = cols > 0 ? gridW / cols : gridW;
+		var sp = silProb[v] || [];
 		for (var p = 0; p < cols; p++) {
 			var n = P.cells[p];
 			var x = gridX + p * cellW;
-			var dim2 = ((P.kind === 1) ? 1.0 : (1.0 - (p / Math.max(1, cols - 1)) * 0.45)) * rowDim;
+			// Rest chance (hsilprob) darkens the cell -- silence is a coin flip at play time, so a
+			// cell that is likely to be silenced should read as shaded rather than looking exactly
+			// as solid/certain as one that is guaranteed to sound. Capped at 0.7 so even a near-100%
+			// rest chance stays visibly distinct from an actually-blank cell (drawCell's own note<0
+			// grey), instead of crushing to the same near-black.
+			var silFactor = 1 - ((sp[p] || 0) / 100) * 0.7;
+			var dim2 = ((P.kind === 1) ? 1.0 : (1.0 - (p / Math.max(1, cols - 1)) * 0.45)) * rowDim * silFactor;
 			drawCell(x, y, cellW, rowH, n, dim2, true);
 			// playhead box (full-cycle mode)
 			if (P.kind === 1 && p === (((cur[v] % cols) + cols) % cols)) {

@@ -89,6 +89,7 @@ function clear() {
 // dispatches on the selector, so name the ones it must ignore, or Max logs
 // "fs2colmon: doesn't understand ..." once per tick.
 function hpattern() {}
+function hsilprob() {}
 function hcursor() {}
 function hist() {}
 function hstatus() {}

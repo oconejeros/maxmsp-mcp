@@ -158,6 +158,7 @@ function bang() { mgraphics.redraw(); }   // loadbang safety
 
 // Estos viajan por el mismo outlet 3 (feed del horizonte / monitor de columnas). No son nuestros.
 function hpattern() {}
+function hsilprob() {}
 function hcursor() {}
 function hist() {}
 function hstatus() {}
