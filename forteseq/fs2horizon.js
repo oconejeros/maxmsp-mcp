@@ -441,7 +441,8 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	mod2shape: 0, mod2cycle: 8, mod2depth: 0, mod2phase: 0, mod2dest: 0,
 	mod3shape: 0, mod3cycle: 8, mod3depth: 0, mod3phase: 0, mod3dest: 0,
 	mod4shape: 0, mod4cycle: 8, mod4depth: 0, mod4phase: 0, mod4dest: 0,
-	listen: 0, emit: 0, seguir: 0, slot: 1 };
+	listen: 0, emit: 0, seguir: 0, slot: 1,
+	rndSet: 1, rndSil: 1, rndAcc: 1 };
 
 // La tira de 16 acentos (col 6), read-only en esta ola -- ver ola-2 del plan. Separada de
 // globalState porque es un array de tamano fijo, no un escalar por campo.
@@ -620,11 +621,15 @@ function gmod4(s, c, d, p, de) {
 	mgraphics.redraw();
 }
 
-function gsesion(li, em, se, sl) {
+function gsesion(li, em, se, sl, rs, rl, ra) {
 	globalState.listen = Math.round(li);
 	globalState.emit = Math.round(em) ? 1 : 0;
 	globalState.seguir = Math.round(se) ? 1 : 0;
 	globalState.slot = Math.round(sl);
+	// Tirar: que ejes sortea (Set / mascara -- el toggle del panel se llama "Rnd Sil" -- / Acentos).
+	globalState.rndSet = Math.round(rs === undefined ? 1 : rs) ? 1 : 0;
+	globalState.rndSil = Math.round(rl === undefined ? 1 : rl) ? 1 : 0;
+	globalState.rndAcc = Math.round(ra === undefined ? 1 : ra) ? 1 : 0;
 	mgraphics.redraw();
 }
 
@@ -662,7 +667,7 @@ function ornscale() {
 // Sent under demand, debounced engine-side per voice.
 function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 		artOwn, ext, ornN, ornB, vec, diss, zRel, modality, mirror, setIdx,
-		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk) {
+		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
 	vkeyInfo[v] = {
@@ -684,7 +689,9 @@ function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLoc
 		euLarg: Math.round(euLarg === undefined ? 0 : euLarg),
 		euPuls: Math.round(euPuls === undefined ? 0 : euPuls),
 		euGir: Math.round(euGir === undefined ? 0 : euGir),
-		copSk: Math.round(copSk === undefined ? -1 : copSk)
+		copSk: Math.round(copSk === undefined ? -1 : copSk),
+		fase: Math.round(fase === undefined ? 0 : fase),
+		desf: Math.round(desf === undefined ? 0 : desf)
 	};
 	mgraphics.redraw();
 }
@@ -848,6 +855,10 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setvoicecoprime', v + 1, nv]); } },
 	grado: { min: -8, max: 8, field: 'grado', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoicedegoffset', v + 1, nv]); } },
+	fase: { min: 0, max: 15, field: 'fase', def: 0, pxPerUnit: 10,
+		send: function (v, nv) { outlet(0, ['setvoicephase', v + 1, nv]); } },
+	desf: { min: 0, max: 7, field: 'desf', def: 0, pxPerUnit: 10,
+		send: function (v, nv) { outlet(0, ['setvoicetimeoffset', v + 1, nv]); } },
 	div: { min: 1, max: 16, field: 'div', def: 1, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoicediv', v + 1, nv]); } },
 	euclen: { min: 0, max: 16, field: 'euLarg', def: 0, pxPerUnit: 8,
@@ -1175,6 +1186,8 @@ function ondblclick(x, y) {
 	if (vk.readOwn && vk.patron === READ_COPRIMO && ptIn(cg.copsalto, x, y)) { resetControl('copsalto', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.grado, x, y)) { resetControl('grado', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.div, x, y)) { resetControl('div', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.fase, x, y)) { resetControl('fase', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.desf, x, y)) { resetControl('desf', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.euclen, x, y)) { resetControl('euclen', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.euck, x, y)) { resetControl('euck', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.eucrot, x, y)) { resetControl('eucrot', v); mgraphics.redraw(); return; }
@@ -1484,6 +1497,11 @@ function onclick(x, y, but) {
 	if (globalChipGeo.emit && ptIn(globalChipGeo.emit, x, y)) { globalState.emit = globalState.emit ? 0 : 1; outlet(0, ['setbroadcast', globalState.emit]); mgraphics.redraw(); return; }
 	if (globalChipGeo.seguir && ptIn(globalChipGeo.seguir, x, y)) { globalState.seguir = globalState.seguir ? 0 : 1; outlet(0, ['setfollow', globalState.seguir]); mgraphics.redraw(); return; }
 	if (globalChipGeo.panic && ptIn(globalChipGeo.panic, x, y)) { outlet(0, ['listenpanic']); return; }
+	// Tirar = randomizeall (accion, sin estado); Set/Msk/Acc son los tres toggles que dicen que ejes sortea.
+	if (globalChipGeo.tirar && ptIn(globalChipGeo.tirar, x, y)) { outlet(0, ['randomizeall']); return; }
+	if (globalChipGeo.rndset && ptIn(globalChipGeo.rndset, x, y)) { globalState.rndSet = globalState.rndSet ? 0 : 1; outlet(0, ['setrndset', globalState.rndSet]); mgraphics.redraw(); return; }
+	if (globalChipGeo.rndsil && ptIn(globalChipGeo.rndsil, x, y)) { globalState.rndSil = globalState.rndSil ? 0 : 1; outlet(0, ['setrndsil', globalState.rndSil]); mgraphics.redraw(); return; }
+	if (globalChipGeo.rndacc && ptIn(globalChipGeo.rndacc, x, y)) { globalState.rndAcc = globalState.rndAcc ? 0 : 1; outlet(0, ['setrndacc', globalState.rndAcc]); mgraphics.redraw(); return; }
 	if (globalChipGeo.slot && ptIn(globalChipGeo.slot, x, y)) { dragBox = { v: -1, kind: 'gslot', startY: y, startVal: globalState.slot }; return; }
 	if (globalChipGeo.pguardar && ptIn(globalChipGeo.pguardar, x, y)) { outlet(0, ['storepreset', globalState.slot]); return; }
 	if (globalChipGeo.pcargar && ptIn(globalChipGeo.pcargar, x, y)) { outlet(0, ['recallpreset', globalState.slot]); return; }
@@ -1579,6 +1597,14 @@ function onclick(x, y, but) {
 	}
 	if (cg.div && ptIn(cg.div, x, y)) {
 		dragBox = { v: v, kind: 'div', startY: y, startVal: vk.div };
+		return;
+	}
+	if (cg.fase && ptIn(cg.fase, x, y)) {
+		dragBox = { v: v, kind: 'fase', startY: y, startVal: vk.fase };
+		return;
+	}
+	if (cg.desf && ptIn(cg.desf, x, y)) {
+		dragBox = { v: v, kind: 'desf', startY: y, startVal: vk.desf };
 		return;
 	}
 	// Ritmo euclidiano por voz -- also unconditional (Largo=0 already means "no pattern", the
@@ -2422,6 +2448,22 @@ function paint() {
 			globalChipGeo.pborrar = { x: g9x, y: gRow(5), w: g9w, h: gChipH };
 			drawChip(globalChipGeo.pborrar, 'Borrar', false, undefined, undefined, undefined, 'action');
 		}
+		// Filas 6-8: Tirar (randomizeall) + los tres toggles que eligen que sortea.
+		if (gFits(6)) {
+			globalChipGeo.tirar = { x: g9x, y: gRow(6), w: g9w, h: gChipH };
+			drawChip(globalChipGeo.tirar, 'Tirar', false, undefined, undefined, undefined, 'action');
+		}
+		if (gFits(7)) {
+			var g9rcw = (g9w - 2) / 2;
+			globalChipGeo.rndset = { x: g9x, y: gRow(7), w: g9rcw, h: gChipH };
+			globalChipGeo.rndsil = { x: g9x + g9rcw + 2, y: gRow(7), w: g9rcw, h: gChipH };
+			drawChip(globalChipGeo.rndset, 'Set', !!globalState.rndSet, undefined, undefined, undefined, 'toggle');
+			drawChip(globalChipGeo.rndsil, 'Msk', !!globalState.rndSil, undefined, undefined, undefined, 'toggle');
+		}
+		if (gFits(8)) {
+			globalChipGeo.rndacc = { x: g9x, y: gRow(8), w: g9w, h: gChipH };
+			drawChip(globalChipGeo.rndacc, 'Acc', !!globalState.rndAcc, undefined, undefined, undefined, 'toggle');
+		}
 	}
 
 	chipFontSize = CHIP_FONT;   // sidebar's text-size bump ends here -- per-voice grid keeps its own size
@@ -2600,7 +2642,23 @@ function paint() {
 			// the unconditional rows 2-4): Articulacion values (if artOwn), then Dir, then (only if
 			// Patron is actually Ornamento) OrnTipo, then OrnNotas/OrnBase side by side -- each
 			// conditioned on the previous one actually having drawn, so nothing leaves a gap.
-			var detailRow = 5;
+			// Fase/Desf -- fila 5, tambien sin gate (tira esencial del panel). Desf necesita Sub >= 2
+			// (sus unidades son sub-ticks, ver la anotacion del widget): se oculta sin eso.
+			if (vk) {
+				var fdY = y + 2 + 5 * (chipH + chipGap);
+				if (rowH >= (fdY - y) + chipH + 4) {
+					// Desf esta OCULTO (no apagado) mientras Sub < 2: sin sub-ticks no hay nada que
+					// desplazar, y Fase toma el ancho completo de la fila.
+					var desfOn = Math.round(globalState.sub) >= 2;
+					cg.fase = { x: dx0, y: fdY, w: desfOn ? dcw : DETAIL_W - 6, h: chipH };
+					drawChip(cg.fase, 'Fs' + vk.fase, false);
+					if (desfOn) {
+						cg.desf = { x: dx0 + dcw + 2, y: fdY, w: dcw, h: chipH };
+						drawChip(cg.desf, 'Ds' + vk.desf, false);
+					}
+				}
+			}
+			var detailRow = 6;
 			if (vk && vk.artOwn) {
 				var avY = y + 2 + detailRow * (chipH + chipGap);
 				if (rowH >= (avY - y) + chipH + 4) {

@@ -502,8 +502,10 @@
      "id": "obj-103",
      "maxclass": "newobj",
      "numinlets": 4,
-     "numoutlets": 4,
+     "numoutlets": 6,
      "outlettype": [
+      "",
+      "",
       "",
       "",
       "",
@@ -516,7 +518,7 @@
       160.0,
       20.0
      ],
-     "text": "route on grado div"
+     "text": "route on grado div fase desf"
     }
    },
    {
@@ -816,6 +818,44 @@
       26.0,
       15.0
      ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-120",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_fase_setrx",
+     "patching_rect": [
+      630.0,
+      400.0,
+      200.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-121",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_desf_setrx",
+     "patching_rect": [
+      840.0,
+      400.0,
+      200.0,
+      22.0
+     ],
+     "text": "prepend set"
     }
    }
   ],
@@ -1308,6 +1348,54 @@
      ],
      "destination": [
       "obj-116",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-103",
+      3
+     ],
+     "destination": [
+      "obj-120",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-120",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-103",
+      4
+     ],
+     "destination": [
+      "obj-121",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-121",
+      0
+     ],
+     "destination": [
+      "obj-37",
       0
      ]
     }

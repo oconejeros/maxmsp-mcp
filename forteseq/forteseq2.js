@@ -2266,6 +2266,7 @@ function setvoicetimeoffset(v, t) {
 	if (!isFinite(t) || t < 0) t = 0;
 	if (t > SUB_MAX - 1) t = SUB_MAX - 1;
 	voiceTimeOffset[idx] = t;
+	outlet(4, ["onecho", idx + 1, "desf", t]);
 }
 
 // One note becomes n, evenly spread over the step and fading if asked. The repeats are shortened
@@ -3260,9 +3261,9 @@ function randomizeaccents() {
 // the accent grid -- whichever axes are switched on. randomset() picks inside order[], so the
 // filter and the reading order still apply; it does not fire notes, only moves the catalogue.
 var rndSet = 1, rndAcc = 1, rndSil = 1;
-function setrndset(x) { rndSet = x ? 1 : 0; }
-function setrndacc(x) { rndAcc = x ? 1 : 0; }
-function setrndsil(x) { rndSil = x ? 1 : 0; }
+function setrndset(x) { rndSet = x ? 1 : 0; outlet(4, ["gecho", "rndset", rndSet]); }
+function setrndacc(x) { rndAcc = x ? 1 : 0; outlet(4, ["gecho", "rndacc", rndAcc]); }
+function setrndsil(x) { rndSil = x ? 1 : 0; outlet(4, ["gecho", "rndsil", rndSil]); }
 
 function randomset() {
 	if (!order.length) return;
@@ -3899,10 +3900,10 @@ function querynext() {
 		// Sesion (Ola 7, columna 9): Escuchar/Emitir/Seguir/Slot -- los cuatro parametros reales de
 		// la familia. Panic/Guardar/Cargar/Borrar son acciones (parameter_enable 0) y no viajan aca,
 		// solo mandan su mensaje (regla 8, mismo trato que clearfavs en Ola 3).
-		var gsesKey = listenMode + "," + bcastOn + "," + followOn + "," + presetSlot;
+		var gsesKey = listenMode + "," + bcastOn + "," + followOn + "," + presetSlot + "," + rndSet + "," + rndSil + "," + rndAcc;
 		if (gsesKey !== qnSesionShown) {
 			qnSesionShown = gsesKey;
-			outlet(3, ["gsesion", listenMode, bcastOn, followOn, presetSlot]);
+			outlet(3, ["gsesion", listenMode, bcastOn, followOn, presetSlot, rndSet, rndSil, rndAcc]);
 		}
 	}
 
@@ -4141,17 +4142,18 @@ function emitVoiceKeyReadouts() {
 		var velMin = voiceVelMin[v], velMax = voiceVelMax[v], durDiv = voiceDurDiv[v], silence = voiceSilence[v];
 		var grado = voiceDegOffset[v], div = voiceDiv[v];
 		var euLarg = voiceRhyLen[v], euPuls = voiceRhyK[v], euGir = voiceRhyRot[v];
+		var fase = voicePhase[v], desf = voiceTimeOffset[v];
 		// -1 unless this voice's effective Patron is Coprimo (same "-1 = not applicable" as ornT).
 		var copSk = (patron === READ_COPRIMO) ? (readOwn ? voiceCoprimeSkip[v] : coprimeSkip) : -1;
 		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," +
 			ornN + "," + ornB + "," + muted + "," + keyLock + "," + artOwn + "," + ext + "," + vec + "," + diss + "," + si + "," +
 			velMin + "," + velMax + "," + durDiv + "," + silence + "," + grado + "," + div + "," +
-			euLarg + "," + euPuls + "," + euGir + "," + copSk;
+			euLarg + "," + euPuls + "," + euGir + "," + copSk + "," + fase + "," + desf;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
 		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
-			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk]);
+			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf]);
 	}
 }
 
@@ -5328,6 +5330,7 @@ function setvoicephase(v, p) {
 	if (p < 0) p = 0;
 	if (p > ACCENT_MAX - 1) p = ACCENT_MAX - 1;
 	voicePhase[idx] = p;
+	outlet(4, ["onecho", idx + 1, "fase", p]);
 }
 
 // --- per-voice rhythm -------------------------------------------------------------------
