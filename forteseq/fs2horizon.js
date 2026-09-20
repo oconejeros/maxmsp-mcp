@@ -171,6 +171,8 @@
 //            tonic/vector/Z-modality lines (keyMoot/keyDim) and the Patron/Dir/Ornamento lines
 //            (readMoot/readDim), and hides the Set/Patron/Dir/OrnTipo/OrnNotas/OrnBase controls
 //            those toggles would otherwise unlock -- same "real but inert" treatment as setMoot.
+//   (vkey's last field, copSk: this voice's Salto Coprimo while its effective Patron is Coprimo, else -1;
+//    a chip under Dir drags it -> setvoicecoprime, only when Lec propia is on.)
 //   vkey <v> <forte> <tonica> <keyOwn> <readOwn> <patron> <dir> <ornTipo> <muted> <keyLock>
 //        <artOwn> <ext> <ornNotas> <ornBase> <vector> <disonancia> <zRel> <modalidad> <espejo>
 //        <setIdx> <velMin> <velMax> <durDiv> <silence> <grado> <div> <euLarg> <euPuls> <euGir>
@@ -660,7 +662,7 @@ function ornscale() {
 // Sent under demand, debounced engine-side per voice.
 function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 		artOwn, ext, ornN, ornB, vec, diss, zRel, modality, mirror, setIdx,
-		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir) {
+		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
 	vkeyInfo[v] = {
@@ -681,7 +683,8 @@ function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLoc
 		div: Math.round(div === undefined ? 1 : div),
 		euLarg: Math.round(euLarg === undefined ? 0 : euLarg),
 		euPuls: Math.round(euPuls === undefined ? 0 : euPuls),
-		euGir: Math.round(euGir === undefined ? 0 : euGir)
+		euGir: Math.round(euGir === undefined ? 0 : euGir),
+		copSk: Math.round(copSk === undefined ? -1 : copSk)
 	};
 	mgraphics.redraw();
 }
@@ -841,6 +844,8 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setvoiceorncount', v + 1, nv]); } },
 	ornbase: { min: 1, max: 14, field: 'ornB', def: 4, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoiceornbase', v + 1, nv]); } },
+	copsalto: { min: 1, max: 11, field: 'copSk', def: 2, pxPerUnit: 12,
+		send: function (v, nv) { outlet(0, ['setvoicecoprime', v + 1, nv]); } },
 	grado: { min: -8, max: 8, field: 'grado', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoicedegoffset', v + 1, nv]); } },
 	div: { min: 1, max: 16, field: 'div', def: 1, pxPerUnit: 10,
@@ -1167,6 +1172,7 @@ function ondblclick(x, y) {
 	if (vk.keyOwn && ptIn(cg.setbox, x, y)) { resetControl('setbox', v); mgraphics.redraw(); return; }
 	if (vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornnotas, x, y)) { resetControl('ornnotas', v); mgraphics.redraw(); return; }
 	if (vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornbase, x, y)) { resetControl('ornbase', v); mgraphics.redraw(); return; }
+	if (vk.readOwn && vk.patron === READ_COPRIMO && ptIn(cg.copsalto, x, y)) { resetControl('copsalto', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.grado, x, y)) { resetControl('grado', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.div, x, y)) { resetControl('div', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.euclen, x, y)) { resetControl('euclen', v); mgraphics.redraw(); return; }
@@ -1553,6 +1559,10 @@ function onclick(x, y, but) {
 	}
 	if (cg.ornbase && vk.readOwn && vk.patron === READ_ORNAMENT && ptIn(cg.ornbase, x, y)) {
 		dragBox = { v: v, kind: 'ornbase', startY: y, startVal: vk.ornB };
+		return;
+	}
+	if (cg.copsalto && vk.readOwn && vk.patron === READ_COPRIMO && ptIn(cg.copsalto, x, y)) {
+		dragBox = { v: v, kind: 'copsalto', startY: y, startVal: vk.copSk };
 		return;
 	}
 	// Trig -- fires this voice's own cursor one step by hand (external-trigger auditioning),
@@ -2616,6 +2626,16 @@ function paint() {
 					cg.dir = { x: dx0, y: dirY, w: DETAIL_W - 6, h: chipH };
 					drawChip(cg.dir, DIR_ABBR[Math.round(vk.dir)] || '?', false);
 					detailRow++;
+
+					// Salto Coprimo propio -- only while this voice's own Patron is Coprimo.
+					if (vk.patron === READ_COPRIMO && vk.copSk >= 1) {
+						var csY = y + 2 + detailRow * (chipH + chipGap);
+						if (rowH >= (csY - y) + chipH + 4) {
+							cg.copsalto = { x: dx0, y: csY, w: DETAIL_W - 6, h: chipH };
+							drawChip(cg.copsalto, 'Salto ' + vk.copSk, false);
+							detailRow++;
+						}
+					}
 
 					if (vk.patron === READ_ORNAMENT) {
 						var otY = y + 2 + detailRow * (chipH + chipGap);

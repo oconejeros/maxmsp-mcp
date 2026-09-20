@@ -1493,9 +1493,10 @@
     "box": {
      "id": "obj-201",
      "maxclass": "newobj",
-     "numinlets": 16,
-     "numoutlets": 16,
+     "numinlets": 17,
+     "numoutlets": 17,
      "outlettype": [
+      "",
       "",
       "",
       "",
@@ -1520,7 +1521,7 @@
       240.0,
       20.0
      ],
-     "text": "route ext art lec ton fij patron dir ornt setidx ornn ornb artvmin artvmax artdur artsil"
+     "text": "route ext art lec ton fij patron dir ornt setidx ornn ornb artvmin artvmax artdur artsil copsk"
     }
    },
    {
@@ -1822,6 +1823,87 @@
      "patching_rect": [
       500.0,
       740.0,
+      200.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_copsalto",
+     "annotation": "Salto coprimo propio de esta voz (1-11, se ajusta al coprimo mas cercano de la cardinalidad), cuando esta voz tiene Propia + Patron = Coprimo; el resto del tiempo se usa el Salto global.",
+     "patching_rect": [
+      400.0,
+      1010.0,
+      30.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      494.0,
+      3.0,
+      24.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "V#1 CopSalto",
+       "parameter_shortname": "CopSalto",
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_initial": [
+        2
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_mmin": 1.0,
+       "parameter_mmax": 11.0
+      }
+     },
+     "id": "obj-218"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-219",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_voicecoprime_prep",
+     "patching_rect": [
+      500.0,
+      1610.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicecoprime #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-220",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_copsk_setrx",
+     "patching_rect": [
+      500.0,
+      640.0,
       200.0,
       22.0
      ],
@@ -3041,6 +3123,66 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-218",
+      0
+     ],
+     "destination": [
+      "obj-219",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-219",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-218",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-201",
+      15
+     ],
+     "destination": [
+      "obj-220",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-220",
+      0
+     ],
+     "destination": [
+      "obj-218",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -3153,6 +3295,11 @@
    "obj-117": [
     "V#1 Fijar",
     "V#1 Fijar",
+    0
+   ],
+   "obj-218": [
+    "V#1 CopSalto",
+    "V#1 CopSalto",
     0
    ]
   },

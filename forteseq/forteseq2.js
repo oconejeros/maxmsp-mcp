@@ -239,6 +239,9 @@ var voiceSilence = filled(MAX_VOICES, groupSilence[GROUP_NORMAL]);
 var voiceReadOwn = filled(MAX_VOICES, 0);
 var voiceReadMode = filled(MAX_VOICES, READ_RECTO);
 var voiceReadDir = filled(MAX_VOICES, 0);
+// Per-voice Salto Coprimo -- only read while this voice's own Patron is Coprimo (voiceReadOwn on).
+// Any other voice, and this one with Propia off, keeps using the shared coprimeSkip.
+var voiceCoprimeSkip = filled(MAX_VOICES, 2);
 
 // Per-voice ornament shape override -- same off-by-default shape, one step narrower: only the
 // SHAPE (Orn Tipo x Orn Notas x Orn Base interval) is per-voice, not the base LAYOUT (Orn Base
@@ -1906,7 +1909,7 @@ function triggervoice(v) {
 	if (((tMode === undefined) ? readMode : tMode) === READ_ORNAMENT) {
 		pc = voiceOrnamentPitchAt(idx, pos, pcs);   // this voice's own shape if Propia is on -- see emitVoicesIndependent()
 	} else {
-		pc = pitchForDegree(pcs, degreeAt(n, pos, tMode, voiceReadDirOf(idx)) +
+		pc = pitchForDegree(pcs, degreeAt(n, pos, tMode, voiceReadDirOf(idx), voiceCoprimeSkipOf(idx)) +
 			voiceDegOffset[idx] + modDeg());
 	}
 
@@ -2605,6 +2608,18 @@ function setvoicereaddir(v, d) {
 	if (d < 0 || d > 2) d = 0;
 	voiceReadDir[idx] = d;
 	outlet(4, ["advecho", idx + 1, "dir", voiceReadDir[idx]]);
+}
+
+// Per-voice Salto Coprimo, same 1-11 range as the shared setcoprime(). Snapped to a coprime of the
+// cardinality at read time (coprimeStepFor), so the stored value is what the user asked for.
+function setvoicecoprime(v, k) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	k = Math.round(k);
+	if (!isFinite(k) || k < 1) k = 1;
+	if (k > 11) k = 11;
+	voiceCoprimeSkip[idx] = k;
+	outlet(4, ["advecho", idx + 1, "copsk", k]);
 }
 
 // Per-voice own key/tonality (TonProp/Set/Raiz -- see voiceKeyOwn above). Same off-by-default
@@ -3446,7 +3461,7 @@ function peekVoiceNote(v, pcs, n, j) {
 		pc = voiceOrnamentPitchAt(v, base + j, vPcs);   // mirrors emitVoicesIndependent()'s ornament branch
 	} else {
 		pc = pitchForDegree(vPcs,
-			degreeAt(vN, base + j, vm, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+			degreeAt(vN, base + j, vm, voiceReadDirOf(v), voiceCoprimeSkipOf(v)) + voiceDegOffset[v] + modDeg());
 	}
 	if (drumOn) return padFor(pc);
 	var list = voiceOctaveList[v];
@@ -4126,15 +4141,17 @@ function emitVoiceKeyReadouts() {
 		var velMin = voiceVelMin[v], velMax = voiceVelMax[v], durDiv = voiceDurDiv[v], silence = voiceSilence[v];
 		var grado = voiceDegOffset[v], div = voiceDiv[v];
 		var euLarg = voiceRhyLen[v], euPuls = voiceRhyK[v], euGir = voiceRhyRot[v];
+		// -1 unless this voice's effective Patron is Coprimo (same "-1 = not applicable" as ornT).
+		var copSk = (patron === READ_COPRIMO) ? (readOwn ? voiceCoprimeSkip[v] : coprimeSkip) : -1;
 		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," +
 			ornN + "," + ornB + "," + muted + "," + keyLock + "," + artOwn + "," + ext + "," + vec + "," + diss + "," + si + "," +
 			velMin + "," + velMax + "," + durDiv + "," + silence + "," + grado + "," + div + "," +
-			euLarg + "," + euPuls + "," + euGir;
+			euLarg + "," + euPuls + "," + euGir + "," + copSk;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
 		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
-			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir]);
+			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk]);
 	}
 }
 
@@ -4424,9 +4441,9 @@ function gcd(a, b) {
 // coprime skip visits every degree before any repeats; a skip sharing a factor with n collapses
 // the read into a shorter loop over part of the set. Ties go to the smaller skip. On a seven-note
 // set a skip of 2 is a chain of thirds, which is why 2 is the default.
-function coprimeStepFor(n) {
+function coprimeStepFor(n, skip) {
 	if (n <= 2) return 1;
-	var want = Math.round(coprimeSkip);
+	var want = Math.round(skip === undefined ? coprimeSkip : skip);
 	if (!isFinite(want) || want < 1) want = 1;
 	for (var d = 0; d < n; d++) {
 		var lo = want - d, hi = want + d;
@@ -4736,7 +4753,7 @@ function shapeCycleLength(n, mode) {
 // same as it already was shared between the clock and triggervoice() before per-voice Patron
 // existed. Two callers drawing from Urna for the same n at the same pass at once would step on
 // each other's shuffle; not fixed here, since it is no worse than the pre-existing shared state.
-function shapeDegreeAt(n, i, pass, mode) {
+function shapeDegreeAt(n, i, pass, mode, skip) {
 	if (mode === undefined) mode = readMode;
 	if (mode === READ_SUPERMIN && MINIMAL_SUPERPERMS[n]) return MINIMAL_SUPERPERMS[n][i];
 	if ((mode === READ_SUPER || mode === READ_SUPERMIN) && n <= PERM_CAP) {
@@ -4744,7 +4761,7 @@ function shapeDegreeAt(n, i, pass, mode) {
 		return permList[Math.floor(i / n) % permList.length][i % n];
 	}
 	if (mode === READ_MODOS) return Math.floor(i / n) + (i % n);
-	if (mode === READ_COPRIMO) return (i * coprimeStepFor(n)) % n;
+	if (mode === READ_COPRIMO) return (i * coprimeStepFor(n, skip)) % n;
 	if (mode === READ_ZIGZAG) return (i % 2 === 0) ? (i >> 1) : (n - 1 - (i >> 1));
 	if (mode === READ_URNA) return urnAt(n, i, pass);
 	return i % n;
@@ -4757,7 +4774,7 @@ function shapeDegreeAt(n, i, pass, mode) {
 // the note at either end, so the turn is heard as a turn and not as a stutter. `mode`/`dir` default
 // to the shared readMode/readDir -- the shared-clock call site never passes them, so it is
 // unaffected; a voice with Patron/Dir set to Propia passes its own values instead.
-function degreeAt(n, pos, mode, dir) {
+function degreeAt(n, pos, mode, dir, skip) {
 	if (mode === undefined) mode = readMode;
 	if (dir === undefined) dir = readDir;
 	pos = Math.round(pos);
@@ -4777,7 +4794,7 @@ function degreeAt(n, pos, mode, dir) {
 		pass = Math.floor(pos / L);
 		i = pos % L;
 	}
-	return shapeDegreeAt(n, i, pass, mode);
+	return shapeDegreeAt(n, i, pass, mode, skip);
 }
 
 // Effective mode/dir for a voice: its own when Propia is on, otherwise undefined so degreeAt()
@@ -4787,6 +4804,9 @@ function voiceReadModeOf(idx) {
 }
 function voiceReadDirOf(idx) {
 	return voiceReadOwn[idx] ? voiceReadDir[idx] : undefined;
+}
+function voiceCoprimeSkipOf(idx) {
+	return voiceReadOwn[idx] ? voiceCoprimeSkip[idx] : undefined;
 }
 
 // This voice's own set if TonProp is on, the shared one otherwise -- the base pcs[] every
@@ -4870,7 +4890,7 @@ function emitVoicesIndependent(pcs, n) {
 			pc = voiceOrnamentPitchAt(v, readIdx, vPcs);
 		} else {
 			pc = pitchForDegree(vPcs,
-				degreeAt(vN, readIdx, vMode, voiceReadDirOf(v)) + voiceDegOffset[v] + modDeg());
+				degreeAt(vN, readIdx, vMode, voiceReadDirOf(v), voiceCoprimeSkipOf(v)) + voiceDegOffset[v] + modDeg());
 		}
 		var list = voiceOctaveList[v];
 		var oct = list[pos % list.length];

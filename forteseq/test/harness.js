@@ -1507,6 +1507,45 @@ function checkVoiceReadOrder() {
 	return ok;
 }
 
+// Salto Coprimo por voz: con Propia + Patron Coprimo, la voz lee su propio salto
+// (voiceCoprimeSkip) en vez del global; la voz sin Propia sigue con el compartido.
+function checkVoiceCoprime() {
+	const e = makeEngine(1);
+	const c = e.ctx;
+	let ok = true;
+
+	c.setnumvoices(2);
+	c.setvoicemute(2, 0);
+	c.setvoiceindep(1);
+	c.setvoicediv(1, 1);
+	c.setvoicediv(2, 1);
+	c.setlockindex(c.setForte.indexOf('5-35') + 1);
+	c.setlock(1);
+	c.setmode(1);
+	c.setreadmode(4);            // global Coprimo, salto 2 (referencia para la voz 2)
+	c.setcoprime(2);
+	c.setvoicereadown(1, 1);
+	c.setvoicereadmode(1, 4);
+	c.setvoicecoprime(1, 3);     // 5 notas: salto 3 -> 0,3,1,4,2 contra 0,2,4,1,3
+	for (let i = 0; i < 10; i++) c.bang();
+
+	const pitchOf = (line) => Number(line.split(' ')[6]);
+	const v1 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '1').map(pitchOf);
+	const v2 = e.log.filter((l) => l[0] === '0' && l.split(' ')[3] === '2').map(pitchOf);
+	if (v1.length < 4 || JSON.stringify(v1) === JSON.stringify(v2)) {
+		console.error('Salto Coprimo por voz: voz 1 (salto 3) debia diferir de la voz 2 (salto global 2): ' +
+			JSON.stringify(v1) + ' vs ' + JSON.stringify(v2));
+		ok = false;
+	}
+	if (c.degreeAt(5, 1, 4, 0, 3) !== 3 || c.degreeAt(5, 1, 4, 0) !== 2) {
+		console.error('Salto Coprimo por voz: degreeAt con/sin salto propio dio ' +
+			c.degreeAt(5, 1, 4, 0, 3) + '/' + c.degreeAt(5, 1, 4, 0));
+		ok = false;
+	}
+	if (ok) console.log('OK   Salto Coprimo por voz: la voz con Propia usa su salto, el resto el global.');
+	return ok;
+}
+
 // Ornamento por voz: cuando el Patron propio de una voz es Ornamento, su FORMA (Orn Tipo/Notas/
 // Base) tambien puede ser propia -- voiceOrnType/Count/Base, via voiceOrnamentPitchAt(). El
 // LAYOUT de la base (Orn Base Modo/Paso/Cuarteto/Serie) sigue compartido, a proposito (fuera de
@@ -2531,6 +2570,7 @@ function main() {
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);
 	if (!checkVoiceOrnament()) process.exit(1);
+	if (!checkVoiceCoprime()) process.exit(1);
 	if (!checkOrnamentDir()) process.exit(1);
 	if (!checkVoiceKey()) process.exit(1);
 	if (!checkVoiceKeyProgression()) process.exit(1);
