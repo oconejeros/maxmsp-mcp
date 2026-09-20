@@ -11516,6 +11516,22 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-865",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "varname": "fs2_voxmode_tx",
+     "patching_rect": [
+      900.0,
+      4470.0,
+      140.0,
+      22.0
+     ],
+     "text": "send FS2_VOXMODE"
+    }
    }
   ],
   "lines": [
@@ -18637,6 +18653,18 @@
      ],
      "destination": [
       "obj-859",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-781",
+      0
+     ],
+     "destination": [
+      "obj-865",
       0
      ]
     }
