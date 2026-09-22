@@ -264,6 +264,7 @@ var voiceOrnOffsets = filled(MAX_VOICES, []);
 // -- out of scope. See voicePcsFor()/voiceRootFor().
 var voiceKeyOwn = filled(MAX_VOICES, 0);
 var voiceSetIndex = filled(MAX_VOICES, 0);     // this voice's own Tn-class (0-based); read only when TonProp is on
+var voiceRootFollow = filled(MAX_VOICES, 0);   // 1 = TonProp voice keeps following the shared root (effRoot() + voiceRootOffset); set by the Z panel
 var voiceRootOffset = filled(MAX_VOICES, 0);   // crude semitone transpose, same units as the global Root -- NOT
                                                 // effRoot(): a second key stands apart from the shared root walk /
                                                 // listen-latch / mask-fit machinery, which belongs to the FIRST key
@@ -2646,6 +2647,7 @@ function setvoicekeyown(v, flag) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceKeyOwn[idx] = flag ? 1 : 0;
+	if (!flag) voiceRootFollow[idx] = 0;
 	outlet(4, ["advecho", idx + 1, "ton", voiceKeyOwn[idx]]);
 	// Fijar has no meaning without TonProp (see setvoicekeylock below); clearing it here whenever
 	// TonProp goes off stops a leftover voiceKeyLock from "reappearing" as already-on the next time
@@ -2673,6 +2675,7 @@ function setvoicesetindex(v, i) {
 // vector, different shape): the first half of the live voices get the set, the rest its mate.
 function assignvoiceset(v, i1) {
 	setvoicekeyown(v, 1);
+	voiceRootFollow[Math.round(v) - 1] = 1;   // the shared root / Raiz modulation keeps moving this voice
 	setvoicesetindex(v, i1);
 	setvoicekeylock(v, 1);
 }
@@ -4182,7 +4185,7 @@ function emitVoiceKeyReadouts() {
 		var keyOwn = voiceKeyOwn[v];
 		var si = keyOwn ? voiceSetIndex[v] : setIndex;
 		var forte = setForte[si] || "-";
-		var tonic = NOTE_NAMES[pc12(keyOwn ? voiceRootOffset[v] : effRoot())];
+		var tonic = NOTE_NAMES[pc12(voiceRootFor(v))];
 		var readOwn = voiceReadOwn[v];
 		var patron = readOwn ? voiceReadMode[v] : readMode;
 		var dir = readOwn ? voiceReadDir[v] : readDir;
@@ -4887,7 +4890,8 @@ function voicePcsFor(idx, sharedPcs) {
 }
 // This voice's own crude transpose if TonProp is on, the shared effRoot() otherwise.
 function voiceRootFor(idx) {
-	return voiceKeyOwn[idx] ? voiceRootOffset[idx] : effRoot();
+	if (!voiceKeyOwn[idx]) return effRoot();
+	return voiceRootFollow[idx] ? effRoot() + voiceRootOffset[idx] : voiceRootOffset[idx];
 }
 
 // How many steps one complete pass takes, direction included. It decides when the set is allowed
