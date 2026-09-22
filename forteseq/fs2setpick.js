@@ -1,31 +1,46 @@
 // fs2setpick.js -- jsui: el panel IZQUIERDO del popup "Proximos 16" de FORTESEQ2.
 //
-// Dos zonas apiladas en un canvas de ~380 x 284:
+// Barra de voz COMPARTIDA arriba (Compartido + V1..Vn, cada chip tenido con el color real de lo
+// que esa voz tiene asignado -- de vcolor) + Soltar. Debajo, TRES secciones siempre visibles,
+// apiladas (no exclusivas -- antes eran 3 modos que se turnaban con un boton, ahora conviven; la
+// ventana ya era redimensionable, asi que mas alto = mas lugar para las tres):
 //
-//   ARRIBA  -- piano cromatico de una octava (7 blancas + 5 negras), cada tecla tenida por el
-//              color de circulo de quintas de pccolor.js. Click en una tecla la incluye/excluye
-//              de la mascara cromatica de 12 celdas del motor (C = slot 0, absoluta). Cada cambio
-//              manda  setmask <12 ints>  +  setfilter 1  al motor. Un renglon bajo el teclado
-//              lista las notas elegidas + conteo. mode/fit/k y el rango de cardinalidad se dejan
-//              a la pestana Filtro -- este panel no los toca.
+//   MASCARA  -- piano cromatico de una octava + rejilla de swatches, uno por cada pitch-class set
+//               que PASA el filtro actual (pintado con harmonyToColor()). Click en una tecla
+//               incluye/excluye esa nota de la mascara (setmask + setfilter). Click en un swatch
+//               asigna ese set al destino elegido en la barra compartida.
 //
-//   ABAJO   -- rejilla de swatches, uno por cada pitch-class set que PASA el filtro actual,
-//              pintado con harmonyToColor(). Click en un swatch fija ese set (lock duro):
-//              setlockindex <idx1>  +  setlock 1. El swatch elegido queda contorneado; el pie
-//              muestra el nombre Forte del swatch bajo el puntero. Si pasan mas de FILT_MAX,
-//              se pagina con los botones < >.
+//   Z-PARES  -- lista de TODOS los sets con Z-mate (independiente del Filtro), filtrable por
+//               cardinalidad. Click normal asigna al destino elegido; el toggle "Par" (unico
+//               remanente de la version anterior de este panel) hace que el click en cambio
+//               reparta el set A / su Z-mate mitad y mitad entre TODAS las voces (assignzpair).
 //
-// Entra por outlet 3 de forteseq2.js (compartido con fs2horizon.js / fs2colmon.js -- se
-// despacha por el selector, sin [route]):
-//   filtclear                                  -- vacia la rejilla.
-//   filtinfo  <total> <shown>                  -- shown = min(total, 64).
-//   filtset   <slot> <idx1> <forte> <pc...>    -- un set permitido; pc ya transpuesto por effRoot.
-//   maskecho  <m0..m11>                        -- mascara real del motor; el panel la adopta.
-//   color <0|1>  clear  bang                   -- toggle Color Monitor / limpiar / loadbang.
+//   RED      -- red padre/hijo (agregar/quitar una nota, ver neighborsOf() en forteseq2.js) --
+//               el mecanismo del sitio "66 Shapes" de Miles Okazaki, aqui sin su filtro de 3
+//               reglas: cualquier vecino de las 351 clases Tn es valido. Padres (izq, card-1) e
+//               Hijos (der, card+1) del set "centrado"; click asigna Y recentra, asi que caminar
+//               la red es clickear repetido. Volver retrocede un paso (o recentra en lo que suena).
+//
+// Entra por outlet 3 de forteseq2.js (compartido con fs2horizon.js / fs2colmon.js -- se despacha
+// por el selector, sin [route]):
+//   filtclear                                         -- vacia la rejilla de Mascara.
+//   filtinfo  <total> <shown>                         -- shown = min(total, 64).
+//   filtset   <slot> <idx1> <forte> <rootAbs> <pc...>  -- un set permitido; pc ya transpuesto.
+//   maskecho  <m0..m11>                                -- mascara real del motor; el panel la adopta.
+//   zclear  zset <idx1> <forte> <mate> <pc...>         -- panel Z-pares.
+//   nbclear <idx1> <forte> <card>  nbset <p0|h1> <slot> <idx1> <forte> <rootAbs> <pc...>  -- Red.
+//   vkey <v0> <forte> <tonic> <keyOwn> ...             -- que set tiene cada voz (barra compartida).
+//   vcolor <v0> <pc...>                                -- pcs reales de esa voz, para tenir su chip.
+//   hstatus <...> <idx1>  groot <root>                 -- para sembrar Red (Volver).
+//   color <0|1>  clear  bang                           -- toggle Color Monitor / limpiar / loadbang.
 // (todos los selectores de horizon/colmon llegan igual y se ignoran aqui.)
 //
 // Sale por outlet 0 -> outlet del subpatcher -> js forteseq2.js inlet 0:
-//   setmask <12 ints>   setfilter 1   setlockindex <idx1>   setlock 1
+//   setmask <12 ints>   setfilter 1
+//   setroot <r>   setlockindex <idx1>   setlock 1                    -- destino Compartido.
+//   assignvoiceset <v> <idx1>            (Z-pares: raiz sigue a la compartida, como siempre)
+//   assignvoicesetroot <v> <idx1> <rootAbs>   (Mascara/Red: raiz fija a lo mostrado)
+//   assignzpair <idx1>   setvoicekeyown <v> 0   queryzsets   queryneighbors <idx1> <rootAbs>
 //
 // idiom jsui del repo: fs2colmon.js (tabla PC_RGB), tonnetz.js (piano de una octava),
 // midirouter_grid.js (hit-test de teclas).
@@ -52,18 +67,17 @@ for (var _i = 0; _i < 12; _i++) {
 	PC_TEXT.push(_lum > 0.55 ? [0, 0, 0, 1] : [0.95, 0.95, 0.95, 1]);
 }
 
-// --- estado --------------------------------------------------------------------------------
+// --- estado: Mascara -------------------------------------------------------------------------
 
 var maskArr = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];   // mascara cromatica, C = slot 0, absoluta
 var colorOn = 1;
-var filtSets = [];        // filtSets[slot] = { idx1, forte, pcs:[...], rgb:[r,g,b] }
+var filtSets = [];        // filtSets[slot] = { idx1, forte, rootAbs, pcs:[...], rgb:[r,g,b] }
 var filtTotal = 0;        // cuantos pasan en total
 var filtShown = 0;        // cuantos se enviaron (<= FILT_MAX)
-var page = 0;
-var selIdx = -1;          // idx1 del swatch fijado (-1 = ninguno)
-var forteOfSel = '';      // nombre Forte del set fijado, para el pie cuando no hay hover
-var hoverForte = '';      // nombre Forte bajo el puntero
-var geo = null;           // rects del ultimo paint(), para hit-testing coherente
+var maskPage = 0;
+var selIdx = -1;          // idx1 del swatch fijado en Compartido (-1 = ninguno)
+var maskHover = '';       // nombre Forte bajo el puntero, seccion Mascara
+var maskGeo = null;       // rects del ultimo paint(), para hit-testing coherente
 
 // --- seguir a la ventana flotante -----------------------------------------------------
 // Patron tonnetz.js / animidi.js: la caja jsui se deja SOBREDIMENSIONADA (add_fs2_setpick.py)
@@ -106,7 +120,7 @@ function filtclear() {
 	filtSets = [];
 	filtTotal = 0;
 	filtShown = 0;
-	page = 0;
+	maskPage = 0;
 	scheduleRedraw();
 }
 
@@ -119,11 +133,11 @@ function filtinfo(total, shown) {
 
 function filtset() {
 	var a = arrayfromargs(arguments);
-	if (a.length < 4) return;
+	if (a.length < 5) return;
 	var slot = Math.round(a[0]);
 	if (!(slot >= 0 && slot < 4096)) return;
 	var pcs = [];
-	for (var k = 3; k < a.length; k++) {
+	for (var k = 4; k < a.length; k++) {
 		var p = Math.round(a[k]);
 		if (isFinite(p)) pcs.push(((p % 12) + 12) % 12);
 	}
@@ -134,7 +148,7 @@ function filtset() {
 	} else {
 		rgb = [0.5, 0.5, 0.5];
 	}
-	filtSets[slot] = { idx1: Math.round(a[1]), forte: String(a[2]), pcs: pcs, rgb: rgb };
+	filtSets[slot] = { idx1: Math.round(a[1]), forte: String(a[2]), rootAbs: Math.round(a[3]), pcs: pcs, rgb: rgb };
 	if (selIdx >= 0 && filtSets[slot].idx1 === selIdx) forteOfSel = filtSets[slot].forte;
 	scheduleRedraw();
 }
@@ -145,21 +159,101 @@ function maskecho() {
 	mgraphics.redraw();
 }
 
-// --- panel Z-pares ---------------------------------------------------------------------------
-// Segundo modo del panel (boton arriba a la derecha): reemplaza piano + rejilla por la lista de
-// TODOS los sets con Z-mate (independiente del Filtro), filtrable por cardinalidad, y asigna sets
-// a las voces. Destino "Par": click en un set A da A a la primera mitad de las voces y su Z-mate
-// a las demas (assignzpair). V1..Vn: click da ese set solo a esa voz (assignvoiceset, con TonProp
-// y Fijar encendidos). Soltar devuelve todas las voces al set compartido.
-var zMode = 0;
+var forteOfSel = '';      // nombre Forte del set fijado en Compartido, para el pie cuando no hay hover
+
+// --- barra de voz COMPARTIDA ------------------------------------------------------------------
+// Usada por click en CUALQUIERA de las 3 secciones de abajo: 0 = Compartido, 1..n = esa voz.
+// zVoices/zVoiceCount vienen de vkey() (que set/forte tiene cada voz); voiceColorMap de vcolor()
+// (las pcs reales que suenan, para tenir el chip con harmonyToColor en vez de un azul generico).
+var sharedTarget = 0;
+var zVoices = [];         // zVoices[v0] = { forte, own }
+var zVoiceCount = 4;
+var voiceColorMap = {};   // v0 -> [r,g,b]
+var barGeo = null;
+
+function vcolor() {
+	var a = arrayfromargs(arguments);
+	if (a.length < 1) return;
+	var v = Math.round(a[0]);
+	if (!(v >= 0 && v < 8)) return;
+	var pcs = [];
+	for (var k = 1; k < a.length; k++) pcs.push(((Math.round(a[k]) % 12) + 12) % 12);
+	if (pcs.length) {
+		var c = harmonyToColor(pcs, COLOR_OPTS, 'oklab');
+		voiceColorMap[v] = [c.r, c.g, c.b];
+	} else {
+		delete voiceColorMap[v];
+	}
+	scheduleRedraw();
+}
+
+// Punto unico de asignacion para las 3 secciones. rootAbs null/undefined = el candidato no tiene
+// una raiz absoluta propia (sets de Z-pares: "cada voz guarda su propio root", como siempre) --
+// Compartido entonces no toca root, y una voz usa assignvoiceset (sigue la raiz compartida).
+// rootAbs numerico (Mascara, Red) = Compartido fija esa raiz explicita, y una voz usa
+// assignvoicesetroot (raiz FIJA a lo que se ve, no sigue mas la compartida).
+function assignToTarget(idx1, rootAbs) {
+	var hasRoot = (rootAbs !== null && rootAbs !== undefined);
+	if (sharedTarget === 0) {
+		if (hasRoot) outlet(0, ['setroot', rootAbs]);
+		outlet(0, ['setlockindex', idx1]);
+		outlet(0, ['setlock', 1]);
+	} else if (hasRoot) {
+		outlet(0, ['assignvoicesetroot', sharedTarget, idx1, rootAbs]);
+	} else {
+		outlet(0, ['assignvoiceset', sharedTarget, idx1]);
+	}
+}
+
+function drawTargetRow(x, y, w) {
+	var targets = [];
+	var nT = zVoiceCount + 1;
+	var tw = w / nT;
+	for (var t = 0; t < nT; t++) {
+		var tr = { x: x + t * tw, y: y, w: tw - 3, h: 26 };
+		targets.push(tr);
+		if (t === 0) {
+			drawChip(tr, 'Compartido', sharedTarget === 0);
+		} else {
+			var vv = zVoices[t - 1];
+			var rgb = (vv && vv.own) ? voiceColorMap[t - 1] : null;
+			drawChip(tr, 'V' + t, sharedTarget === t, (vv && vv.own) ? vv.forte : '-', rgb);
+		}
+	}
+	return targets;
+}
+
+function paintBar(W) {
+	var soltarR = { x: W - 6 - 44, y: 3, w: 44, h: 15 };
+	drawChip(soltarR, 'Soltar', false);
+	mgraphics.set_source_rgba([0.55, 0.55, 0.6, 1]);
+	mgraphics.set_font_size(9);
+	mgraphics.move_to(6, 13);
+	mgraphics.show_text('Voz destino');
+	var targets = drawTargetRow(6, 21, W - 12);
+	barGeo = { soltar: soltarR, targets: targets, h: 50 };
+	return barGeo.h;
+}
+
+function barClick(x, y) {
+	if (!barGeo) return false;
+	if (ptIn(barGeo.soltar, x, y)) {
+		for (var v = 1; v <= zVoiceCount; v++) outlet(0, ['setvoicekeyown', v, 0]);
+		return true;
+	}
+	for (var t = 0; t < barGeo.targets.length; t++) {
+		if (ptIn(barGeo.targets[t], x, y)) { sharedTarget = t; mgraphics.redraw(); return true; }
+	}
+	return false;
+}
+
+// --- seccion Z-pares --------------------------------------------------------------------------
 var zSets = [];           // { idx1, forte, mate, pcs, rgb }
 var zCard = 0;            // 0 = todas las cardinalidades
-var zTarget = 0;          // 0 = Par, 1..n = voz
+var zParMode = 0;         // toggle "Par": ON = click reparte A / su Z-mate entre TODAS las voces
 var zPage = 0;
-var zVoices = [];         // zVoices[v0] = { forte, own }, de vkey
-var zVoiceCount = 4;
 var zHover = '';
-var zgeo = null;
+var zGeo = null;
 var Z_CARDS = [0, 4, 5, 6, 7, 8];
 
 function zclear() { zSets = []; zPage = 0; scheduleRedraw(); }
@@ -181,115 +275,98 @@ function zView() {
 	return out;
 }
 
-function zToggle() {
-	zMode = zMode ? 0 : 1;
-	if (zMode && zSets.length === 0) outlet(0, ['queryzsets']);
-	mgraphics.redraw();
-}
-
 function zClick(x, y) {
-	if (!zgeo) return;
-	if (ptIn(zgeo.chips.soltar, x, y)) {
-		for (var v = 1; v <= zVoiceCount; v++) outlet(0, ['setvoicekeyown', v, 0]);
-		return;
-	}
-	for (var c = 0; c < zgeo.chips.cards.length; c++) {
-		if (ptIn(zgeo.chips.cards[c], x, y)) { zCard = Z_CARDS[c]; zPage = 0; mgraphics.redraw(); return; }
-	}
-	for (var t = 0; t < zgeo.targets.length; t++) {
-		if (ptIn(zgeo.targets[t], x, y)) { zTarget = t; mgraphics.redraw(); return; }
+	if (!zGeo) return;
+	if (ptIn(zGeo.parChip, x, y)) { zParMode = zParMode ? 0 : 1; mgraphics.redraw(); return; }
+	for (var c = 0; c < zGeo.chips.cards.length; c++) {
+		if (ptIn(zGeo.chips.cards[c], x, y)) { zCard = Z_CARDS[c]; zPage = 0; mgraphics.redraw(); return; }
 	}
 	var view = zView();
-	var pages = Math.max(1, Math.ceil(view.length / zgeo.pageSize));
-	if (ptIn(zgeo.prevBtn, x, y)) { if (zPage > 0) { zPage--; mgraphics.redraw(); } return; }
-	if (ptIn(zgeo.nextBtn, x, y)) { if (zPage < pages - 1) { zPage++; mgraphics.redraw(); } return; }
+	var pages = Math.max(1, Math.ceil(view.length / zGeo.pageSize));
+	if (ptIn(zGeo.prevBtn, x, y)) { if (zPage > 0) { zPage--; mgraphics.redraw(); } return; }
+	if (ptIn(zGeo.nextBtn, x, y)) { if (zPage < pages - 1) { zPage++; mgraphics.redraw(); } return; }
 	var gi = zCellAt(x, y, view);
 	if (gi < 0) return;
-	if (zTarget === 0) outlet(0, ['assignzpair', view[gi].idx1]);
-	else outlet(0, ['assignvoiceset', zTarget, view[gi].idx1]);
+	if (zParMode) outlet(0, ['assignzpair', view[gi].idx1]);
+	else assignToTarget(view[gi].idx1, null);
 }
 
 function zCellAt(x, y, view) {
-	if (!zgeo || !ptIn(zgeo.grid, x, y)) return -1;
-	var col = Math.floor((x - zgeo.grid.x) / zgeo.cw);
-	var row = Math.floor((y - zgeo.grid.y) / zgeo.ch);
-	if (col < 0 || col >= zgeo.cols || row < 0) return -1;
-	var gi = zPage * zgeo.pageSize + row * zgeo.cols + col;
+	if (!zGeo || !ptIn(zGeo.grid, x, y)) return -1;
+	var col = Math.floor((x - zGeo.grid.x) / zGeo.cw);
+	var row = Math.floor((y - zGeo.grid.y) / zGeo.ch);
+	if (col < 0 || col >= zGeo.cols || row < 0) return -1;
+	var gi = zPage * zGeo.pageSize + row * zGeo.cols + col;
 	return (gi >= 0 && gi < view.length) ? gi : -1;
 }
 
-function drawChip(r, label, on, sub) {
-	mgraphics.set_source_rgba(on ? [0.30, 0.42, 0.62, 1] : [0.22, 0.22, 0.25, 1]);
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+function drawSwatchCell(cx, cy, cw, ch, rgb, highlighted, label) {
+	mgraphics.set_source_rgba(colorOn ? [rgb[0], rgb[1], rgb[2], 1] : [0.35, 0.35, 0.38, 1]);
+	mgraphics.rectangle(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
 	mgraphics.fill();
-	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
-	mgraphics.set_line_width(1);
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	if (highlighted) {
+		mgraphics.set_source_rgba([1, 1, 1, 0.95]);
+		mgraphics.set_line_width(2);
+		mgraphics.rectangle(cx + 2, cy + 2, cw - 4, ch - 4);
+	} else {
+		mgraphics.set_source_rgba([0, 0, 0, 0.4]);
+		mgraphics.set_line_width(1);
+		mgraphics.rectangle(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
+	}
 	mgraphics.stroke();
-	mgraphics.set_source_rgba([0.9, 0.9, 0.92, 1]);
-	mgraphics.set_font_size(sub ? 9 : 10);
-	mgraphics.move_to(r.x + 4, r.y + (sub ? 11 : r.h - 4));
-	mgraphics.show_text(label);
-	if (sub) {
-		mgraphics.set_source_rgba([0.75, 0.8, 0.9, 1]);
+	if (cw >= 34) {
+		var lum = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114;
+		mgraphics.set_source_rgba(lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]);
 		mgraphics.set_font_size(8);
-		mgraphics.move_to(r.x + 4, r.y + r.h - 4);
-		mgraphics.show_text(sub);
+		mgraphics.move_to(cx + 3, cy + ch - 6);
+		mgraphics.show_text(label);
 	}
 }
 
-function drawModeBtn(W) {
-	drawChip({ x: W - 6 - 62, y: 3, w: 62, h: 15 }, zMode ? 'Filtro' : 'Z-pares', zMode);
-}
-
-function paintZ(W, H) {
+function paintZSection(x, y, w, h) {
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
 	mgraphics.set_font_size(10);
-	mgraphics.move_to(8, 15);
-	mgraphics.show_text('Sets Z: ' + zView().length);
+	mgraphics.move_to(x, y + 11);
+	mgraphics.show_text('Z-pares: ' + zView().length);
 
-	var chips = { cards: [], soltar: { x: W - 6 - 44, y: 26, w: 44, h: 16 } };
+	var parChip = { x: x + w - 6 - 38, y: y, w: 38, h: 15 };
+	drawChip(parChip, 'Par', zParMode !== 0);
+
+	var chips = { cards: [] };
 	for (var c = 0; c < Z_CARDS.length; c++) {
-		var r = { x: 6 + c * 38, y: 26, w: 34, h: 16 };
+		var r = { x: x + c * 36, y: y + 17, w: 32, h: 14 };
 		chips.cards.push(r);
 		drawChip(r, Z_CARDS[c] ? String(Z_CARDS[c]) : 'Todos', zCard === Z_CARDS[c]);
 	}
-	drawChip(chips.soltar, 'Soltar', false);
 
-	// destino: Par + una casilla por voz, con el set que tiene hoy
-	var targets = [];
-	var nT = zVoiceCount + 1;
-	var tw = (W - 12) / nT;
-	for (var t = 0; t < nT; t++) {
-		var tr = { x: 6 + t * tw, y: 48, w: tw - 3, h: 26 };
-		targets.push(tr);
-		if (t === 0) drawChip(tr, 'Par', zTarget === 0, 'A / Z-mate');
-		else {
-			var vv = zVoices[t - 1];
-			drawChip(tr, 'V' + t, zTarget === t, (vv && vv.own) ? vv.forte : '-');
-		}
-	}
-
-	var headH = 78, footH = 16;
-	var gridW = W - 12;
+	var headH = 34, footH = 0;
+	var gridW = w;
 	var cols = Math.max(4, Math.floor(gridW / 46));
-	var cw = gridW / cols, ch = 30;
-	var rows = Math.max(1, Math.floor((H - headH - footH) / ch));
+	var cw = gridW / cols, ch = 26;
+	var rows = Math.max(1, Math.floor((h - headH - footH) / ch));
 	var pageSize = cols * rows;
-	var prevBtn = { x: W - 6 - 44 - 66, y: 3, w: 20, h: 15 };
-	var nextBtn = { x: W - 6 - 20 - 66, y: 3, w: 20, h: 15 };
-	zgeo = { chips: chips, targets: targets, grid: { x: 6, y: headH, w: gridW, h: rows * ch },
-		cols: cols, cw: cw, ch: ch, pageSize: pageSize, prevBtn: prevBtn, nextBtn: nextBtn };
+	var prevBtn = { x: x + w - 44, y: y, w: 18, h: 14 };
+	var nextBtn = { x: x + w - 22, y: y, w: 18, h: 14 };
+	// prevBtn/nextBtn comparten fila con "Par"; se dibujan solo si hacen falta (mas abajo) asi que
+	// se empujan un poco a la izquierda del chip Par para no superponerse.
+	prevBtn.x -= 42; nextBtn.x -= 42;
+
+	zGeo = {
+		parChip: parChip, chips: chips,
+		grid: { x: x, y: y + headH, w: gridW, h: rows * ch },
+		cols: cols, cw: cw, ch: ch, pageSize: pageSize, prevBtn: prevBtn, nextBtn: nextBtn
+	};
 
 	var view = zView();
 	var pages = Math.max(1, Math.ceil(view.length / pageSize));
 	if (zPage > pages - 1) zPage = pages - 1;
+	if (zPage < 0) zPage = 0;
 	if (pages > 1) {
 		drawBtn(prevBtn, '<', zPage > 0);
 		drawBtn(nextBtn, '>', zPage < pages - 1);
 		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-		mgraphics.set_font_size(9);
-		mgraphics.move_to(prevBtn.x - 30, 15);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(prevBtn.x - 26, y + 11);
 		mgraphics.show_text((zPage + 1) + '/' + pages);
 	}
 
@@ -297,29 +374,204 @@ function paintZ(W, H) {
 		var gi = zPage * pageSize + k;
 		if (gi >= view.length) break;
 		var s = view[gi];
-		var cx = 6 + (k % cols) * cw, cy = headH + Math.floor(k / cols) * ch;
-		mgraphics.set_source_rgba(colorOn ? [s.rgb[0], s.rgb[1], s.rgb[2], 1] : [0.35, 0.35, 0.38, 1]);
-		mgraphics.rectangle(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
-		mgraphics.fill();
-		var assigned = -1;
-		for (var v = 0; v < zVoiceCount; v++) if (zVoices[v] && zVoices[v].own && zVoices[v].forte === s.forte) assigned = v;
-		if (assigned >= 0) {
-			mgraphics.set_source_rgba([1, 1, 1, 0.95]);
-			mgraphics.set_line_width(2);
-			mgraphics.rectangle(cx + 2, cy + 2, cw - 4, ch - 4);
-			mgraphics.stroke();
-		}
-		var lum = s.rgb[0] * 0.299 + s.rgb[1] * 0.587 + s.rgb[2] * 0.114;
-		mgraphics.set_source_rgba(lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]);
-		mgraphics.set_font_size(8);
-		mgraphics.move_to(cx + 4, cy + ch - 6);
-		mgraphics.show_text(s.forte);
+		var cx = x + (k % cols) * cw, cy = y + headH + Math.floor(k / cols) * ch;
+		var assigned = false;
+		for (var v = 0; v < zVoiceCount; v++) if (zVoices[v] && zVoices[v].own && zVoices[v].forte === s.forte) assigned = true;
+		drawSwatchCell(cx, cy, cw, ch, s.rgb, assigned, s.forte);
+	}
+}
+
+// --- seccion Red (padre/hijo) -------------------------------------------------------------------
+// Generaliza "un set relacionado" (Z-pares) a TODA la red de vecinos por agregar/quitar una nota
+// (neighborsOf() en forteseq2.js) -- el mecanismo del sitio "66 Shapes" de Miles Okazaki, aqui sin
+// su filtro de 3 reglas: cualquier vecino de las 351 clases Tn es valido, no solo esas 66 escalas.
+// Click en un vecino: lo asigna al destino de la barra compartida Y recentra la navegacion sobre
+// el, asi que "caminar" la red es clickear repetido. Volver retrocede un paso en el historial; si
+// esta vacio, recentra en el set realmente sonando (sharedIdx1/sharedRoot, de hstatus/groot).
+var redCenter = -1;          // idx1 (1-based) del set centrado; -1 = todavia no se sembro
+var redRootAbs = 0;
+var redCenterForte = '-', redCenterCard = 0;
+var redParents = [];         // { idx1, forte, rootAbs, pcs, rgb }
+var redChildren = [];
+var redPPage = 0, redCPage = 0;
+var redHistory = [];         // pila de { idx1, rootAbs } visitados, para Volver
+var redHover = '';
+var redGeo = null;
+var sharedIdx1 = 1, sharedRoot = 0;   // cache de hstatus/groot, solo para sembrar/Volver
+
+function nbclear(idx1, forte, card) {
+	redCenterForte = String(forte);
+	redCenterCard = Math.round(card) || 0;
+	redParents = [];
+	redChildren = [];
+	scheduleRedraw();
+}
+
+function nbset() {
+	var a = arrayfromargs(arguments);
+	if (a.length < 5) return;
+	var kind = Math.round(a[0]);
+	var pcs = [];
+	for (var k = 5; k < a.length; k++) pcs.push(((Math.round(a[k]) % 12) + 12) % 12);
+	var c = pcs.length ? harmonyToColor(pcs, COLOR_OPTS, 'oklab') : { r: 0.5, g: 0.5, b: 0.5 };
+	var e = { idx1: Math.round(a[2]), forte: String(a[3]), rootAbs: Math.round(a[4]), pcs: pcs, rgb: [c.r, c.g, c.b] };
+	(kind ? redChildren : redParents).push(e);
+	scheduleRedraw();
+}
+
+function redQuery() { outlet(0, ['queryneighbors', redCenter, redRootAbs]); }
+
+function redGoHome() {
+	redCenter = sharedIdx1;
+	redRootAbs = sharedRoot;
+	redQuery();
+}
+
+function redBack() {
+	if (redHistory.length === 0) { redGoHome(); return; }
+	var h = redHistory.pop();
+	redCenter = h.idx1;
+	redRootAbs = h.rootAbs;
+	redQuery();
+}
+
+// Primer paint: siembra desde lo que realmente suena. Reabrir/redimensionar el popup no debe
+// perder donde el usuario estaba navegando -- solo se siembra una vez.
+function redEnsureSeeded() {
+	if (redCenter < 0) redGoHome();
+}
+
+function redAssign(e) {
+	assignToTarget(e.idx1, e.rootAbs);
+	redHistory.push({ idx1: redCenter, rootAbs: redRootAbs });
+	redCenter = e.idx1;
+	redRootAbs = e.rootAbs;
+	redQuery();
+}
+
+// Dibuja una zona (Padres o Hijos) Y devuelve su geometria de hit-test. page es el valor guardado
+// (redPPage/redCPage); el caller debe releerlo de geo.page por si se clampeo.
+function drawNeighborZone(x, y, w, h, label, list, page) {
+	mgraphics.set_source_rgba([0.55, 0.55, 0.6, 1]);
+	mgraphics.set_font_size(9);
+	mgraphics.move_to(x, y + 10);
+	mgraphics.show_text(label + ' (' + list.length + ')');
+
+	var subHeadH = 13;
+	var cols = Math.max(2, Math.floor(w / 44));
+	var ch = 24;
+	var gridY = y + subHeadH;
+	var rows = Math.max(1, Math.floor((h - subHeadH) / ch));
+	var pageSize = cols * rows;
+	var pages = Math.max(1, Math.ceil(list.length / pageSize));
+	if (page > pages - 1) page = pages - 1;
+	if (page < 0) page = 0;
+
+	var prevBtn = { x: x + w - 36, y: y, w: 16, h: 11 };
+	var nextBtn = { x: x + w - 18, y: y, w: 16, h: 11 };
+	if (pages > 1) {
+		drawBtn(prevBtn, '<', page > 0);
+		drawBtn(nextBtn, '>', page < pages - 1);
 	}
 
+	var cw = w / cols;
+	for (var k = 0; k < pageSize; k++) {
+		var gi = page * pageSize + k;
+		if (gi >= list.length) break;
+		var s = list[gi];
+		var col = k % cols, row = Math.floor(k / cols);
+		var cx = x + col * cw, cy = gridY + row * ch;
+		drawSwatchCell(cx, cy, cw, ch, s.rgb, false, s.forte);
+	}
+
+	return {
+		x: x, y: gridY, w: w, h: rows * ch, cols: cols, cw: cw, ch: ch,
+		pageSize: pageSize, page: page, pages: pages, prevBtn: prevBtn, nextBtn: nextBtn, list: list
+	};
+}
+
+function redCellAt(zone, x, y) {
+	if (!zone || !ptIn(zone, x, y)) return -1;
+	var col = Math.floor((x - zone.x) / zone.cw);
+	var row = Math.floor((y - zone.y) / zone.ch);
+	if (col < 0 || col >= zone.cols || row < 0) return -1;
+	var gi = zone.page * zone.pageSize + row * zone.cols + col;
+	return (gi >= 0 && gi < zone.list.length) ? gi : -1;
+}
+
+function paintRedSection(x, y, w, h) {
+	redEnsureSeeded();
+
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
-	mgraphics.set_font_size(9);
-	mgraphics.move_to(6, H - 5);
-	mgraphics.show_text(zHover || (zTarget === 0 ? 'Click: A a la 1a mitad de voces, su Z-mate al resto' : 'Click: asigna el set a V' + zTarget));
+	mgraphics.set_font_size(10);
+	mgraphics.move_to(x, y + 11);
+	mgraphics.show_text('Red: ' + redCenterForte + ' (n=' + redCenterCard + ')');
+
+	var backR = { x: x + w - 6 - 44, y: y, w: 44, h: 15 };
+	drawChip(backR, 'Volver', false);
+
+	var headH = 20, footH = 0;
+	var half = Math.floor((w - 6) / 2);
+	var pz = drawNeighborZone(x, y + headH, half, h - headH - footH, 'Padres', redParents, redPPage);
+	redPPage = pz.page;
+	var cz = drawNeighborZone(x + half + 6, y + headH, half, h - headH - footH, 'Hijos', redChildren, redCPage);
+	redCPage = cz.page;
+
+	redGeo = { back: backR, parents: pz, children: cz };
+}
+
+function redClick(x, y) {
+	if (!redGeo) return;
+	if (ptIn(redGeo.back, x, y)) { redBack(); return; }
+	if (ptIn(redGeo.parents.prevBtn, x, y)) { if (redPPage > 0) { redPPage--; mgraphics.redraw(); } return; }
+	if (ptIn(redGeo.parents.nextBtn, x, y)) { if (redPPage < redGeo.parents.pages - 1) { redPPage++; mgraphics.redraw(); } return; }
+	if (ptIn(redGeo.children.prevBtn, x, y)) { if (redCPage > 0) { redCPage--; mgraphics.redraw(); } return; }
+	if (ptIn(redGeo.children.nextBtn, x, y)) { if (redCPage < redGeo.children.pages - 1) { redCPage++; mgraphics.redraw(); } return; }
+	var pi = redCellAt(redGeo.parents, x, y);
+	if (pi >= 0) { redAssign(redParents[pi]); return; }
+	var ci = redCellAt(redGeo.children, x, y);
+	if (ci >= 0) { redAssign(redChildren[ci]); return; }
+}
+
+// --- dibujo compartido: chips/botones -----------------------------------------------------------
+
+function drawChip(r, label, on, sub, rgb) {
+	if (rgb) {
+		mgraphics.set_source_rgba([rgb[0], rgb[1], rgb[2], 1]);
+	} else {
+		mgraphics.set_source_rgba(on ? [0.30, 0.42, 0.62, 1] : [0.22, 0.22, 0.25, 1]);
+	}
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.fill();
+	mgraphics.set_source_rgba(on ? [1, 1, 1, 0.9] : [0, 0, 0, 0.5]);
+	mgraphics.set_line_width(on ? 2 : 1);
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.stroke();
+	var lum = rgb ? (rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114) : 0.3;
+	mgraphics.set_source_rgba(rgb ? (lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]) : [0.9, 0.9, 0.92, 1]);
+	mgraphics.set_font_size(sub ? 9 : 10);
+	mgraphics.move_to(r.x + 4, r.y + (sub ? 11 : r.h - 4));
+	mgraphics.show_text(label);
+	if (sub) {
+		mgraphics.set_source_rgba(rgb ? (lum > 0.55 ? [0, 0, 0, 0.75] : [0.85, 0.88, 0.95, 0.85]) : [0.75, 0.8, 0.9, 1]);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(r.x + 4, r.y + r.h - 4);
+		mgraphics.show_text(sub);
+	}
+}
+
+function drawBtn(r, label, enabled) {
+	mgraphics.set_source_rgba(enabled ? [0.30, 0.30, 0.34, 1] : [0.17, 0.17, 0.19, 1]);
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.fill();
+	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
+	mgraphics.set_line_width(1);
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.stroke();
+	mgraphics.set_source_rgba(enabled ? [0.85, 0.85, 0.88, 1] : [0.45, 0.45, 0.48, 1]);
+	mgraphics.set_font_size(11);
+	mgraphics.move_to(r.x + r.w / 2 - 3, r.y + r.h - 4);
+	mgraphics.show_text(label);
 }
 
 function color(on) {
@@ -338,23 +590,28 @@ function hpattern() {}
 function hsilprob() {}
 function hcursor() {}
 function hist() {}
-function hstatus() {}
+// hstatus <readMode> <readDir> <idx1> <mode> <locked> -- solo idx1 interesa aqui, cacheado para
+// que la seccion Red sepa a donde volver (redGoHome()).
+function hstatus(readMode, readDir, idx1) {
+	sharedIdx1 = Math.round(idx1) || 1;
+}
 function hshape() {}
 function hshapecur() {}
 function colvoices() {}
 function colbang() {}
 function colmon() {}
-// vkey <v0> <forte> <tonic> <keyOwn> ... -- solo interesa que set tiene cada voz (panel Z).
+// vkey <v0> <forte> <tonic> <keyOwn> ... -- solo interesa que set tiene cada voz (barra compartida).
 function vkey(v, forte, tonic, keyOwn) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < 8)) return;
 	zVoices[v] = { forte: String(forte), own: keyOwn ? 1 : 0 };
 	if (v + 1 > zVoiceCount) zVoiceCount = v + 1;
-	if (zMode) scheduleRedraw();
+	scheduleRedraw();
 }
 function ornscale() {}
 function ornbasemode() {}
-function groot() {}
+// groot <root> -- cacheado por la misma razon que hstatus arriba (seccion Red, Volver).
+function groot(r) { sharedRoot = Math.round(r) || 0; }
 function gornament() {}
 function gflags() {}
 function gharm() {}
@@ -439,64 +696,69 @@ function keyAt(x, y, w, ph) {
 	return WHITE_PC[wi];
 }
 
-function swatchAt(x, y) {
-	if (!geo || !ptIn(geo.grid, x, y)) return -1;
-	var col = Math.floor((x - geo.grid.x) / geo.cw);
-	var row = Math.floor((y - geo.grid.y) / geo.ch);
-	if (col < 0 || col >= geo.cols || row < 0) return -1;
-	var gi = page * geo.pageSize + row * geo.cols + col;
+function maskSwatchAt(x, y) {
+	if (!maskGeo || !ptIn(maskGeo.grid, x, y)) return -1;
+	var col = Math.floor((x - maskGeo.grid.x) / maskGeo.cw);
+	var row = Math.floor((y - maskGeo.grid.y) / maskGeo.ch);
+	if (col < 0 || col >= maskGeo.cols || row < 0) return -1;
+	var gi = maskPage * maskGeo.pageSize + row * maskGeo.cols + col;
 	if (gi < 0 || gi >= filtShown) return -1;
 	return gi;
 }
 
-function pageCount() {
-	if (!geo || geo.pageSize <= 0) return 1;
-	return Math.max(1, Math.ceil(filtShown / geo.pageSize));
+function maskPageCount() {
+	if (!maskGeo || maskGeo.pageSize <= 0) return 1;
+	return Math.max(1, Math.ceil(filtShown / maskGeo.pageSize));
 }
 
 function onclick(x, y, but) {
-	if (!but || !geo) return;
-	if (ptIn({ x: geo.W - 6 - 62, y: 3, w: 62, h: 15 }, x, y)) { zToggle(); return; }
-	if (zMode) { zClick(x, y); return; }
-
-	if (ptIn(geo.keys, x, y)) {
-		var pc = keyAt(x - geo.keys.x, y - geo.keys.y, geo.keys.w, geo.keys.h);
-		if (pc >= 0) { maskArr[pc] ^= 1; emitMask(); mgraphics.redraw(); }
-		return;
+	if (!but) return;
+	if (barClick(x, y)) return;
+	if (maskGeo) {
+		if (ptIn(maskGeo.keys, x, y)) {
+			var pc = keyAt(x - maskGeo.keys.x, y - maskGeo.keys.y, maskGeo.keys.w, maskGeo.keys.h);
+			if (pc >= 0) { maskArr[pc] ^= 1; emitMask(); mgraphics.redraw(); }
+			return;
+		}
+		if (ptIn(maskGeo.prevBtn, x, y)) { if (maskPage > 0) { maskPage--; mgraphics.redraw(); } return; }
+		if (ptIn(maskGeo.nextBtn, x, y)) { if (maskPage < maskPageCount() - 1) { maskPage++; mgraphics.redraw(); } return; }
+		var gi = maskSwatchAt(x, y);
+		if (gi >= 0 && filtSets[gi]) {
+			var fs = filtSets[gi];
+			if (sharedTarget === 0) { selIdx = fs.idx1; forteOfSel = fs.forte; }
+			assignToTarget(fs.idx1, fs.rootAbs);
+			mgraphics.redraw();
+			return;
+		}
 	}
-	if (ptIn(geo.prevBtn, x, y)) {
-		if (page > 0) { page--; mgraphics.redraw(); }
-		return;
-	}
-	if (ptIn(geo.nextBtn, x, y)) {
-		if (page < pageCount() - 1) { page++; mgraphics.redraw(); }
-		return;
-	}
-	var gi = swatchAt(x, y);
-	if (gi >= 0 && filtSets[gi]) {
-		selIdx = filtSets[gi].idx1;
-		forteOfSel = filtSets[gi].forte;
-		outlet(0, ['setlockindex', selIdx]);
-		outlet(0, ['setlock', 1]);
-		mgraphics.redraw();
-	}
+	// Z y Red viven en bandas de Y disjuntas (apiladas, ver paint()), asi que delegar a las dos
+	// sin pre-filtrar es seguro: cada una ya hace su propio hit-test completo contra sus rects, y
+	// una coordenada solo puede caer dentro de las de UNA de las dos.
+	zClick(x, y);
+	redClick(x, y);
 }
 
 function onidle(x, y) {
-	if (zMode) {
-		var zv = zView(), zi = zCellAt(x, y, zv);
-		var zh = zi >= 0 ? zv[zi].forte + '  <->  ' + zv[zi].mate : '';
-		if (zh !== zHover) { zHover = zh; mgraphics.redraw(); }
-		return;
-	}
 	var f = '';
-	var gi = swatchAt(x, y);
-	if (gi >= 0 && filtSets[gi]) f = filtSets[gi].forte;
-	if (f !== hoverForte) { hoverForte = f; mgraphics.redraw(); }
+	if (maskGeo) {
+		var gi = maskSwatchAt(x, y);
+		if (gi >= 0 && filtSets[gi]) f = filtSets[gi].forte;
+	}
+	if (!f && zGeo) {
+		var zv = zView(), zi = zCellAt(x, y, zv);
+		if (zi >= 0) f = zv[zi].forte + '  <->  ' + zv[zi].mate;
+	}
+	if (!f && redGeo) {
+		var pi = redCellAt(redGeo.parents, x, y);
+		var ci = pi < 0 ? redCellAt(redGeo.children, x, y) : -1;
+		var e = pi >= 0 ? redParents[pi] : (ci >= 0 ? redChildren[ci] : null);
+		if (e) f = e.forte + '  (raiz ' + e.rootAbs + ')';
+	}
+	if (f !== maskHover) { maskHover = f; mgraphics.redraw(); }
 }
 
 function onidleout() {
-	if (hoverForte !== '') { hoverForte = ''; mgraphics.redraw(); }
+	if (maskHover !== '') { maskHover = ''; mgraphics.redraw(); }
 }
 
 // --- dibujo ------------------------------------------------------------------------------
@@ -507,36 +769,31 @@ function selectedNames() {
 	return out;
 }
 
-function drawPiano(pz) {
-	// titulo
+function drawPiano(pz, keys) {
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
 	mgraphics.select_font_face('Arial');
 	mgraphics.set_font_size(10);
 	mgraphics.move_to(pz.x + 2, pz.y + 11);
 	mgraphics.show_text('Mascara cromatica');
 
-	var keys = geo.keys;
 	var ww = keys.w / 7;
 	var bw = ww * 0.6, bh = keys.h * 0.62;
 
-	// blancas
 	for (var wi = 0; wi < 7; wi++) {
 		var pc = WHITE_PC[wi];
 		var kx = keys.x + wi * ww;
 		fillKey(kx, keys.y, ww, keys.h, pc, maskArr[pc], false);
 	}
-	// negras encima
 	for (var j = 0; j < 5; j++) {
 		var bpc = BLACK_PC[j];
 		var bx = keys.x + (BLACK_AFTER[j] + 1) * ww - bw / 2;
 		fillKey(bx, keys.y, bw, bh, bpc, maskArr[bpc], true);
 	}
 
-	// renglon de notas elegidas
 	var names = selectedNames();
 	mgraphics.set_source_rgba([0.55, 0.55, 0.6, 1]);
 	mgraphics.set_font_size(9);
-	mgraphics.move_to(pz.x + 2, pz.y + pz.h - 5);
+	mgraphics.move_to(pz.x + 2, pz.y + pz.h - 3);
 	mgraphics.show_text((names.length ? names.join(' ') : '(vacia)') + '   (' + names.length + ')');
 }
 
@@ -547,7 +804,6 @@ function fillKey(x, y, w, h, pc, on, isBlack) {
 	} else if (on) {
 		mgraphics.set_source_rgba([0.80, 0.80, 0.80, 1]);
 	} else {
-		// excluida: la MISMA tinta pero muy apagada, para que se lea el mapa de color siempre
 		var f = isBlack ? 0.28 : 0.20;
 		mgraphics.set_source_rgba([rgb[0] * f + 0.04, rgb[1] * f + 0.04, rgb[2] * f + 0.04, 1]);
 	}
@@ -567,86 +823,63 @@ function fillKey(x, y, w, h, pc, on, isBlack) {
 	}
 }
 
-function drawGrid(gz, headH, footH) {
-	var W = geo.W;
-	// cabecera
+function paintMaskSection(x, y, w, h) {
+	var pianoH = Math.max(56, Math.min(96, Math.round(h * 0.45)));
+	var pz = { x: x, y: y, w: w, h: pianoH };
+	var keys = { x: pz.x + 2, y: pz.y + 14, w: pz.w - 4, h: pz.h - 14 - 14 };
+	if (keys.h < 20) keys.h = 20;
+	drawPiano(pz, keys);
+
+	var gz = { x: x, y: y + pianoH + 4, w: w, h: h - pianoH - 4 };
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
-	mgraphics.set_font_size(10);
-	mgraphics.move_to(gz.x, gz.y + 11);
+	mgraphics.set_font_size(9);
+	mgraphics.move_to(gz.x, gz.y + 9);
 	var htxt = 'Sets que pasan: ' + filtShown + (filtShown < filtTotal ? ' / ' + filtTotal : '');
 	mgraphics.show_text(htxt);
 
-	var multi = geo.pageSize > 0 && filtShown > geo.pageSize;
+	var headH = 12;
+	var gridTop = gz.y + headH;
+	var gridH = Math.max(1, gz.h - headH);
+	var cols = Math.max(4, Math.floor(gz.w / 46));
+	var cw = gz.w / cols, ch = 26;
+	var rows = Math.max(1, Math.floor(gridH / ch));
+	var pageSize = cols * rows;
+
+	var btnW = 18, btnH = 12;
+	var prevBtn = { x: x + w - btnW * 2 - 4, y: gz.y, w: btnW, h: btnH };
+	var nextBtn = { x: x + w - btnW, y: gz.y, w: btnW, h: btnH };
+
+	maskGeo = {
+		piano: pz, keys: keys,
+		grid: { x: gz.x, y: gridTop, w: gz.w, h: rows * ch },
+		cols: cols, cw: cw, ch: ch, pageSize: pageSize,
+		prevBtn: prevBtn, nextBtn: nextBtn
+	};
+
+	var pc = maskPageCount();
+	if (maskPage > pc - 1) maskPage = pc - 1;
+	if (maskPage < 0) maskPage = 0;
+
+	var multi = pageSize > 0 && filtShown > pageSize;
 	if (multi) {
-		drawBtn(geo.prevBtn, '<', page > 0);
-		drawBtn(geo.nextBtn, '>', page < pageCount() - 1);
+		drawBtn(prevBtn, '<', maskPage > 0);
+		drawBtn(nextBtn, '>', maskPage < maskPageCount() - 1);
 		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-		mgraphics.set_font_size(9);
-		var ptxt = (page + 1) + '/' + pageCount();
-		mgraphics.move_to(geo.prevBtn.x - 26, gz.y + 11);
-		mgraphics.show_text(ptxt);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(prevBtn.x - 26, gz.y + 9);
+		mgraphics.show_text((maskPage + 1) + '/' + maskPageCount());
 	}
 
-	// celdas
-	var grid = geo.grid;
-	for (var k = 0; k < geo.pageSize; k++) {
-		var gi = page * geo.pageSize + k;
+	for (var k = 0; k < pageSize; k++) {
+		var gi = maskPage * pageSize + k;
 		if (gi >= filtShown) break;
 		var s = filtSets[gi];
 		if (!s) continue;
-		var col = k % geo.cols;
-		var row = Math.floor(k / geo.cols);
-		var cx = grid.x + col * geo.cw;
-		var cy = grid.y + row * geo.ch;
-
-		if (colorOn) mgraphics.set_source_rgba([s.rgb[0], s.rgb[1], s.rgb[2], 1]);
-		else mgraphics.set_source_rgba([0.35, 0.35, 0.38, 1]);
-		mgraphics.rectangle(cx + 1.5, cy + 1.5, geo.cw - 3, geo.ch - 3);
-		mgraphics.fill();
-
-		if (s.idx1 === selIdx) {
-			mgraphics.set_source_rgba([1, 1, 1, 0.95]);
-			mgraphics.set_line_width(2);
-			mgraphics.rectangle(cx + 2, cy + 2, geo.cw - 4, geo.ch - 4);
-			mgraphics.stroke();
-		} else {
-			mgraphics.set_source_rgba([0, 0, 0, 0.4]);
-			mgraphics.set_line_width(1);
-			mgraphics.rectangle(cx + 1.5, cy + 1.5, geo.cw - 3, geo.ch - 3);
-			mgraphics.stroke();
-		}
-
-		if (geo.cw >= 40) {
-			var lum = s.rgb[0] * 0.299 + s.rgb[1] * 0.587 + s.rgb[2] * 0.114;
-			mgraphics.set_source_rgba(lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]);
-			mgraphics.set_font_size(8);
-			mgraphics.move_to(cx + 4, cy + geo.ch - 6);
-			mgraphics.show_text(s.forte);
-		}
+		var cx = gz.x + (k % cols) * cw, cy = gridTop + Math.floor(k / cols) * ch;
+		var assigned = s.idx1 === selIdx;
+		if (!assigned) for (var v = 0; v < zVoiceCount; v++) if (zVoices[v] && zVoices[v].own && zVoices[v].forte === s.forte) assigned = true;
+		drawSwatchCell(cx, cy, cw, ch, s.rgb, assigned, s.forte);
 	}
-
-	// pie: nombre Forte
-	var foot = hoverForte || forteOfSel || '';
-	if (foot) {
-		mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
-		mgraphics.set_font_size(9);
-		mgraphics.move_to(gz.x, geo.H - 5);
-		mgraphics.show_text((hoverForte ? '' : 'Fijado: ') + foot);
-	}
-}
-
-function drawBtn(r, label, enabled) {
-	mgraphics.set_source_rgba(enabled ? [0.30, 0.30, 0.34, 1] : [0.17, 0.17, 0.19, 1]);
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
-	mgraphics.fill();
-	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
-	mgraphics.set_line_width(1);
-	mgraphics.rectangle(r.x, r.y, r.w, r.h);
-	mgraphics.stroke();
-	mgraphics.set_source_rgba(enabled ? [0.85, 0.85, 0.88, 1] : [0.45, 0.45, 0.48, 1]);
-	mgraphics.set_font_size(11);
-	mgraphics.move_to(r.x + r.w / 2 - 3, r.y + r.h - 4);
-	mgraphics.show_text(label);
 }
 
 function paint() {
@@ -657,63 +890,37 @@ function paint() {
 	mgraphics.rectangle(0, 0, W, H);
 	mgraphics.fill();
 	mgraphics.select_font_face('Arial');
-	if (zMode) {
-		geo = geo || {};
-		geo.W = W; geo.H = H;
-		paintZ(W, H);
-		drawModeBtn(W);
-		return;
-	}
 
-	// --- zonas ---
-	var pianoH = Math.round(H * 0.52);
-	if (pianoH < 128) pianoH = 128;
-	if (pianoH > 168) pianoH = 168;
-	if (pianoH > H - 60) pianoH = Math.max(60, H - 60);
-
-	var pz = { x: 6, y: 6, w: W - 12, h: pianoH - 6 };
-	var keys = { x: pz.x + 2, y: pz.y + 16, w: pz.w - 4, h: pz.h - 16 - 18 };
-	if (keys.h < 24) keys.h = 24;
-
-	var headH = 16, footH = 16;
-	var gz = { x: 6, y: pianoH + 4, w: W - 12, h: H - (pianoH + 4) };
-	var gridTop = gz.y + headH;
-	var gridBottom = H - footH;
-
-	var btnW = 20, btnH = 14;
-	var prevBtn = { x: W - 6 - btnW * 2 - 4, y: gz.y, w: btnW, h: btnH };
-	var nextBtn = { x: W - 6 - btnW, y: gz.y, w: btnW, h: btnH };
-
-	var gridW = gz.w;
-	var gridH = Math.max(1, gridBottom - gridTop);
-	var cols = Math.max(4, Math.floor(gridW / 46));
-	var cw = gridW / cols;
-	var ch = 30;
-	var rows = Math.max(1, Math.floor(gridH / ch));
-	var pageSize = cols * rows;
-
-	geo = {
-		W: W, H: H,
-		piano: pz, keys: keys,
-		grid: { x: gz.x, y: gridTop, w: gridW, h: rows * ch },
-		cols: cols, cw: cw, ch: ch, pageSize: pageSize,
-		prevBtn: prevBtn, nextBtn: nextBtn
-	};
-
-	// clamp de pagina si el filtro se estrecho
-	var pc = pageCount();
-	if (page > pc - 1) page = pc - 1;
-	if (page < 0) page = 0;
-
-	drawPiano(pz);
-	drawModeBtn(W);
-
-	// separador entre zonas
+	var barH = paintBar(W);
 	mgraphics.set_source_rgba([0, 0, 0, 0.6]);
 	mgraphics.set_line_width(1);
-	mgraphics.move_to(0, pianoH + 1);
-	mgraphics.line_to(W, pianoH + 1);
+	mgraphics.move_to(0, barH + 1);
+	mgraphics.line_to(W, barH + 1);
 	mgraphics.stroke();
 
-	drawGrid(gz, headH, footH);
+	var footH = 14;
+	var avail = Math.max(60, H - barH - 4 - footH);
+	var maskH = Math.max(96, Math.round(avail * 0.42));
+	var zH = Math.max(56, Math.round(avail * 0.24));
+	var redH = Math.max(78, avail - maskH - zH);
+
+	var yy = barH + 6;
+	paintMaskSection(6, yy, W - 12, maskH);
+	yy += maskH + 3;
+	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
+	mgraphics.move_to(0, yy - 2); mgraphics.line_to(W, yy - 2); mgraphics.stroke();
+
+	paintZSection(6, yy, W - 12, zH);
+	yy += zH + 3;
+	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
+	mgraphics.move_to(0, yy - 2); mgraphics.line_to(W, yy - 2); mgraphics.stroke();
+
+	paintRedSection(6, yy, W - 12, redH);
+
+	if (maskHover || forteOfSel) {
+		mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(6, H - 4);
+		mgraphics.show_text(maskHover || ('Fijado: ' + forteOfSel));
+	}
 }

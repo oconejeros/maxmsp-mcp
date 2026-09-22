@@ -353,6 +353,22 @@ function buildSets() {
 	}
 }
 
+// Resolves an ARBITRARY absolute 12-bit pitch-class mask to its Tn-class + the root transpose that
+// makes that class sound like this mask: bits === transpose(sets[index], rootAbs). Same minimal-
+// rotation search buildSets() used to build the catalogue in the first place, just also keeping
+// track of how many rotations it took. Needs bitsIndex (built by buildSetLabels()), so this must
+// only be called after init. Used by neighborsOf() below for the padre/hijo (add/remove one note)
+// scale network -- unlike zMateOf()/zMateIndexOf(), which only ever compares already-canonical
+// sets[] entries against each other and never needs a rotation count.
+function canonicalize(bits) {
+	var best = bits, bestRot = 0, cur = bits;
+	for (var r = 1; r < 12; r++) {
+		cur = rotate12(cur);
+		if (cur < best) { best = cur; bestRot = r; }
+	}
+	return { index: bitsIndex[best], rootAbs: (12 - bestRot) % 12 };
+}
+
 // ---------------------------------------------------------------------------
 // Set-class theory: Forte numbers, interval vectors, traversal order, filters
 // ---------------------------------------------------------------------------
@@ -573,6 +589,7 @@ var setMask = [];        // which "extra" offsets (7, 8, 9) beyond the diatonic 
 var setProj = [];        // "sharp" | "flat" | "sym" -- which projection won npEntryOf, see npOffsets()
 var sharpEntryIdx = {};  // sharp entry number -> set index, for sets whose sharp reading won
 var flatEntryIdx = {};   // flat entry number -> set index, for sets whose flat reading won
+var bitsIndex = {};      // canonical bitmask -> class index, reverse of setBits[]; see canonicalize()
 
 function buildSetLabels() {
 	for (var i = 0; i < sets.length; i++) {
@@ -580,6 +597,7 @@ function buildSetLabels() {
 		var bits = 0;
 		for (var j = 0; j < pcs.length; j++) bits |= (1 << pcs[j]);
 		setBits.push(bits);
+		bitsIndex[bits] = i;
 		setCard.push(pcs.length);
 		setVec.push(intervalVectorOf(pcs));
 		favs.push(0);
@@ -638,7 +656,7 @@ function forteLabelOf(pcs) {
 // place in the catalogue. An alternative order is a permutation of indices laid over the top.
 
 var ORDER_CARD = 0, ORDER_FORTE = 1, ORDER_CONS = 2, ORDER_NEIGH = 3, ORDER_DISS = 4, ORDER_NAT = 5,
-	ORDER_MODAL = 6;
+	ORDER_MODAL = 6, ORDER_VECDIST = 7;
 var orderMode = ORDER_CARD;
 var orderRev = 0;   // 1 = walk the chosen Orden backwards (buildOrder() reverses order[], so every walker follows)
 var order = [];
@@ -818,6 +836,51 @@ function neighbourChain() {
 	return chain.slice();   // buildOrder() keeps what it is given; the cache must stay unreachable
 }
 
+// Same greedy-chain idea as neighbourChain(), but the metric is distance in interval-vector space
+// instead of shared pitch classes: from each set, jump to whichever unvisited set has the CLOSEST
+// <ic1..ic6> vector (squared Euclidean distance -- no sqrt needed, comparisons are the same either
+// way). Two Z-related sets (identical vector, distance 0) are always adjacent under this order,
+// even when they share no pitch classes at all -- the opposite case from neighbourChain(), where
+// two Z-mates can land on opposite ends of the catalogue. Ties go to the smaller cardinality gap
+// and then to the lower index (first found wins, since the loop only updates on strict
+// improvement), keeping the chain deterministic across reloads. Same O(351 squared) cost/caching
+// rationale as neighbourChain().
+var vectorChainCache = null;
+
+function vecDistSq(a, b) {
+	var va = setVec[a], vb = setVec[b], d = 0;
+	for (var k = 0; k < 6; k++) {
+		var diff = va[k] - vb[k];
+		d += diff * diff;
+	}
+	return d;
+}
+
+function vectorChain() {
+	if (vectorChainCache) return vectorChainCache.slice();
+	var used = [], chain = [];
+	for (var i = 0; i < sets.length; i++) used.push(0);
+	var cur = 0;
+	used[0] = 1;
+	chain.push(0);
+	for (var s = 1; s < sets.length; s++) {
+		var bestI = -1, bestDist = Infinity, bestCardDiff = 99;
+		for (var j = 0; j < sets.length; j++) {
+			if (used[j]) continue;
+			var dist = vecDistSq(cur, j);
+			var cardDiff = Math.abs(setCard[cur] - setCard[j]);
+			if (dist < bestDist || (dist === bestDist && cardDiff < bestCardDiff)) {
+				bestDist = dist; bestCardDiff = cardDiff; bestI = j;
+			}
+		}
+		used[bestI] = 1;
+		chain.push(bestI);
+		cur = bestI;
+	}
+	vectorChainCache = chain;
+	return chain.slice();   // buildOrder() keeps what it is given; the cache must stay unreachable
+}
+
 function buildOrder() {
 	var idx = [];
 	for (var i = 0; i < sets.length; i++) idx.push(i);
@@ -861,6 +924,8 @@ function buildOrder() {
 			if (d > 0) return 1;
 			return a - b;
 		});
+	} else if (orderMode === ORDER_VECDIST) {
+		idx = vectorChain();
 	}
 	if (orderRev) idx.reverse();
 	order = idx;
@@ -2718,6 +2783,72 @@ function queryzsets() {
 	}
 }
 
+// --- Red padre/hijo (add/remove one note) -----------------------------------------------------
+// Generalizes the Z panel above from "one related set" to a whole neighborhood: every class
+// reachable from si (sounding at rootOffset) by adding or removing exactly one pitch class.
+// Unlike Z-relation (same cardinality, same interval vector, sets[] already canonical so no
+// rotation bookkeeping needed), an add/remove-one-note neighbor is almost never sets[]'s own
+// canonical rotation, so each candidate goes through canonicalize() to resolve which class it is
+// AND the root that makes that class sound like the candidate. No dedup needed: each of the 12
+// candidates flips a different single bit of the SAME soundingBits, so the 12 absolute masks are
+// already pairwise distinct, and canonicalize() -> (index, rootAbs) -> transpose(sets[index],
+// rootAbs) round-trips exactly back to that mask -- distinct masks can never land on the same
+// (index, rootAbs) pair. The one candidate that ISN'T a real class: removing the last note of a
+// cardinality-1 set reaches the empty set (bits 0), which buildSets() never catalogued (it starts
+// at n=1) -- bitsIndex[0] is undefined, so that single candidate is dropped.
+function neighborsOf(si, rootOffset) {
+	if (!(si >= 0 && si < sets.length)) return { parents: [], children: [] };
+	var r = ((Math.round(rootOffset) % 12) + 12) % 12;
+	var soundingBits = setBits[si];
+	for (var k = 0; k < r; k++) soundingBits = rotate12(soundingBits);
+
+	var parents = [], children = [];
+	for (var p = 0; p < 12; p++) {
+		var bit = 1 << p;
+		var isMember = (soundingBits & bit) !== 0;
+		var cand = isMember ? (soundingBits & ~bit) : (soundingBits | bit);
+		if (cand === 0) continue;   // empty set -- not in the 351-class catalogue
+		var c = canonicalize(cand);
+		(isMember ? parents : children).push({ index: c.index, rootAbs: c.rootAbs });
+	}
+	return { parents: parents, children: children };
+}
+
+// Feeds the Red panel of fs2setpick.js: nbclear, then one nbset per neighbor of (i1, rootOffset) --
+//   nbset <kind 0=padre 1=hijo> <slot> <idx1> <forte> <rootAbs> <pc...>   (pcs raw, like zset)
+function queryneighbors(i1, rootOffset) {
+	var si = Math.round(i1) - 1;
+	if (!(si >= 0 && si < sets.length)) { outlet(3, ["nbclear", 0, "-", 0]); return; }
+	outlet(3, ["nbclear", si + 1, setForte[si], setCard[si]]);
+	var nb = neighborsOf(si, rootOffset || 0);
+	var slot = 0;
+	for (var kind = 0; kind < 2; kind++) {
+		var list = kind ? nb.children : nb.parents;
+		for (var n = 0; n < list.length; n++) {
+			var e = list[n];
+			var row = ["nbset", kind, slot++, e.index + 1, setForte[e.index], e.rootAbs];
+			// pcs transposed by e.rootAbs (NOT raw like zset's) -- unlike a Z-mate, this candidate
+			// gets assigned at a FIXED root (assignvoicesetroot), so the swatch color must match
+			// what will actually sound, not the class's untransposed catalogue representative.
+			for (var j = 0; j < sets[e.index].length; j++) row.push(pc12(sets[e.index][j] + e.rootAbs));
+			outlet(3, row);
+		}
+	}
+}
+
+// Like assignvoiceset(), but for a padre/hijo neighbor: the resolved class is a genuinely
+// different Tn-class (not a same-vector Z-mate), so -- unlike assignzpair() -- the assigned root
+// stays FIXED at rootAbs rather than chasing the shared root (voiceRootFollow left at its default
+// 0; see setvoicekeyown()'s own reset of it, kept explicit here for a voice that was previously
+// Z-assigned and still has it on).
+function assignvoicesetroot(v, i1, rootAbs) {
+	setvoicekeyown(v, 1);
+	voiceRootFollow[Math.round(v) - 1] = 0;
+	setvoicesetindex(v, i1);
+	setvoicerootoffset(v, rootAbs);
+	setvoicekeylock(v, 1);
+}
+
 function setvoicerootoffset(v, r) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
@@ -4130,7 +4261,7 @@ function emitFiltSets() {
 	for (i = 0; i < allowed.length && slot < FILT_MAX; i++) {
 		if (!allowed[i]) continue;
 		var er = effRootForSet(i);
-		var row = ["filtset", slot, i + 1, setForte[i]];
+		var row = ["filtset", slot, i + 1, setForte[i], er];
 		var pcs = sets[i];
 		for (var j = 0; j < pcs.length; j++) row.push((((pcs[j] + er) % 12) + 12) % 12);
 		outlet(3, row);
@@ -4226,6 +4357,13 @@ function emitVoiceKeyReadouts() {
 		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
 			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf]);
+		// vcolor <v0> <pc...> -- same sig-gated fire as vkey above, just the actual SOUNDING pcs
+		// (already transposed) so the popup can tint that voice's chip with harmonyToColor()
+		// instead of reconstructing pitch content from the Forte name alone.
+		var vroot = voiceRootFor(v);
+		var absPcs = [];
+		for (var pi = 0; pi < sets[si].length; pi++) absPcs.push(pc12(sets[si][pi] + vroot));
+		outlet(3, ["vcolor", v].concat(absPcs));
 	}
 }
 

@@ -110,6 +110,9 @@ function gorden() {}
 function gordrev() {}
 function zclear() {}
 function zset() {}
+function nbclear() {}
+function nbset() {}
+function vcolor() {}
 function grango() {}
 function gsilpre() {}
 function gsilence() {}

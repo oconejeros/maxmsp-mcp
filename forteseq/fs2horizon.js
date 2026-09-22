@@ -288,7 +288,7 @@ var QUAD_SCHEME_NAMES = ['4 Aumentadas', 'Aum+May+men+dim', '2dim+May+men'];
 // everything above. Orden's index 0 ("Card") is a real value (ORDER_CARD in forteseq2.js);
 // Rango/Preset Silencio's index 0 is the menu's own category label / "nothing applied yet" --
 // same distinction the panel's own live.menu widgets already draw, nothing special to handle here.
-var ORDER_NAMES = ['Card', 'Forte', 'Cons', 'Vec', 'McKay', 'Natural', 'Modal'];
+var ORDER_NAMES = ['Card', 'Forte', 'Cons', 'Vec', 'McKay', 'Natural', 'Modal', 'Vector'];
 var RANGE_NAMES = ['Rango', 'Libre', 'SATB', 'Cuerdas', 'Maderas', 'Metales', 'Teclado', 'Ancho', 'Cluster'];
 var SILPRE_NAMES = ['Silencio', 'Todo', 'Solo ac.', 'Solo norm.', 'Ralo', 'Muy ralo'];
 // Fourth sidebar column (the Filtro cluster), same idiom, names copied straight from the real
@@ -492,6 +492,9 @@ function gorden(m) { globalState.orden = Math.round(m); mgraphics.redraw(); }
 function gordrev(v) { globalState.ordrev = Math.round(v) ? 1 : 0; mgraphics.redraw(); }
 function zclear() {}
 function zset() {}
+function nbclear() {}
+function nbset() {}
+function vcolor() {}
 function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
 function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
 function gornquad(s) { globalState.ornQuad = Math.round(s); mgraphics.redraw(); }
