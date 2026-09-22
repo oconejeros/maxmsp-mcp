@@ -635,6 +635,7 @@ function forteLabelOf(pcs) {
 var ORDER_CARD = 0, ORDER_FORTE = 1, ORDER_CONS = 2, ORDER_NEIGH = 3, ORDER_DISS = 4, ORDER_NAT = 5,
 	ORDER_MODAL = 6;
 var orderMode = ORDER_CARD;
+var orderRev = 0;   // 1 = walk the chosen Orden backwards (buildOrder() reverses order[], so every walker follows)
 var order = [];
 var orderPosOf = [];
 
@@ -856,6 +857,7 @@ function buildOrder() {
 			return a - b;
 		});
 	}
+	if (orderRev) idx.reverse();
 	order = idx;
 	orderPosOf = [];
 	for (var k = 0; k < order.length; k++) orderPosOf[order[k]] = k;
@@ -1551,6 +1553,16 @@ function setorder(m) {
 	orderMode = m;
 	buildOrder();
 	outlet(4, ["gecho", "orden", orderMode]);
+}
+
+// Inverso: recorre el Orden elegido de atras hacia adelante. Se resuelve invirtiendo order[] en
+// buildOrder(), asi advanceInOrder()/advanceVoiceOrder() y el conteo de vueltas no cambian; el set
+// que suena sigue siendo el mismo y el siguiente paso va hacia el vecino anterior.
+function setorderrev(v) {
+	v = v ? 1 : 0;
+	orderRev = v;
+	buildOrder();
+	outlet(4, ["gecho", "ordrev", orderRev]);
 }
 
 // 0 = Huron's empirical dyadic consonance (consonanceOf, high = consonant); 1 = McKay's diatonic
@@ -3601,6 +3613,7 @@ var qnOrnGlobalShown = "";     // firma "ornType,ornCount,ornBaseInterval"; "" =
 var qnGFlagsShown = "";        // firma "indep,filter"; "" = forzar
 var qnHarmRateShown = -1;      // -1 forces the first querynext() to emit regardless of harmRate's own default (0)
 var qnRootRateShown = -1;      // -1 forces the first querynext() to emit regardless of rootRate's own default (0)
+var qnOrdRevShown = -1;        // Orden Inv, same idiom as qnOrdenShown
 var qnOrdenShown = -1;         // -1 forces the first querynext() to emit regardless of orderMode's own default (0)
 var qnRangoShown = -1;
 var qnSilpreShown = -1;
@@ -3734,6 +3747,10 @@ function querynext() {
 		if (orderMode !== qnOrdenShown) {
 			qnOrdenShown = orderMode;
 			outlet(3, ["gorden", orderMode]);
+		}
+		if (orderRev !== qnOrdRevShown) {
+			qnOrdRevShown = orderRev;
+			outlet(3, ["gordrev", orderRev]);
 		}
 		if (rangeTemplateIndex !== qnRangoShown) {
 			qnRangoShown = rangeTemplateIndex;

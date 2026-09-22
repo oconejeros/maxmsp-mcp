@@ -424,7 +424,7 @@ function colbang(v) {
 // the 3 new messages below (groot/gornament/gflags/gharm), all debounced engine-side the same way.
 var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	indep: false, filtered: false, harmRate: 0, ornType: 0, ornCount: 1, ornBase: 4, ornBaseMode: 0,
-	orden: 0, rango: 0, silpre: 0, run: 0, ornQuad: 0,
+	orden: 0, ordrev: 0, rango: 0, silpre: 0, run: 0, ornQuad: 0,
 	ornStep: 1, ornSeriesStart: 1, ornSeriesStep: 1, ornSeriesPeak: 4,
 	silNorm: 0, silAcc: 0, enlace: 0,
 	cardMin: 1, cardMax: 12, maskMode: 0, maskK: 1, maskFit: 1,
@@ -489,6 +489,7 @@ function gharm(r) { globalState.harmRate = Math.round(r); mgraphics.redraw(); }
 // (rootRate in forteseq2.js) instead of the harmony's.
 function graiz(r) { globalState.rootRate = Math.round(r); mgraphics.redraw(); }
 function gorden(m) { globalState.orden = Math.round(m); mgraphics.redraw(); }
+function gordrev(v) { globalState.ordrev = Math.round(v) ? 1 : 0; mgraphics.redraw(); }
 function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
 function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
 function gornquad(s) { globalState.ornQuad = Math.round(s); mgraphics.redraw(); }
@@ -1049,6 +1050,7 @@ var TOGGLE_SPECS = {
 	gornt: { field: 'ornType', def: 0, global: true, send: function (v, nv) { outlet(0, ['setorntype', nv]); } },
 	gornbasemode: { field: 'ornBaseMode', def: 0, global: true, send: function (v, nv) { outlet(0, ['setornbasemode', nv]); } },
 	gorden: { field: 'orden', def: 0, global: true, send: function (v, nv) { outlet(0, ['setorder', nv]); } },
+	gordrev: { field: 'ordrev', def: 0, global: true, send: function (v, nv) { outlet(0, ['setorderrev', nv]); } },
 	grango: { field: 'rango', def: 0, global: true, send: function (v, nv) { outlet(0, ['setrangetemplate', nv]); } },
 	gsilpre: { field: 'silpre', def: 0, global: true, send: function (v, nv) { outlet(0, ['setsilencepreset', nv]); } },
 	gornquad: { field: 'ornQuad', def: 0, global: true, send: function (v, nv) { outlet(0, ['setornquadscheme', nv]); } },
@@ -1127,7 +1129,7 @@ function ondblclick(x, y) {
 		['gpatron', G.patron], ['gdir', G.dir],
 		['gornt', G.ornt], ['gornnotas', G.ornnotas], ['gornbase', G.ornbase], ['gornbasemode', G.ornbasemode],
 		['gset', G.set], ['groot', G.root], ['gharm', G.harm], ['graiz', G.raizrate],
-		['gorden', G.orden], ['grango', G.rango], ['gsilpre', G.silpre],
+		['gorden', G.orden], ['gordrev', G.ordrev], ['grango', G.rango], ['gsilpre', G.silpre],
 		['gornquad', G.ornquad], ['gornstep', G.ornstep],
 		['gserstart', G.serstart], ['gserstep', G.serstep], ['gserpeak', G.serpeak],
 		['genlace', G.enlace], ['gsilnorm', G.silnorm], ['gsilacc', G.silacc],
@@ -1381,6 +1383,7 @@ function onclick(x, y, but) {
 	if (ptIn(globalChipGeo.root, x, y)) { dragBox = { v: -1, kind: 'groot', startY: y, startVal: globalState.root }; return; }
 	if (ptIn(globalChipGeo.harm, x, y)) { dragBox = { v: -1, kind: 'gharm', startY: y, startVal: globalState.harmRate }; return; }
 	if (globalChipGeo.raizrate && ptIn(globalChipGeo.raizrate, x, y)) { dragBox = { v: -1, kind: 'graiz', startY: y, startVal: globalState.rootRate }; return; }
+	if (globalChipGeo.ordrev && ptIn(globalChipGeo.ordrev, x, y)) { globalState.ordrev = globalState.ordrev ? 0 : 1; outlet(0, ['setorderrev', globalState.ordrev]); mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.orden, x, y)) { openMenu = { v: -1, kind: 'gorden' }; mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.rango, x, y)) { openMenu = { v: -1, kind: 'grango' }; mgraphics.redraw(); return; }
 	if (ptIn(globalChipGeo.silpre, x, y)) { openMenu = { v: -1, kind: 'gsilpre' }; mgraphics.redraw(); return; }
@@ -2017,7 +2020,11 @@ function paint() {
 		drawChip(globalChipGeo.harm, 'RA' + globalState.harmRate, false);
 	}
 	if (gFits(3)) {
-		globalChipGeo.orden = { x: g2x, y: gRow(3), w: g2w, h: gChipH };
+		// Orden ocupa la fila menos un boton "Inv" (recorre el Orden al reves, setorderrev).
+		var gInvW = 26;
+		globalChipGeo.orden = { x: g2x, y: gRow(3), w: g2w - gInvW - 2, h: gChipH };
+		globalChipGeo.ordrev = { x: g2x + g2w - gInvW, y: gRow(3), w: gInvW, h: gChipH };
+		drawChip(globalChipGeo.ordrev, 'Inv', !!globalState.ordrev, undefined, undefined, undefined, 'toggle');
 		var gOrdenOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gorden';
 		drawChip(globalChipGeo.orden, ORDER_NAMES[Math.round(globalState.orden)] || '?', gOrdenOpen, undefined, undefined, undefined, 'menu');
 		if (gOrdenOpen) pendingMenu = { v: -1, kind: 'gorden', anchor: globalChipGeo.orden, items: ORDER_NAMES, cur: Math.round(globalState.orden) };

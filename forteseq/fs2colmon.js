@@ -107,6 +107,7 @@ function gornament() {}
 function gflags() {}
 function gharm() {}
 function gorden() {}
+function gordrev() {}
 function grango() {}
 function gsilpre() {}
 function gsilence() {}

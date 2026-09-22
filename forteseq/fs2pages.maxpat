@@ -11532,6 +11532,174 @@
      ],
      "text": "send FS2_VOXMODE"
     }
+   },
+   {
+    "box": {
+     "id": "obj-866",
+     "maxclass": "comment",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "fontsize": 8.0,
+     "varname": "fs2_lbl_ordinv",
+     "text": "Orden",
+     "patching_rect": [
+      140.0,
+      2570.0,
+      30.0,
+      16.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      276.0,
+      522.0,
+      34.0,
+      16.0
+     ]
+    }
+   },
+   {
+    "box": {
+     "id": "obj-867",
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "parameter_enable": 1,
+     "varname": "fs2_ordinv",
+     "annotation": "Recorre el Orden elegido al reves: el siguiente set es el vecino anterior en vez del posterior (Card 12 -> 11 -> ..., Cons del mas tenso al mas consonante, etc). El set que suena ahora no cambia; solo cambia hacia donde avanza. Vale tambien para las voces con TonProp propio.",
+     "patching_rect": [
+      140.0,
+      2590.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      276.0,
+      536.0,
+      34.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_type": 2,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_mmax": 1,
+       "parameter_modmode": 0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "Orden Inv",
+       "parameter_shortname": "Orden Inv",
+       "parameter_unitstyle": 9
+      }
+     },
+     "mode": 1,
+     "text": "Inv",
+     "texton": "INV"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-868",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_ordinv_prep",
+     "patching_rect": [
+      140.0,
+      2620.0,
+      150.0,
+      22.0
+     ],
+     "text": "prepend setorderrev"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-869",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "pg_init[5]",
+     "patching_rect": [
+      140.0,
+      2650.0,
+      70.0,
+      22.0
+     ],
+     "text": "outputvalue"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-870",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_ordinv_gecho_rx",
+     "patching_rect": [
+      900.0,
+      4460.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-871",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "fs2_ordinv_gecho_route",
+     "patching_rect": [
+      900.0,
+      4490.0,
+      160.0,
+      20.0
+     ],
+     "text": "route ordrev"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-872",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_ordinv_gecho_setrx",
+     "patching_rect": [
+      900.0,
+      4520.0,
+      160.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -18668,6 +18836,90 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-867",
+      0
+     ],
+     "destination": [
+      "obj-868",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-868",
+      0
+     ],
+     "destination": [
+      "obj-5",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-1",
+      0
+     ],
+     "destination": [
+      "obj-869",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-869",
+      0
+     ],
+     "destination": [
+      "obj-867",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-870",
+      0
+     ],
+     "destination": [
+      "obj-871",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-871",
+      0
+     ],
+     "destination": [
+      "obj-872",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-872",
+      0
+     ],
+     "destination": [
+      "obj-867",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -19276,6 +19528,11 @@
    "obj-859": [
     "Ritmo Raiz",
     "Ritmo Raiz",
+    0
+   ],
+   "obj-867": [
+    "Orden Inv",
+    "Orden Inv",
     0
    ]
   },
