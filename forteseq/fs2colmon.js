@@ -108,6 +108,8 @@ function gflags() {}
 function gharm() {}
 function gorden() {}
 function gordrev() {}
+function zclear() {}
+function zset() {}
 function grango() {}
 function gsilpre() {}
 function gsilence() {}

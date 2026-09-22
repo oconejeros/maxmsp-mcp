@@ -490,6 +490,8 @@ function gharm(r) { globalState.harmRate = Math.round(r); mgraphics.redraw(); }
 function graiz(r) { globalState.rootRate = Math.round(r); mgraphics.redraw(); }
 function gorden(m) { globalState.orden = Math.round(m); mgraphics.redraw(); }
 function gordrev(v) { globalState.ordrev = Math.round(v) ? 1 : 0; mgraphics.redraw(); }
+function zclear() {}
+function zset() {}
 function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
 function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
 function gornquad(s) { globalState.ornQuad = Math.round(s); mgraphics.redraw(); }

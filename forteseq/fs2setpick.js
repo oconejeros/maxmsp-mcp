@@ -145,6 +145,183 @@ function maskecho() {
 	mgraphics.redraw();
 }
 
+// --- panel Z-pares ---------------------------------------------------------------------------
+// Segundo modo del panel (boton arriba a la derecha): reemplaza piano + rejilla por la lista de
+// TODOS los sets con Z-mate (independiente del Filtro), filtrable por cardinalidad, y asigna sets
+// a las voces. Destino "Par": click en un set A da A a la primera mitad de las voces y su Z-mate
+// a las demas (assignzpair). V1..Vn: click da ese set solo a esa voz (assignvoiceset, con TonProp
+// y Fijar encendidos). Soltar devuelve todas las voces al set compartido.
+var zMode = 0;
+var zSets = [];           // { idx1, forte, mate, pcs, rgb }
+var zCard = 0;            // 0 = todas las cardinalidades
+var zTarget = 0;          // 0 = Par, 1..n = voz
+var zPage = 0;
+var zVoices = [];         // zVoices[v0] = { forte, own }, de vkey
+var zVoiceCount = 4;
+var zHover = '';
+var zgeo = null;
+var Z_CARDS = [0, 4, 5, 6, 7, 8];
+
+function zclear() { zSets = []; zPage = 0; scheduleRedraw(); }
+
+function zset() {
+	var a = arrayfromargs(arguments);
+	if (a.length < 5) return;
+	var pcs = [];
+	for (var k = 5; k < a.length; k++) pcs.push(((Math.round(a[k]) % 12) + 12) % 12);
+	var c = pcs.length ? harmonyToColor(pcs, COLOR_OPTS, 'oklab') : { r: 0.5, g: 0.5, b: 0.5 };
+	zSets.push({ idx1: Math.round(a[1]), forte: String(a[2]), mate: String(a[3]), pcs: pcs, rgb: [c.r, c.g, c.b] });
+	scheduleRedraw();
+}
+
+function zView() {
+	if (!zCard) return zSets;
+	var out = [];
+	for (var i = 0; i < zSets.length; i++) if (zSets[i].pcs.length === zCard) out.push(zSets[i]);
+	return out;
+}
+
+function zToggle() {
+	zMode = zMode ? 0 : 1;
+	if (zMode && zSets.length === 0) outlet(0, ['queryzsets']);
+	mgraphics.redraw();
+}
+
+function zClick(x, y) {
+	if (!zgeo) return;
+	if (ptIn(zgeo.chips.soltar, x, y)) {
+		for (var v = 1; v <= zVoiceCount; v++) outlet(0, ['setvoicekeyown', v, 0]);
+		return;
+	}
+	for (var c = 0; c < zgeo.chips.cards.length; c++) {
+		if (ptIn(zgeo.chips.cards[c], x, y)) { zCard = Z_CARDS[c]; zPage = 0; mgraphics.redraw(); return; }
+	}
+	for (var t = 0; t < zgeo.targets.length; t++) {
+		if (ptIn(zgeo.targets[t], x, y)) { zTarget = t; mgraphics.redraw(); return; }
+	}
+	var view = zView();
+	var pages = Math.max(1, Math.ceil(view.length / zgeo.pageSize));
+	if (ptIn(zgeo.prevBtn, x, y)) { if (zPage > 0) { zPage--; mgraphics.redraw(); } return; }
+	if (ptIn(zgeo.nextBtn, x, y)) { if (zPage < pages - 1) { zPage++; mgraphics.redraw(); } return; }
+	var gi = zCellAt(x, y, view);
+	if (gi < 0) return;
+	if (zTarget === 0) outlet(0, ['assignzpair', view[gi].idx1]);
+	else outlet(0, ['assignvoiceset', zTarget, view[gi].idx1]);
+}
+
+function zCellAt(x, y, view) {
+	if (!zgeo || !ptIn(zgeo.grid, x, y)) return -1;
+	var col = Math.floor((x - zgeo.grid.x) / zgeo.cw);
+	var row = Math.floor((y - zgeo.grid.y) / zgeo.ch);
+	if (col < 0 || col >= zgeo.cols || row < 0) return -1;
+	var gi = zPage * zgeo.pageSize + row * zgeo.cols + col;
+	return (gi >= 0 && gi < view.length) ? gi : -1;
+}
+
+function drawChip(r, label, on, sub) {
+	mgraphics.set_source_rgba(on ? [0.30, 0.42, 0.62, 1] : [0.22, 0.22, 0.25, 1]);
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.fill();
+	mgraphics.set_source_rgba([0, 0, 0, 0.5]);
+	mgraphics.set_line_width(1);
+	mgraphics.rectangle(r.x, r.y, r.w, r.h);
+	mgraphics.stroke();
+	mgraphics.set_source_rgba([0.9, 0.9, 0.92, 1]);
+	mgraphics.set_font_size(sub ? 9 : 10);
+	mgraphics.move_to(r.x + 4, r.y + (sub ? 11 : r.h - 4));
+	mgraphics.show_text(label);
+	if (sub) {
+		mgraphics.set_source_rgba([0.75, 0.8, 0.9, 1]);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(r.x + 4, r.y + r.h - 4);
+		mgraphics.show_text(sub);
+	}
+}
+
+function drawModeBtn(W) {
+	drawChip({ x: W - 6 - 62, y: 3, w: 62, h: 15 }, zMode ? 'Filtro' : 'Z-pares', zMode);
+}
+
+function paintZ(W, H) {
+	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
+	mgraphics.set_font_size(10);
+	mgraphics.move_to(8, 15);
+	mgraphics.show_text('Sets Z: ' + zView().length);
+
+	var chips = { cards: [], soltar: { x: W - 6 - 44, y: 26, w: 44, h: 16 } };
+	for (var c = 0; c < Z_CARDS.length; c++) {
+		var r = { x: 6 + c * 38, y: 26, w: 34, h: 16 };
+		chips.cards.push(r);
+		drawChip(r, Z_CARDS[c] ? String(Z_CARDS[c]) : 'Todos', zCard === Z_CARDS[c]);
+	}
+	drawChip(chips.soltar, 'Soltar', false);
+
+	// destino: Par + una casilla por voz, con el set que tiene hoy
+	var targets = [];
+	var nT = zVoiceCount + 1;
+	var tw = (W - 12) / nT;
+	for (var t = 0; t < nT; t++) {
+		var tr = { x: 6 + t * tw, y: 48, w: tw - 3, h: 26 };
+		targets.push(tr);
+		if (t === 0) drawChip(tr, 'Par', zTarget === 0, 'A / Z-mate');
+		else {
+			var vv = zVoices[t - 1];
+			drawChip(tr, 'V' + t, zTarget === t, (vv && vv.own) ? vv.forte : '-');
+		}
+	}
+
+	var headH = 78, footH = 16;
+	var gridW = W - 12;
+	var cols = Math.max(4, Math.floor(gridW / 46));
+	var cw = gridW / cols, ch = 30;
+	var rows = Math.max(1, Math.floor((H - headH - footH) / ch));
+	var pageSize = cols * rows;
+	var prevBtn = { x: W - 6 - 44 - 66, y: 3, w: 20, h: 15 };
+	var nextBtn = { x: W - 6 - 20 - 66, y: 3, w: 20, h: 15 };
+	zgeo = { chips: chips, targets: targets, grid: { x: 6, y: headH, w: gridW, h: rows * ch },
+		cols: cols, cw: cw, ch: ch, pageSize: pageSize, prevBtn: prevBtn, nextBtn: nextBtn };
+
+	var view = zView();
+	var pages = Math.max(1, Math.ceil(view.length / pageSize));
+	if (zPage > pages - 1) zPage = pages - 1;
+	if (pages > 1) {
+		drawBtn(prevBtn, '<', zPage > 0);
+		drawBtn(nextBtn, '>', zPage < pages - 1);
+		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+		mgraphics.set_font_size(9);
+		mgraphics.move_to(prevBtn.x - 30, 15);
+		mgraphics.show_text((zPage + 1) + '/' + pages);
+	}
+
+	for (var k = 0; k < pageSize; k++) {
+		var gi = zPage * pageSize + k;
+		if (gi >= view.length) break;
+		var s = view[gi];
+		var cx = 6 + (k % cols) * cw, cy = headH + Math.floor(k / cols) * ch;
+		mgraphics.set_source_rgba(colorOn ? [s.rgb[0], s.rgb[1], s.rgb[2], 1] : [0.35, 0.35, 0.38, 1]);
+		mgraphics.rectangle(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
+		mgraphics.fill();
+		var assigned = -1;
+		for (var v = 0; v < zVoiceCount; v++) if (zVoices[v] && zVoices[v].own && zVoices[v].forte === s.forte) assigned = v;
+		if (assigned >= 0) {
+			mgraphics.set_source_rgba([1, 1, 1, 0.95]);
+			mgraphics.set_line_width(2);
+			mgraphics.rectangle(cx + 2, cy + 2, cw - 4, ch - 4);
+			mgraphics.stroke();
+		}
+		var lum = s.rgb[0] * 0.299 + s.rgb[1] * 0.587 + s.rgb[2] * 0.114;
+		mgraphics.set_source_rgba(lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]);
+		mgraphics.set_font_size(8);
+		mgraphics.move_to(cx + 4, cy + ch - 6);
+		mgraphics.show_text(s.forte);
+	}
+
+	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
+	mgraphics.set_font_size(9);
+	mgraphics.move_to(6, H - 5);
+	mgraphics.show_text(zHover || (zTarget === 0 ? 'Click: A a la 1a mitad de voces, su Z-mate al resto' : 'Click: asigna el set a V' + zTarget));
+}
+
 function color(on) {
 	colorOn = on ? 1 : 0;
 	mgraphics.redraw();
@@ -167,7 +344,14 @@ function hshapecur() {}
 function colvoices() {}
 function colbang() {}
 function colmon() {}
-function vkey() {}
+// vkey <v0> <forte> <tonic> <keyOwn> ... -- solo interesa que set tiene cada voz (panel Z).
+function vkey(v, forte, tonic, keyOwn) {
+	v = Math.round(v);
+	if (!(v >= 0 && v < 8)) return;
+	zVoices[v] = { forte: String(forte), own: keyOwn ? 1 : 0 };
+	if (v + 1 > zVoiceCount) zVoiceCount = v + 1;
+	if (zMode) scheduleRedraw();
+}
 function ornscale() {}
 function ornbasemode() {}
 function groot() {}
@@ -272,6 +456,8 @@ function pageCount() {
 
 function onclick(x, y, but) {
 	if (!but || !geo) return;
+	if (ptIn({ x: geo.W - 6 - 62, y: 3, w: 62, h: 15 }, x, y)) { zToggle(); return; }
+	if (zMode) { zClick(x, y); return; }
 
 	if (ptIn(geo.keys, x, y)) {
 		var pc = keyAt(x - geo.keys.x, y - geo.keys.y, geo.keys.w, geo.keys.h);
@@ -297,6 +483,12 @@ function onclick(x, y, but) {
 }
 
 function onidle(x, y) {
+	if (zMode) {
+		var zv = zView(), zi = zCellAt(x, y, zv);
+		var zh = zi >= 0 ? zv[zi].forte + '  <->  ' + zv[zi].mate : '';
+		if (zh !== zHover) { zHover = zh; mgraphics.redraw(); }
+		return;
+	}
 	var f = '';
 	var gi = swatchAt(x, y);
 	if (gi >= 0 && filtSets[gi]) f = filtSets[gi].forte;
@@ -465,6 +657,13 @@ function paint() {
 	mgraphics.rectangle(0, 0, W, H);
 	mgraphics.fill();
 	mgraphics.select_font_face('Arial');
+	if (zMode) {
+		geo = geo || {};
+		geo.W = W; geo.H = H;
+		paintZ(W, H);
+		drawModeBtn(W);
+		return;
+	}
 
 	// --- zonas ---
 	var pianoH = Math.round(H * 0.52);
@@ -507,6 +706,7 @@ function paint() {
 	if (page < 0) page = 0;
 
 	drawPiano(pz);
+	drawModeBtn(W);
 
 	// separador entre zonas
 	mgraphics.set_source_rgba([0, 0, 0, 0.6]);

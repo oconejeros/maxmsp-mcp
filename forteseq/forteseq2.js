@@ -544,6 +544,10 @@ function buildZGroups() {
 	for (var vk2 in byVec) {
 		var group = byVec[vk2];
 		if (group.length !== 2) continue;
+		// the vector of the empty set (0-1) and the single note (1-1) is all zeros, so they "pair";
+		// real Z-relation only exists at cardinalities 4..8
+		var c0 = parseInt(group[0], 10), c1 = parseInt(group[1], 10);
+		if (c0 < 4 || c0 > 8 || c1 < 4 || c1 > 8) continue;
 		zGroupOf[group[0]] = group[1];
 		zGroupOf[group[1]] = group[0];
 	}
@@ -2661,6 +2665,54 @@ function setvoicesetindex(v, i) {
 	if (si > sets.length - 1) si = sets.length - 1;
 	voiceSetIndex[idx] = si;
 	outlet(4, ["advecho", idx + 1, "setidx", voiceSetIndex[idx] + 1]);
+}
+
+// Z-pair assignment, driven by the Z panel of fs2setpick.js. assignvoiceset() gives one voice its
+// own set (TonProp on) and freezes it there (Fijar on) so the per-voice procession does not walk
+// it away again; assignzpair() splits the voices between a set and its Z-mate (same interval
+// vector, different shape): the first half of the live voices get the set, the rest its mate.
+function assignvoiceset(v, i1) {
+	setvoicekeyown(v, 1);
+	setvoicesetindex(v, i1);
+	setvoicekeylock(v, 1);
+}
+
+// Index of the Z-mate of sets[si] -- same A/B suffix when it exists, -1 when the class has no mate.
+function zMateIndexOf(si) {
+	var mateBase = zMateOf(si);
+	if (!mateBase) return -1;
+	var suf = setForte[si].replace(/^.*?([AB]?)$/, "$1");
+	var any = -1;
+	for (var j = 0; j < sets.length; j++) {
+		if (setForte[j].replace(/[AB]$/, "") !== mateBase) continue;
+		if (setForte[j].slice(mateBase.length) === suf) return j;
+		if (any < 0) any = j;
+	}
+	return any;
+}
+
+function assignzpair(i1) {
+	var si = Math.round(i1) - 1;
+	if (!(si >= 0 && si < sets.length)) return;
+	var mate = zMateIndexOf(si);
+	var half = Math.ceil(NUM_VOICES / 2);
+	for (var v = 0; v < NUM_VOICES; v++) {
+		assignvoiceset(v + 1, ((v < half || mate < 0) ? si : mate) + 1);
+	}
+}
+
+// Every set that has a Z-mate, for the Z panel: zclear, then
+//   zset <slot> <idx1> <forte> <mateForte> <pc...>   (pcs raw, root 0 -- each voice keeps its own root)
+function queryzsets() {
+	outlet(3, ["zclear"]);
+	var slot = 0;
+	for (var i = 0; i < sets.length; i++) {
+		var mb = zMateOf(i);
+		if (!mb) continue;
+		var row = ["zset", slot++, i + 1, setForte[i], mb];
+		for (var j = 0; j < sets[i].length; j++) row.push(sets[i][j]);
+		outlet(3, row);
+	}
 }
 
 function setvoicerootoffset(v, r) {
