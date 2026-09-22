@@ -208,6 +208,9 @@
 //            NO gate at all, same as their panel controls -- always-visible rows. Trig (fires this
 //            voice's own cursor by hand) is a momentary button, no stored value, no gate either.
 //   colvoices <n>   colbang <v>   color <0|1>   clear   colmon ...(ignored)
+//   bothview <0|1> -- sent directly from the popup's "Vista Popup" tab (tools/add_fs2_popup_ambas.py),
+//     NOT via outlet 3: 1 = the set-picker (fs2setpick.js) is ALSO visible, side by side at its own
+//     fixed PANEL_W -- reserve it a left margin instead of drawing full width. 0 = restore full width.
 //
 // Colour = the circle-of-fifths wheel from pccolor.js, sat/lum matched to fs2colmon / tonnetz.
 
@@ -225,11 +228,18 @@ var SELF = this;   // capturado para .patcher.wind (seguir a la ventana flotante
 // como bonus inerte, pero el tamano/posicion real de la caja quedan fijos desde que la ventana
 // abre, sea cual sea el valor que este archivo escriba.
 //
-// "Vista Popup" (tools/add_fs2_popup_tabs.py) hace a Horizonte y Selector EXCLUYENTES -- un
-// "script show/hide" real sobre la caja del que no se ve, ya no una superposicion con margen
-// reservado -- asi que este jsui ya no necesita reservarle espacio a nadie: cuando esta oculto,
-// fs2setpick.js no dibuja nada encima.
-var WPAD = 8;
+// "Vista Popup" (tools/add_fs2_popup_tabs.py) hace a Horizonte y Selector EXCLUYENTES por
+// defecto -- un "script show/hide" real sobre la caja del que no se ve. Un tercer item, "Ambas"
+// (tools/add_fs2_popup_ambas.py), los muestra a los dos a la vez: fs2setpick.js se dibuja encima
+// (viene despues en la lista de boxes) ocupando su PANEL_W fijo a la izquierda, y le manda
+// "bothview 1" a este jsui para que reserve ese mismo ancho como margen y no dibuje nada debajo
+// del panel del selector. "bothview 0" (Horizonte o Selector solos) vuelve a ancho completo.
+var WPAD = 8, PICKER_W = 388;   // PICKER_W = PANEL_W(380) + GAP(8) de fs2setpick.js
+var bothVisible = 0;
+function bothview(flag) {
+	bothVisible = flag ? 1 : 0;
+	mgraphics.redraw();
+}
 function windSize() {
 	try {
 		var s = SELF.patcher.wind.size;
@@ -237,13 +247,13 @@ function windSize() {
 	} catch (e) {}
 	return null;
 }
-function leftMargin() { return 0; }
+function leftMargin() { return bothVisible ? PICKER_W : 0; }
 function viewportWH() {
 	var s = windSize();
 	var margin = leftMargin();
 	if (s) return [Math.max(300, Math.round(s[0]) - margin - WPAD * 2),
 		Math.max(140, Math.round(s[1]) - WPAD * 2)];
-	return [844, 284];   // sin lectura de ventana
+	return [844 + (bothVisible ? PICKER_W : 0), 284];   // sin lectura de ventana
 }
 function fitToWindow() {
 	var s = windSize();
@@ -1125,6 +1135,7 @@ function resetControl(kind, v) {
 // no entry in either table and so are silently ignored, same as clicking empty space.
 function ondblclick(x, y) {
 	if (!rowGeo) return;
+	x -= leftMargin();   // see onclick()'s comment: undo paint()'s translate for hit-testing
 	// Whatever the first click of this double-click already armed/opened is stale now.
 	openMenu = null; menuItemGeo = []; dragBox = null;
 
@@ -1270,6 +1281,11 @@ function drawChip(r, label, on, disabled, dim, alarm, kind) {
 // echo; emitVoiceKeyReadouts() will re-send a fresh vkey next cycle if anything is out of sync.
 function onclick(x, y, but) {
 	if (!but || !rowGeo) return;
+	// All stored hit-test rects (rowGeo/globalChipGeo/menuItemGeo) are in LOGICAL coordinates --
+	// paint() shifts the actual drawing right by leftMargin() via mgraphics.translate(), but mouse
+	// events arrive in real box coordinates, unaffected by that transform. Undo the shift here once
+	// so every ptIn() below compares like with like (no-op when leftMargin() is 0).
+	x -= leftMargin();
 	// A dropdown is open: hitting one of its items selects it, anything else just closes the menu.
 	// Handled before the row lookup below because the open list can extend past its own row's
 	// bounds (it floats above whatever paint() drew there last frame).
