@@ -148,6 +148,8 @@
 //   gcard <cardMin> <cardMax>  gmaskmode <maskMode>  gmaskk <maskK>  gmaskfit <maskFit>
 //   gvec1..gvec6 <min> <max>  (Ola 5, one token per interval class, col 4 rows 3-8)
 //   grandmask <maskRandomPct>  (Ola 5, col 4 row 9; the "Azar Mask" button next to it needs no sync)
+//   gvoicing <voicingMode> <voiceLead>  (Ola 9, col 2 rows 9-10; Reparto is an action menu, no sync)
+//   grandacc <accentRandomPct>  (Ola 8, col 6 row 6; "Azar Acc" below it is an action, no sync)
 //   gregistro <rootSeqIdx> <masterOctave> <drumOn> <drumBase>  (Ola 4, col 1 rows 9-11)
 //   grecorrido <manualRot> <rotShape> <coprimeSkip>  (Ola 4, col 1 rows 12-14)
 //            -- the rest of globalState: none of these have a per-voice override, so one debounced
@@ -173,6 +175,11 @@
 //            those toggles would otherwise unlock -- same "real but inert" treatment as setMoot.
 //   (vkey's last field, copSk: this voice's Salto Coprimo while its effective Patron is Coprimo, else -1;
 //    a chip under Dir drags it -> setvoicecoprime, only when Lec propia is on.)
+//   (vkey's LAST 7 fields, Ola 10: <octBase> <octEvery> <octRange> <octSteps> <rgMin> <rgSpan> <rootOff> --
+//    the register block of the voice strip, drawn as a SECOND detail column (Oc/Ev/Rg/Ps, Mn/Sp, Rz;
+//    only when the window is wide enough, see showDetail2). Written back as setvoiceoctavesimple
+//    (all 4 octave scalars at once) / setvoicerange / setvoicerootoffset; the engine echoes each to the
+//    panel numbox via advecho. Dimmed under Drum, which ignores octave, range and voice root.)
 //   vkey <v> <forte> <tonica> <keyOwn> <readOwn> <patron> <dir> <ornTipo> <muted> <keyLock>
 //        <artOwn> <ext> <ornNotas> <ornBase> <vector> <disonancia> <zRel> <modalidad> <espejo>
 //        <setIdx> <velMin> <velMax> <durDiv> <silence> <grado> <div> <euLarg> <euPuls> <euGir>
@@ -345,6 +352,11 @@ var MOD_DEST_SWING = 6, MOD_DEST_STRUM = 7, MOD_DEST_RATCHET = 8, MOD_DEST_GRADO
 // Ninth sidebar column (Sesion, Ola 7). Enum copied straight from the real panel widget
 // (fs2pages.maxpat's fs2_escuchar parameter_enum) -- same "index IS value" idiom as ORDEN/CURVA.
 var ESCUCHAR_NAMES = ['Off', 'Sigue', 'Latch'];
+// Voicing / Reparto (Ola 9). The names are the panel menus' own enums (fs2_voic / Reparto), same
+// index = value. Reparto is an ACTION: stackmode writes a Grado pattern into the four voice strips
+// and is never read back, so its menu keeps no state and the chip shows a fixed label.
+var VOICING_NAMES = ['Extendido', 'Cerrado', 'Drop 2', 'Drop 3', 'Drop 2+4', 'Abierto'];
+var REPARTO_NAMES = ['Unisono', 'Apilado', 'Apilado x2', 'Extremos', 'Salteado'];
 
 var voices = 4;
 var colorOn = 1;
@@ -446,7 +458,7 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 	rootSeq: 0, rootRate: 0, octMaestra: 0, drum: 0, pad: 36, rotacion: 0, rotarx: 0, salto: 2,
 	vecMin1: 0, vecMax1: 12, vecMin2: 0, vecMax2: 12, vecMin3: 0, vecMax3: 12,
 	vecMin4: 0, vecMax4: 12, vecMin5: 0, vecMax5: 12, vecMin6: 0, vecMax6: 12,
-	randMaskPct: 50,
+	randMaskPct: 50, randAccPct: 50, voicing: 0, cond: 0,
 	mod1shape: 0, mod1cycle: 8, mod1depth: 0, mod1phase: 0, mod1dest: 0,
 	mod2shape: 0, mod2cycle: 8, mod2depth: 0, mod2phase: 0, mod2dest: 0,
 	mod3shape: 0, mod3cycle: 8, mod3depth: 0, mod3phase: 0, mod3dest: 0,
@@ -458,6 +470,7 @@ var globalState = { patron: 0, dir: 0, mode: 1, locked: 0, setIdx: 1, root: 0,
 // globalState porque es un array de tamano fijo, no un escalar por campo.
 var ACCENT_MAX_UI = 16;
 var accentGridUI = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+var accStripGeo = null;   // { x, y, cw, h } of the strip, set by paint() every frame, read by onclick()
 
 function hstatus(rm, rd, setIdx1, md, lockedFlag) {
 	status = [Math.round(rm), Math.round(rd), Math.round(setIdx1), Math.round(md), Math.round(lockedFlag || 0)];
@@ -537,6 +550,8 @@ function gvec4(a, b) { globalState.vecMin4 = Math.round(a); globalState.vecMax4 
 function gvec5(a, b) { globalState.vecMin5 = Math.round(a); globalState.vecMax5 = Math.round(b); mgraphics.redraw(); }
 function gvec6(a, b) { globalState.vecMin6 = Math.round(a); globalState.vecMax6 = Math.round(b); mgraphics.redraw(); }
 function grandmask(p) { globalState.randMaskPct = Math.round(p); mgraphics.redraw(); }
+function gvoicing(m, c) { globalState.voicing = Math.round(m); globalState.cond = Math.round(c) ? 1 : 0; mgraphics.redraw(); }
+function grandacc(p) { globalState.randAccPct = Math.round(p); mgraphics.redraw(); }
 // Groove (col 5). `gsub` viaja suelto porque ademas de su propio valor es el GATE de casi toda la
 // columna; los otros siete llegan agrupados en dos mensajes, uno por familia de gate.
 function gsub(n) { globalState.sub = Math.round(n); mgraphics.redraw(); }
@@ -683,7 +698,8 @@ function ornscale() {
 // Sent under demand, debounced engine-side per voice.
 function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 		artOwn, ext, ornN, ornB, vec, diss, zRel, modality, mirror, setIdx,
-		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf) {
+		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf,
+		octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
 	vkeyInfo[v] = {
@@ -707,7 +723,15 @@ function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLoc
 		euGir: Math.round(euGir === undefined ? 0 : euGir),
 		copSk: Math.round(copSk === undefined ? -1 : copSk),
 		fase: Math.round(fase === undefined ? 0 : fase),
-		desf: Math.round(desf === undefined ? 0 : desf)
+		desf: Math.round(desf === undefined ? 0 : desf),
+		// Ola 10 -- defaults = the panel numboxes' initial values (Oct 0, Ev.N 1, O.Rng 0, Pasos 16)
+		octBase: Math.round(octBase === undefined ? 0 : octBase),
+		octEvery: Math.round(octEvery === undefined ? 1 : octEvery),
+		octRange: Math.round(octRange === undefined ? 0 : octRange),
+		octSteps: Math.round(octSteps === undefined ? 16 : octSteps),
+		rgMin: Math.round(rgMin === undefined ? 0 : rgMin),
+		rgSpan: Math.round(rgSpan === undefined ? 127 : rgSpan),
+		rootOff: Math.round(rootOff === undefined ? 0 : rootOff)
 	};
 	mgraphics.redraw();
 }
@@ -877,6 +901,22 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setvoicetimeoffset', v + 1, nv]); } },
 	div: { min: 1, max: 16, field: 'div', def: 1, pxPerUnit: 10,
 		send: function (v, nv) { outlet(0, ['setvoicediv', v + 1, nv]); } },
+	// Ola 10 -- setvoiceoctavesimple takes (Ev.N, O.Rng, Pasos, Oct) all at once, so nudging one
+	// resends the other three from the same row's vkeyInfo (same shape as the articulation specs).
+	octbase: { min: -4, max: 4, field: 'octBase', def: 0, pxPerUnit: 14,
+		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, vk.octEvery, vk.octRange, vk.octSteps, nv]); } },
+	octevery: { min: 1, max: 16, field: 'octEvery', def: 1, pxPerUnit: 10,
+		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, nv, vk.octRange, vk.octSteps, vk.octBase]); } },
+	octrange: { min: -4, max: 4, field: 'octRange', def: 0, pxPerUnit: 14,
+		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, vk.octEvery, nv, vk.octSteps, vk.octBase]); } },
+	octsteps: { min: 1, max: 16, field: 'octSteps', def: 16, pxPerUnit: 10,
+		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, vk.octEvery, vk.octRange, nv, vk.octBase]); } },
+	rgmin: { min: 0, max: 127, field: 'rgMin', def: 40, pxPerUnit: 3,
+		send: function (v, nv, vk) { outlet(0, ['setvoicerange', v + 1, nv, vk.rgSpan]); } },
+	rgspan: { min: 0, max: 127, field: 'rgSpan', def: 17, pxPerUnit: 3,
+		send: function (v, nv, vk) { outlet(0, ['setvoicerange', v + 1, vk.rgMin, nv]); } },
+	rootoff: { min: -24, max: 24, field: 'rootOff', def: 0, pxPerUnit: 4,
+		send: function (v, nv) { outlet(0, ['setvoicerootoffset', v + 1, nv]); } },
 	euclen: { min: 0, max: 16, field: 'euLarg', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoiceeuclen', v + 1, nv]); } },
 	euck: { min: 0, max: 16, field: 'euPuls', def: 0, pxPerUnit: 8,
@@ -958,6 +998,8 @@ var DRAG_SPECS = {
 		send: function (v, nv) { outlet(0, ['setvecmax', 6, nv]); } },
 	grandmaskpct: { min: 0, max: 100, field: 'randMaskPct', def: 50, pxPerUnit: 3, global: true,
 		send: function (v, nv) { outlet(0, ['setrandmaskpct', nv]); } },
+	grandaccpct: { min: 0, max: 100, field: 'randAccPct', def: 50, pxPerUnit: 3, global: true,
+		send: function (v, nv) { outlet(0, ['setrandaccentpct', nv]); } },
 	// Col 5 (Groove), same global-sidebar idiom. setratchet takes the group index first, so Rat N
 	// and Rat A are two specs over the same setter -- the same shape gsilnorm/gsilacc already use.
 	gswing: { min: 50, max: 75, field: 'swing', def: 50, pxPerUnit: 5, global: true,
@@ -1083,6 +1125,8 @@ var TOGGLE_SPECS = {
 	gmod4shape: { field: 'mod4shape', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmodshape', 4, nv]); } },
 	gmod4dest: { field: 'mod4dest', def: 0, global: true, send: function (v, nv) { outlet(0, ['setmoddest', 4, nv]); } },
 	gescuchar: { field: 'listen', def: 0, global: true, send: function (v, nv) { outlet(0, ['setlisten', nv]); } },
+	gvoicing: { field: 'voicing', def: 0, global: true, send: function (v, nv) { outlet(0, ['setvoicing', nv]); } },
+	gcond: { field: 'cond', def: 0, global: true, send: function (v, nv) { outlet(0, ['setvoicelead', nv]); } },
 	// Global plain toggle/cycle chips -- def matches globalState's own init object above.
 	gind: { field: 'indep', def: false, global: true, send: function (v, nv) { outlet(0, ['setvoiceindep', nv ? 1 : 0]); } },
 	gflt: { field: 'filtered', def: false, global: true, send: function (v, nv) { outlet(0, ['setfilter', nv ? 1 : 0]); } },
@@ -1163,7 +1207,8 @@ function ondblclick(x, y) {
 		['gmaskfit', G.maskfit],
 		['gciclo', G.ciclo], ['gtie', G.tie], ['geuc', G.euc], ['geuck', G.eupuls], ['geurot', G.eugir],
 		['gvelminn', G.velminn], ['gvelmina', G.velmina], ['gvelmaxn', G.velmaxn], ['gvelmaxa', G.velmaxa],
-		['gfign', G.fign], ['gfiga', G.figa],
+		['gfign', G.fign], ['gfiga', G.figa], ['grandaccpct', G.randaccpct],
+		['gvoicing', G.voicing], ['gcond', G.cond],
 		['gtension', G.tension], ['gcurva', G.curva], ['gtensmodel', G.tensmodel],
 		['gprogfav', G.progfav], ['gfavonly', G.favonly], ['gfav', G.fav],
 		['gmod1shape', G.mod1shape], ['gmod1cycle', G.mod1cycle], ['gmod1depth', G.mod1depth], ['gmod1phase', G.mod1phase], ['gmod1dest', G.mod1dest],
@@ -1206,6 +1251,13 @@ function ondblclick(x, y) {
 	if (ptIn(cg.div, x, y)) { resetControl('div', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.fase, x, y)) { resetControl('fase', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.desf, x, y)) { resetControl('desf', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.octbase, x, y)) { resetControl('octbase', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.octevery, x, y)) { resetControl('octevery', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.octrange, x, y)) { resetControl('octrange', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.octsteps, x, y)) { resetControl('octsteps', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.rgmin, x, y)) { resetControl('rgmin', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.rgspan, x, y)) { resetControl('rgspan', v); mgraphics.redraw(); return; }
+	if (ptIn(cg.rootoff, x, y)) { resetControl('rootoff', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.euclen, x, y)) { resetControl('euclen', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.euck, x, y)) { resetControl('euck', v); mgraphics.redraw(); return; }
 	if (ptIn(cg.eucrot, x, y)) { resetControl('eucrot', v); mgraphics.redraw(); return; }
@@ -1215,10 +1267,12 @@ function ondblclick(x, y) {
 	if (vk.artOwn && ptIn(cg.artsil, x, y)) { resetControl('artsil', v); mgraphics.redraw(); return; }
 }
 
-// "Pagina" (fs2_pagina) values for the tabs each advanced chip's real control lives on -- see
-// add_fs2_gotopage.py for how these were measured. On/mute (cg.on) has no page: its control is
-// always on the main panel, never gated by Pagina.
-var PAGE_VOCES1 = 6, PAGE_VOCES2 = 7, PAGE_VOCES3 = 9, PAGE_VOCES4 = 10;
+// `gotopage <n>` codes for where each advanced chip's real control lives. Since repage_fs2_tabs.py the
+// device has ONE Voces tab (Pagina = 5) with four sub-pages, so these are no longer Pagina values:
+// 0..8 = a tab of the device, 20..23 = Voces sub-page 0..3 (Disp / Artic / Orn / Tono = the old
+// Voces 1 / 2 / 3 / 4) -- the patch decodes them (obj-819 -> [sel 20 21 22 23]). On/mute (cg.on) has
+// no page: its control is always on the main panel, never gated by Pagina.
+var PAGE_VOCES1 = 20, PAGE_VOCES2 = 21, PAGE_VOCES3 = 22, PAGE_VOCES4 = 23;
 
 function ptIn(r, x, y) {
 	return r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
@@ -1359,6 +1413,11 @@ function onclick(x, y, but) {
 					} else if (openMenu.kind === 'gescuchar') {
 						globalState.listen = mi;
 						outlet(0, ['setlisten', mi]);
+					} else if (openMenu.kind === 'gvoicing') {
+						globalState.voicing = mi;
+						outlet(0, ['setvoicing', mi]);
+					} else if (openMenu.kind === 'greparto') {
+						outlet(0, ['stackmode', mi]);   // action: no local state to set
 					}
 				} else {
 					var vkm = vkeyInfo[openMenu.v];
@@ -1474,6 +1533,8 @@ function onclick(x, y, but) {
 	if (globalChipGeo.ciclo && ptIn(globalChipGeo.ciclo, x, y)) { dragBox = { v: -1, kind: 'gciclo', startY: y, startVal: globalState.accCiclo }; return; }
 	if (globalChipGeo.tie && ptIn(globalChipGeo.tie, x, y)) { globalState.accTie = globalState.accTie ? 0 : 1; outlet(0, ['setaccenttie', globalState.accTie]); mgraphics.redraw(); return; }
 	if (globalChipGeo.euc && ptIn(globalChipGeo.euc, x, y)) { globalState.euclidOn = globalState.euclidOn ? 0 : 1; outlet(0, ['seteuclid', globalState.euclidOn]); mgraphics.redraw(); return; }
+	if (globalChipGeo.randaccpct && ptIn(globalChipGeo.randaccpct, x, y)) { dragBox = { v: -1, kind: 'grandaccpct', startY: y, startVal: globalState.randAccPct }; return; }
+	if (globalChipGeo.randacc && ptIn(globalChipGeo.randacc, x, y)) { outlet(0, ['randomizeaccents']); return; }
 	if (globalChipGeo.eupuls && ptIn(globalChipGeo.eupuls, x, y)) { dragBox = { v: -1, kind: 'geuck', startY: y, startVal: globalState.euclidK }; return; }
 	if (globalChipGeo.eugir && ptIn(globalChipGeo.eugir, x, y)) { dragBox = { v: -1, kind: 'geurot', startY: y, startVal: globalState.euclidRot }; return; }
 	if (globalChipGeo.velminn && ptIn(globalChipGeo.velminn, x, y)) { dragBox = { v: -1, kind: 'gvelminn', startY: y, startVal: globalState.velMinN }; return; }
@@ -1517,6 +1578,10 @@ function onclick(x, y, but) {
 	// Col 9 (Sesion, Ola 7). Escuchar is a dropdown; Emit/Seguir are toggle chips (same idiom as
 	// ind/flt/lck); Slot is a drag-scrub; Panic/Guardar/Cargar/Borrar are actions -- straight to the
 	// message, no local state change, same idiom as clearfavs/randmask above (rule 8, no sync).
+	// Col 2 rows 9-10 (Ola 9): Voicing menu, Cond toggle, Reparto action menu (stackmode).
+	if (globalChipGeo.voicing && ptIn(globalChipGeo.voicing, x, y)) { openMenu = { v: -1, kind: 'gvoicing' }; mgraphics.redraw(); return; }
+	if (globalChipGeo.cond && ptIn(globalChipGeo.cond, x, y)) { globalState.cond = globalState.cond ? 0 : 1; outlet(0, ['setvoicelead', globalState.cond]); mgraphics.redraw(); return; }
+	if (globalChipGeo.reparto && ptIn(globalChipGeo.reparto, x, y)) { openMenu = { v: -1, kind: 'greparto' }; mgraphics.redraw(); return; }
 	if (globalChipGeo.escuchar && ptIn(globalChipGeo.escuchar, x, y)) { openMenu = { v: -1, kind: 'gescuchar' }; mgraphics.redraw(); return; }
 	if (globalChipGeo.emit && ptIn(globalChipGeo.emit, x, y)) { globalState.emit = globalState.emit ? 0 : 1; outlet(0, ['setbroadcast', globalState.emit]); mgraphics.redraw(); return; }
 	if (globalChipGeo.seguir && ptIn(globalChipGeo.seguir, x, y)) { globalState.seguir = globalState.seguir ? 0 : 1; outlet(0, ['setfollow', globalState.seguir]); mgraphics.redraw(); return; }
@@ -1530,6 +1595,18 @@ function onclick(x, y, but) {
 	if (globalChipGeo.pguardar && ptIn(globalChipGeo.pguardar, x, y)) { outlet(0, ['storepreset', globalState.slot]); return; }
 	if (globalChipGeo.pcargar && ptIn(globalChipGeo.pcargar, x, y)) { outlet(0, ['recallpreset', globalState.slot]); return; }
 	if (globalChipGeo.pborrar && ptIn(globalChipGeo.pborrar, x, y)) { outlet(0, ['clearpreset', globalState.slot]); return; }
+	// The 16-cell accent strip (Ola 8). Checked after every chip so the sidebar keeps priority where
+	// they overlap. Cells are the panel's own toggles echoed back by the engine; with Euclid on the
+	// grid is the algorithm's output and the engine ignores the edit, so don't flip it locally either.
+	if (accStripGeo && !globalState.euclidOn && x >= accStripGeo.x && y >= accStripGeo.y && y < accStripGeo.y + accStripGeo.h) {
+		var aci = Math.floor((x - accStripGeo.x) / accStripGeo.cw);
+		if (aci >= 0 && aci < ACCENT_MAX_UI) {
+			accentGridUI[aci] = accentGridUI[aci] ? 0 : 1;
+			outlet(0, ['setaccentcell', aci + 1, accentGridUI[aci]]);
+			mgraphics.redraw();
+		}
+		return;
+	}
 	if (y < rowGeo.headH) return;
 	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
 	if (v < 0 || v >= rowGeo.nRows) return;
@@ -1631,6 +1708,15 @@ function onclick(x, y, but) {
 		dragBox = { v: v, kind: 'desf', startY: y, startVal: vk.desf };
 		return;
 	}
+	// Ola 10 -- second detail column (octave pattern, register clamp, root offset); the geo only
+	// exists when the window is wide enough to draw it (showDetail2 in paint()).
+	if (cg.octbase && ptIn(cg.octbase, x, y)) { dragBox = { v: v, kind: 'octbase', startY: y, startVal: vk.octBase }; return; }
+	if (cg.octevery && ptIn(cg.octevery, x, y)) { dragBox = { v: v, kind: 'octevery', startY: y, startVal: vk.octEvery }; return; }
+	if (cg.octrange && ptIn(cg.octrange, x, y)) { dragBox = { v: v, kind: 'octrange', startY: y, startVal: vk.octRange }; return; }
+	if (cg.octsteps && ptIn(cg.octsteps, x, y)) { dragBox = { v: v, kind: 'octsteps', startY: y, startVal: vk.octSteps }; return; }
+	if (cg.rgmin && ptIn(cg.rgmin, x, y)) { dragBox = { v: v, kind: 'rgmin', startY: y, startVal: vk.rgMin }; return; }
+	if (cg.rgspan && ptIn(cg.rgspan, x, y)) { dragBox = { v: v, kind: 'rgspan', startY: y, startVal: vk.rgSpan }; return; }
+	if (cg.rootoff && ptIn(cg.rootoff, x, y)) { dragBox = { v: v, kind: 'rootoff', startY: y, startVal: vk.rootOff }; return; }
 	// Ritmo euclidiano por voz -- also unconditional (Largo=0 already means "no pattern", the
 	// panel doesn't gate these behind anything either).
 	if (cg.euclen && ptIn(cg.euclen, x, y)) {
@@ -1789,6 +1875,11 @@ function paint() {
 	var keyW = GLOBAL_W + GATE_W + TXT_W + DETAIL_W;
 	var showDetail = (W - keyW) > 260;   // bajo eso el grid quedaria inservible
 	if (!showDetail) keyW = GLOBAL_W + GATE_W + TXT_W;
+	// Second detail column (Ola 10: Oct/Ev.N/O.Rng/Pasos, Min/Span, Raiz). Only when there is still
+	// room for a usable grid after it -- otherwise it just isn't drawn and the window degrades to
+	// the pre-Ola-10 layout, same rule showDetail already follows.
+	var showDetail2 = showDetail && (W - keyW - DETAIL_W) > 260;
+	if (showDetail2) keyW += DETAIL_W;
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
 	var histCW = histW / HIST_MAX;
 	var histX = W - histW;
@@ -2096,6 +2187,25 @@ function paint() {
 		globalChipGeo.raizrate = { x: g2x, y: gRow(8), w: g2w, h: gChipH };
 		drawChip(globalChipGeo.raizrate, 'RR' + globalState.rootRate, false, Math.round(globalState.rootSeq) === 0);
 	}
+	// Rows 9-10 (Ola 9) -- Voicing, Conduccion y Reparto, the item Ola 4 left deferred. Voicing and
+	// Cond only shape a CHORD (chordFor()/leadVoices), so both dim outside Modo Acordes -- exists,
+	// keeps its value, just has no effect now (same dim-not-hide rule as RotX above). Reparto is an
+	// action menu: it stamps a Grado pattern on the voice strips (shown live in each row's Gr chip).
+	if (gFits(9)) {
+		globalChipGeo.voicing = { x: g2x, y: gRow(9), w: g2w, h: gChipH };
+		var gVoiOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'gvoicing';
+		drawChip(globalChipGeo.voicing, VOICING_NAMES[Math.round(globalState.voicing)] || '?', gVoiOpen, !chordLive, undefined, undefined, 'menu');
+		if (gVoiOpen) pendingMenu = { v: -1, kind: 'gvoicing', anchor: globalChipGeo.voicing, items: VOICING_NAMES, cur: Math.round(globalState.voicing) };
+	}
+	if (gFits(10)) {
+		var g2dcw10 = (g2w - 2) / 2;
+		globalChipGeo.cond = { x: g2x, y: gRow(10), w: g2dcw10, h: gChipH };
+		globalChipGeo.reparto = { x: g2x + g2dcw10 + 2, y: gRow(10), w: g2dcw10, h: gChipH };
+		drawChip(globalChipGeo.cond, 'Cond', !!globalState.cond, !chordLive, undefined, undefined, 'toggle');
+		var gRepOpen = openMenu && openMenu.v === -1 && openMenu.kind === 'greparto';
+		drawChip(globalChipGeo.reparto, 'Repart', gRepOpen, undefined, undefined, undefined, 'menu');
+		if (gRepOpen) pendingMenu = { v: -1, kind: 'greparto', anchor: globalChipGeo.reparto, items: REPARTO_NAMES, cur: -1 };
+	}
 
 	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron
 	// IS Ornamento (ornOpen, computed above alongside GLOBAL_W). Not gated further by voice or
@@ -2318,6 +2428,16 @@ function paint() {
 		globalChipGeo.figa = { x: g6x + fdcw + 2, y: gRow(5), w: fdcw, h: gChipH };
 		drawChip(globalChipGeo.fign, 'Fn' + globalState.figN, false);
 		drawChip(globalChipGeo.figa, 'Fa' + globalState.figA, false);
+	}
+	// Azar Acentos (Ola 8): Az% is the drag value the "Azar Acc" action reads -- same pair as col 4's
+	// Az%/Azar Mask. The button needs the Live API (falls back to a console warning outside Live).
+	if (gFits(6)) {
+		globalChipGeo.randaccpct = { x: g6x, y: gRow(6), w: g6w, h: gChipH };
+		drawChip(globalChipGeo.randaccpct, 'Az%' + globalState.randAccPct, false);
+	}
+	if (gFits(7)) {
+		globalChipGeo.randacc = { x: g6x, y: gRow(7), w: g6w, h: gChipH };
+		drawChip(globalChipGeo.randacc, 'Azar Acc', false, undefined, undefined, undefined, 'action');
 	}
 
 	// Column 7 -- Camino armonico (Tension+Curva+Modelo, Prog Favoritos+Solo Fav+Fav+Limpiar favs).
@@ -2686,6 +2806,31 @@ function paint() {
 					}
 				}
 			}
+			// Ola 10 -- second cluster, right after the first (closest to the grid). FIXED rows 0-3, no
+			// gates: these always read/write (Propia doesn't touch them). Drum on makes the octave
+			// pattern, the register clamp AND the voice root moot (padFor() ignores all three), so they
+			// dim rather than hide -- same rule as Rango/Oct Maestra in the sidebar.
+			if (showDetail2 && vk) {
+				var dx1 = dx0 + DETAIL_W;
+				var d2dis = !!globalState.drum;
+				var sgn = function (n) { return (n > 0 ? '+' : '') + n; };
+				var d2rows = [
+					[['octbase', 'Oc' + sgn(vk.octBase)], ['octevery', 'Ev' + vk.octEvery]],
+					[['octrange', 'Rg' + sgn(vk.octRange)], ['octsteps', 'Ps' + vk.octSteps]],
+					[['rgmin', 'Mn' + vk.rgMin], ['rgspan', 'Sp' + vk.rgSpan]],
+					[['rootoff', 'Rz' + sgn(vk.rootOff)]]
+				];
+				for (var d2r = 0; d2r < d2rows.length; d2r++) {
+					var d2y = y + 2 + d2r * (chipH + chipGap);
+					if (rowH < (d2y - y) + chipH + 4) break;
+					var d2row = d2rows[d2r];
+					for (var d2c = 0; d2c < d2row.length; d2c++) {
+						var d2w = d2row.length === 1 ? DETAIL_W - 6 : dcw;
+						cg[d2row[d2c][0]] = { x: dx1 + d2c * (dcw + 2), y: d2y, w: d2w, h: chipH };
+						drawChip(cg[d2row[d2c][0]], d2row[d2c][1], false, d2dis);
+					}
+				}
+			}
 			var detailRow = 6;
 			if (vk && vk.artOwn) {
 				var avY = y + 2 + detailRow * (chipH + chipGap);
@@ -2946,13 +3091,16 @@ function paint() {
 	mgraphics.move_to(4, ay + accGridH - 5);
 	mgraphics.show_text('acentos');
 	var acx = 48, acw = Math.max(4, Math.min(28, (W - acx - 8) / ACCENT_MAX_UI));
+	accStripGeo = { x: acx, y: ay, cw: acw, h: accGridH };
+	var accLocked = !!globalState.euclidOn;   // generated by Euclid: shown, not editable -- dim it like "exists but inert"
 	for (var ai = 0; ai < ACCENT_MAX_UI; ai++) {
 		var inCycle = ai < Math.round(globalState.accCiclo);
 		var on = !!accentGridUI[ai];
+		var acDim = accLocked ? 0.7 : 1;
 		if (on) {
-			mgraphics.set_source_rgba(inCycle ? [0.85, 0.55, 0.15, 1] : [0.85, 0.55, 0.15, 0.35]);
+			mgraphics.set_source_rgba(inCycle ? [0.85, 0.55, 0.15, acDim] : [0.85, 0.55, 0.15, 0.35 * acDim]);
 		} else {
-			mgraphics.set_source_rgba(inCycle ? [0.3, 0.3, 0.33, 1] : [0.3, 0.3, 0.33, 0.35]);
+			mgraphics.set_source_rgba(inCycle ? [0.3, 0.3, 0.33, acDim] : [0.3, 0.3, 0.33, 0.35 * acDim]);
 		}
 		mgraphics.rectangle(acx + ai * acw + 1, ay + 3, acw - 2, accGridH - 6);
 		mgraphics.fill();

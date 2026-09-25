@@ -144,6 +144,8 @@ function gvec4() {}
 function gvec5() {}
 function gvec6() {}
 function grandmask() {}
+function grandacc() {}
+function gvoicing() {}
 function gmod1() {}
 function gmod2() {}
 function gmod3() {}

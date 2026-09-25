@@ -262,7 +262,7 @@ function zset() {
 	var a = arrayfromargs(arguments);
 	if (a.length < 5) return;
 	var pcs = [];
-	for (var k = 5; k < a.length; k++) pcs.push(((Math.round(a[k]) % 12) + 12) % 12);
+	for (var k = 4; k < a.length; k++) pcs.push(((Math.round(a[k]) % 12) + 12) % 12);
 	var c = pcs.length ? harmonyToColor(pcs, COLOR_OPTS, 'oklab') : { r: 0.5, g: 0.5, b: 0.5 };
 	zSets.push({ idx1: Math.round(a[1]), forte: String(a[2]), mate: String(a[3]), pcs: pcs, rgb: [c.r, c.g, c.b] });
 	scheduleRedraw();
@@ -648,6 +648,8 @@ function gvec4() {}
 function gvec5() {}
 function gvec6() {}
 function grandmask() {}
+function grandacc() {}
+function gvoicing() {}
 function gmod1() {}
 function gmod2() {}
 function gmod3() {}

@@ -1339,6 +1339,179 @@ function checkRandomize() {
 	return ok;
 }
 
+// Ola 8 (popup edita Acentos): setaccentcell() mueve UNA celda y ecoa la grilla completa por el
+// canal `accentgrid` que applyEuclid() ya usa (asi los 16 toggles del panel se mueven sin receptor
+// nuevo); con Euclid on se ignora, porque la grilla es salida del algoritmo. setrandaccentpct()
+// ecoa `gecho randacc`, y querynext() lo publica una sola vez como `grandacc` (firma).
+function checkAccentEdit() {
+	let ok = true;
+	const e = makeEngine(7);
+	const c = e.ctx, log = e.log;
+	const since = (at) => log.slice(at);
+
+	let at = log.length;
+	c.setaccentcell(3, 1);
+	let out = since(at).filter((l) => l.indexOf('4 | accentgrid') === 0);
+	const want = '4 | accentgrid 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0';
+	if (out.length !== 1 || out[0] !== want) {
+		console.error('AccentEdit: setaccentcell(3,1) deberia ecoar "' + want + '", dio ' + JSON.stringify(out));
+		ok = false;
+	}
+	at = log.length;
+	c.setaccentcell(3, 0);
+	out = since(at).filter((l) => l.indexOf('4 | accentgrid') === 0);
+	if (out.length !== 1 || out[0] !== '4 | accentgrid 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0') {
+		console.error('AccentEdit: setaccentcell(3,0) deberia apagar la celda, dio ' + JSON.stringify(out));
+		ok = false;
+	}
+	// indices fuera de rango o basura: ni eco ni excepcion
+	at = log.length;
+	c.setaccentcell(0, 1); c.setaccentcell(17, 1); c.setaccentcell('x', 1);
+	if (since(at).length !== 0) { console.error('AccentEdit: indices invalidos deberian ser silenciosos'); ok = false; }
+
+	// Euclid on: la celda no se toca y no hay eco.
+	c.seteuclid(1);
+	at = log.length;
+	c.setaccentcell(9, 1);
+	if (since(at).length !== 0) {
+		console.error('AccentEdit: con Euclid on setaccentcell deberia ignorarse, dio ' + JSON.stringify(since(at)));
+		ok = false;
+	}
+	c.seteuclid(0);
+
+	// Azar % Acentos: eco al panel + publicacion unica al popup.
+	at = log.length;
+	c.setrandaccentpct(30);
+	out = since(at).filter((l) => l === '4 | gecho randacc 30');
+	if (out.length !== 1) { console.error('AccentEdit: setrandaccentpct(30) deberia ecoar gecho randacc 30'); ok = false; }
+	c.setrandaccentpct(500);
+	if (log[log.length - 1] !== '4 | gecho randacc 100') { console.error('AccentEdit: setrandaccentpct debe clampear a 100'); ok = false; }
+	c.setrandaccentpct(30);
+	at = log.length;
+	c.querynext();
+	out = since(at).filter((l) => l === '3 | grandacc 30');
+	if (out.length !== 1) { console.error('AccentEdit: querynext deberia publicar grandacc 30 una vez, dio ' + out.length); ok = false; }
+	at = log.length;
+	c.querynext();
+	if (since(at).some((l) => l.indexOf('3 | grandacc') === 0)) { console.error('AccentEdit: grandacc deberia estar debounced'); ok = false; }
+
+	if (ok) console.log('OK   AccentEdit: setaccentcell/Azar % Acentos ecoan al panel y al popup, Euclid lo bloquea.');
+	return ok;
+}
+
+// Ola 9 (popup edita Voicing/Conduccion/Reparto): setvoicing/setvoicelead ecoan al panel por gecho
+// (NO por el outlet directo voicing/voicelead, que rebotaria en un lazo por el live.menu), y
+// querynext() publica ambos en UN mensaje `gvoicing` con firma. Reparto (stackmode) es accion pura:
+// no publica nada propio, solo mueve los Grados (que ya ecoan v#grado y viajan en vkey).
+function checkVoicingEcho() {
+	let ok = true;
+	const e = makeEngine(11);
+	const c = e.ctx, log = e.log;
+	const since = (at) => log.slice(at);
+
+	let at = log.length;
+	c.setvoicing(3);
+	if (since(at).filter((l) => l === '4 | gecho voicing 3').length !== 1) {
+		console.error('Voicing: setvoicing(3) deberia ecoar gecho voicing 3, dio ' + JSON.stringify(since(at))); ok = false;
+	}
+	at = log.length;
+	c.setvoicing(99);   // fuera de rango -> 0, y el eco dice la verdad
+	if (since(at).filter((l) => l === '4 | gecho voicing 0').length !== 1) {
+		console.error('Voicing: setvoicing(99) deberia normalizar a 0 y ecoar ese 0'); ok = false;
+	}
+	c.setvoicing(2);
+	at = log.length;
+	c.setvoicelead(1);
+	if (since(at).filter((l) => l === '4 | gecho cond 1').length !== 1) {
+		console.error('Voicing: setvoicelead(1) deberia ecoar gecho cond 1'); ok = false;
+	}
+	at = log.length;
+	c.querynext();
+	if (since(at).filter((l) => l === '3 | gvoicing 2 1').length !== 1) {
+		console.error('Voicing: querynext deberia publicar "gvoicing 2 1" una vez, dio ' + JSON.stringify(since(at).filter((l) => l.indexOf('gvoicing') >= 0))); ok = false;
+	}
+	at = log.length;
+	c.querynext();
+	if (since(at).some((l) => l.indexOf('gvoicing') >= 0)) { console.error('Voicing: gvoicing deberia estar debounced'); ok = false; }
+	at = log.length;
+	c.stackmode(1);
+	if (since(at).some((l) => l.indexOf('gvoicing') >= 0 || l.indexOf('gecho voicing') >= 0)) {
+		console.error('Voicing: stackmode es una accion, no deberia tocar Voicing'); ok = false;
+	}
+	if (!since(at).some((l) => l.indexOf('4 | v2grado') === 0)) {
+		console.error('Voicing: stackmode deberia ecoar los Grados (v2grado)'); ok = false;
+	}
+	if (ok) console.log('OK   Voicing: eco al panel, gvoicing con firma y Reparto como accion pura.');
+	return ok;
+}
+
+// Ola 10 (popup edita Oct/Ev.N/O.Rng/Pasos, Min/Span y Raiz por voz): los tres setters ecoan por el
+// canal por-voz `advecho` (un token por valor, `set` en el panel => sin lazo), y vkey lleva los 7
+// campos nuevos al final -- incluido el rango que escribe Rango (setrangetemplate), que NO pasa por
+// setvoicerange, asi que el popup tiene que leerlo de los arreglos y no de un eco.
+function checkVoiceRegister() {
+	let ok = true;
+	const e = makeEngine(13);
+	const c = e.ctx, log = e.log;
+	c.setnumvoices(2);
+	c.setvoicemute(1, 0); c.setvoicemute(2, 0);
+	c.setlock(1); c.setlockindex(120);
+	const since = (at) => log.slice(at);
+	const vkeyOf = (v) => {
+		const rows = log.filter((l) => l.indexOf('3 | vkey ' + v + ' ') === 0);
+		return rows.length ? rows[rows.length - 1].split(' ').slice(3) : null;   // atoms after "3 | vkey <v>"
+	};
+
+	let at = log.length;
+	c.setvoiceoctavesimple(2, 3, 2, 4, 1);   // Ev.N 3, O.Rng 2, Pasos 4, Oct 1
+	const want = ['4 | advecho 2 evn 3', '4 | advecho 2 orng 2', '4 | advecho 2 pasos 4', '4 | advecho 2 oct 1'];
+	for (const w of want) {
+		if (since(at).filter((l) => l === w).length !== 1) { console.error('Registro: falta el eco "' + w + '"'); ok = false; }
+	}
+	at = log.length;
+	c.setvoicerange(2, 36, 24);
+	if (since(at).filter((l) => l === '4 | advecho 2 min 36').length !== 1 ||
+			since(at).filter((l) => l === '4 | advecho 2 span 24').length !== 1) {
+		console.error('Registro: setvoicerange deberia ecoar min y span, dio ' + JSON.stringify(since(at))); ok = false;
+	}
+	at = log.length;
+	c.setvoicerootoffset(2, -5);
+	if (since(at).filter((l) => l === '4 | advecho 2 raiz -5').length !== 1) {
+		console.error('Registro: setvoicerootoffset deberia ecoar raiz -5'); ok = false;
+	}
+
+	c.querynext();
+	const vk = vkeyOf(1);   // voz 2 -> indice 1
+	if (!vk || vk.length < 7) {
+		console.error('Registro: vkey de la voz 2 no salio o no trae los 7 campos nuevos: ' + JSON.stringify(vk)); ok = false;
+	} else {
+		const tail = vk.slice(-7).join(',');
+		if (tail !== '1,3,2,4,36,24,-5') {
+			console.error('Registro: cola de vkey (octBase,octEvery,octRange,octSteps,rgMin,rgSpan,rootOff) = ' + tail + ', esperaba 1,3,2,4,36,24,-5'); ok = false;
+		}
+	}
+	// la voz 1 no se toco: defaults del panel
+	const vk0 = vkeyOf(0);
+	if (!vk0 || vk0.slice(-7).join(',') !== '0,1,0,16,0,127,0') {
+		console.error('Registro: la voz 1 deberia seguir en los defaults 0,1,0,16,0,127,0, dio ' + JSON.stringify(vk0 && vk0.slice(-7))); ok = false;
+	}
+	// Rango (plantilla) mueve el registro de las voces sin pasar por setvoicerange: vkey lo tiene que reflejar
+	c.setrangetemplate(1);
+	c.querynext();
+	const vk1 = vkeyOf(1);
+	const wantMin = c.voiceRangeMin[1], wantSpan = c.voiceRangeMax[1] - c.voiceRangeMin[1];
+	if (!vk1 || vk1.slice(-7).slice(4, 6).join(',') !== wantMin + ',' + wantSpan || (wantMin === 36 && wantSpan === 24)) {
+		console.error('Registro: tras setrangetemplate vkey deberia reflejar el rango nuevo (' + wantMin + ',' + wantSpan + '), dio ' + JSON.stringify(vk1 && vk1.slice(-7))); ok = false;
+	}
+	// fuera de rango: silencioso
+	at = log.length;
+	c.setvoiceoctavesimple(9, 1, 0, 1, 0); c.setvoicerange(0, 1, 1); c.setvoicerootoffset(99, 1);
+	if (since(at).some((l) => l.indexOf('advecho') >= 0)) { console.error('Registro: voces inexistentes no deberian ecoar'); ok = false; }
+
+	if (ok) console.log('OK   Registro por voz: Oct/Ev.N/O.Rng/Pasos, Min/Span y Raiz ecoan al panel y viajan en vkey.');
+	return ok;
+}
+
 // Presets: 8 -> 20 slots, y un nombre por slot. seedfactorypresets() escribe presetBank
 // directamente (no necesita la Live API, a diferencia de storepreset/recallpreset), asi que
 // SI es testeable a fondo aca -- incluida la ida y vuelta real por disco, con un File en memoria
@@ -2566,6 +2739,9 @@ function main() {
 	if (!checkModality()) process.exit(1);
 	if (!checkSlonimsky()) process.exit(1);
 	if (!checkRandomize()) process.exit(1);
+	if (!checkAccentEdit()) process.exit(1);
+	if (!checkVoicingEcho()) process.exit(1);
+	if (!checkVoiceRegister()) process.exit(1);
 	if (!checkPresetNames()) process.exit(1);
 	if (!checkVoiceArt()) process.exit(1);
 	if (!checkVoiceReadOrder()) process.exit(1);

@@ -11700,6 +11700,142 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-873",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_acentos_edit_echo_rx",
+     "patching_rect": [
+      1080.0,
+      6650.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-874",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "fs2_acentos_edit_echo_route",
+     "patching_rect": [
+      1080.0,
+      6680.0,
+      260.0,
+      20.0
+     ],
+     "text": "route randacc"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-875",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_randacc_setrx",
+     "patching_rect": [
+      1080.0,
+      6710.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-876",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_voicing_echo_rx",
+     "patching_rect": [
+      1080.0,
+      6650.0,
+      160.0,
+      20.0
+     ],
+     "text": "receive FS2_G_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-877",
+     "maxclass": "newobj",
+     "numinlets": 3,
+     "numoutlets": 3,
+     "outlettype": [
+      "",
+      "",
+      ""
+     ],
+     "varname": "fs2_voicing_echo_route",
+     "patching_rect": [
+      1080.0,
+      6680.0,
+      260.0,
+      20.0
+     ],
+     "text": "route voicing cond"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-878",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_voicing_setrx",
+     "patching_rect": [
+      1080.0,
+      6710.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-879",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "fs2_cond_setrx",
+     "patching_rect": [
+      1230.0,
+      6710.0,
+      140.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -18917,6 +19053,102 @@
      ],
      "destination": [
       "obj-867",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-873",
+      0
+     ],
+     "destination": [
+      "obj-874",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-874",
+      0
+     ],
+     "destination": [
+      "obj-875",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-875",
+      0
+     ],
+     "destination": [
+      "obj-375",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-876",
+      0
+     ],
+     "destination": [
+      "obj-877",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-877",
+      0
+     ],
+     "destination": [
+      "obj-878",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-878",
+      0
+     ],
+     "destination": [
+      "obj-139",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-877",
+      1
+     ],
+     "destination": [
+      "obj-879",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-879",
+      0
+     ],
+     "destination": [
+      "obj-150",
       0
      ]
     }

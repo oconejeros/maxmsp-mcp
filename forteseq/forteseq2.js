@@ -52,6 +52,13 @@ var voiceTrigCount = filled(MAX_VOICES, 0);      // external-trigger tick counte
                                                   // against, so Div/rhythm-euclid can still gate it (see triggervoice())
 for (var initV = 0; initV < MAX_VOICES; initV++) voiceOctaveList[initV] = [0];
 voiceMute[0] = 0;
+// The four scalars setvoiceoctavesimple() derives voiceOctaveList from (Ev.N / O.Rng / Pasos / Oct).
+// The list alone can't be turned back into them, and the popup needs to READ them (vkey) and echo
+// them to the panel numboxes (advecho), so they are kept next to it. Defaults = the panel's initials.
+var voiceOctEvery = filled(MAX_VOICES, 1);
+var voiceOctRange = filled(MAX_VOICES, 0);
+var voiceOctSteps = filled(MAX_VOICES, 16);
+var voiceOctBase = filled(MAX_VOICES, 0);
 
 function filled(n, val) {
 	var a = [];
@@ -1943,6 +1950,13 @@ function setvoiceoctavesimple(v, everyN, range, steps, base) {
 		for (var j = 0; j < everyN; j++) list.push(level + base);
 	}
 	voiceOctaveList[idx] = list;
+	voiceOctEvery[idx] = everyN; voiceOctRange[idx] = range; voiceOctSteps[idx] = steps; voiceOctBase[idx] = base;
+	// Ola 10: moves the panel numboxes when the popup is what changed them. `set` on the receiving
+	// side, so re-sending what the panel itself just produced is idempotent (no loop).
+	outlet(4, ["advecho", idx + 1, "evn", everyN]);
+	outlet(4, ["advecho", idx + 1, "orng", range]);
+	outlet(4, ["advecho", idx + 1, "pasos", steps]);
+	outlet(4, ["advecho", idx + 1, "oct", base]);
 	post("voice " + v + " octave pattern: every " + everyN + " notes, range " + range + ", steps " + steps + ", base " + base + " -> [" + list.join(",") + "]\n");
 }
 
@@ -2629,6 +2643,8 @@ function setvoicerange(v, min, span) {
 	if (span < 0) span = 0;
 	voiceRangeMin[idx] = min;
 	voiceRangeMax[idx] = min + span;
+	outlet(4, ["advecho", idx + 1, "min", min]);   // Ola 10; setrangetemplate() has its own v#range echo
+	outlet(4, ["advecho", idx + 1, "span", span]);
 }
 
 // Propia On/Off is a separate message from the four values on purpose, same reason External is
@@ -2853,6 +2869,7 @@ function setvoicerootoffset(v, r) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
 	voiceRootOffset[idx] = Math.round(r);   // unclamped, same convention as setroot()
+	outlet(4, ["advecho", idx + 1, "raiz", voiceRootOffset[idx]]);   // Ola 10
 }
 
 // Freezes THIS voice's own procession (advanceVoiceKeys() skips it) without touching TonProp --
@@ -3003,11 +3020,13 @@ function setvoicing(m) {
 	if (!isFinite(n) || n < 0 || n > VOICING_OPEN) n = 0;
 	voicingMode = n;
 	lastChord = null;   // the shape changed, so the chord to lead from is no longer this one
+	outlet(4, ["gecho", "voicing", n]);
 }
 
 function setvoicelead(x) {
 	voiceLead = x ? 1 : 0;
 	lastChord = null;   // start the chain from the next chord rather than from a stale one
+	outlet(4, ["gecho", "cond", voiceLead]);
 }
 
 function setroot(r) {
@@ -3366,6 +3385,7 @@ function setrandaccentpct(p) {
 	if (p < 0) p = 0;
 	if (p > 100) p = 100;
 	accentRandomPct = p;
+	outlet(4, ["gecho", "randacc", p]);
 }
 
 // `count` de `total` casillas encendidas, sin reemplazo -- un shuffle parcial de Fisher-Yates sobre
@@ -3823,9 +3843,11 @@ var qnFigShown = "";           // firma "groupDurDiv[NORMAL],groupDurDiv[ACCENT]
 var qnAccentGridShown = "";    // firma accentGrid.join(","); "" = forzar
 var qnTensionShown = "";       // firma "tensLen,tensShape,tensModel"; "" = forzar
 var qnFavStateShown = "";      // firma "favSeqOn,favOnly,favSeq.length,favs[setIndex]"; "" = forzar
+var qnVoicingShown = "";       // firma "voicingMode,voiceLead"; "" = forzar
 var qnRegistroShown = "";      // firma "rootSeqIdx,masterOctave,drumOn,drumBase"; "" = forzar
 var qnRecorridoShown = "";     // firma "manualRot,rotShape,coprimeSkip"; "" = forzar
 var qnVecShown = ["", "", "", "", "", ""];   // firma "min,max" por IC (1..6); "" = forzar
+var qnRandAccShown = -1;       // same idea for accentRandomPct (also 50 by default)
 var qnRandMaskShown = -1;      // -1 forces the first querynext() to emit regardless of maskRandomPct's own default (50)
 var qnModShown = ["", "", "", ""];   // firma "shape,cycle,depth,phase,dest" por modulador (1..4); "" = forzar
 var qnSesionShown = "";        // firma "listenMode,bcastOn,followOn,presetSlot"; "" = forzar
@@ -3997,6 +4019,10 @@ function querynext() {
 			qnRandMaskShown = maskRandomPct;
 			outlet(3, ["grandmask", maskRandomPct]);
 		}
+		if (accentRandomPct !== qnRandAccShown) {
+			qnRandAccShown = accentRandomPct;
+			outlet(3, ["grandacc", accentRandomPct]);
+		}
 		// Sub (subDiv) -- el DIVISOR, no el indice del menu: es lo que el popup muestra y lo que
 		// setsub() recibe. Va suelto porque ademas de ser un valor propio es el GATE de toda la
 		// columna Groove (swing/human/ratchet mueren con subDiv < 2, ver swingOffset/humanizeOffset/
@@ -4077,11 +4103,16 @@ function querynext() {
 		// exactamente lo que Drum apaga de un saque (Sec Raiz, Oct Maestra, Drum, Pad -- las
 		// cuatro van junto a Oct Maestra en col 1); "recorrido" son las tres formas de caminar
 		// el set activo (Rotacion/Rotar x Cambio/Salto Coprimo). Voicing/Conduccion (solo Acordes)
-		// quedan fuera de esta ola -- su interaccion con Modo Acordes todavia no esta terminada.
+		// entraron en la Ola 9 como su propio mensaje: el popup los atenua fuera de Modo Acordes.
 		var gregKey = rootSeqIdx + "," + masterOctave + "," + drumOn + "," + drumBase;
 		if (gregKey !== qnRegistroShown) {
 			qnRegistroShown = gregKey;
 			outlet(3, ["gregistro", rootSeqIdx, masterOctave, drumOn, drumBase]);
+		}
+		var gvoiKey = voicingMode + "," + voiceLead;
+		if (gvoiKey !== qnVoicingShown) {
+			qnVoicingShown = gvoiKey;
+			outlet(3, ["gvoicing", voicingMode, voiceLead]);
 		}
 		var grecKey = manualRot + "," + rotShape + "," + coprimeSkip;
 		if (grecKey !== qnRecorridoShown) {
@@ -4346,17 +4377,24 @@ function emitVoiceKeyReadouts() {
 		var grado = voiceDegOffset[v], div = voiceDiv[v];
 		var euLarg = voiceRhyLen[v], euPuls = voiceRhyK[v], euGir = voiceRhyRot[v];
 		var fase = voicePhase[v], desf = voiceTimeOffset[v];
+		// Ola 10: register/octave/root block of the voice strip -- the scalars behind voiceOctaveList,
+		// the register clamp as min + span (span = max - min, what the panel's Span numbox shows), and
+		// the crude per-voice root offset. Global-independent: they read the same with Propia on or off.
+		var octBase = voiceOctBase[v], octEvery = voiceOctEvery[v], octRange = voiceOctRange[v], octSteps = voiceOctSteps[v];
+		var rgMin = voiceRangeMin[v], rgSpan = voiceRangeMax[v] - voiceRangeMin[v], rootOff = voiceRootOffset[v];
 		// -1 unless this voice's effective Patron is Coprimo (same "-1 = not applicable" as ornT).
 		var copSk = (patron === READ_COPRIMO) ? (readOwn ? voiceCoprimeSkip[v] : coprimeSkip) : -1;
 		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," +
 			ornN + "," + ornB + "," + muted + "," + keyLock + "," + artOwn + "," + ext + "," + vec + "," + diss + "," + si + "," +
 			velMin + "," + velMax + "," + durDiv + "," + silence + "," + grado + "," + div + "," +
-			euLarg + "," + euPuls + "," + euGir + "," + copSk + "," + fase + "," + desf;
+			euLarg + "," + euPuls + "," + euGir + "," + copSk + "," + fase + "," + desf + "," +
+			octBase + "," + octEvery + "," + octRange + "," + octSteps + "," + rgMin + "," + rgSpan + "," + rootOff;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
 		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
-			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf]);
+			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf,
+			octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff]);
 		// vcolor <v0> <pc...> -- same sig-gated fire as vkey above, just the actual SOUNDING pcs
 		// (already transposed) so the popup can tint that voice's chip with harmonyToColor()
 		// instead of reconstructing pitch content from the Forte name alone.
@@ -5449,6 +5487,18 @@ function setaccentgrid() {
 	for (var i = 0; i < ACCENT_MAX; i++) {
 		accentGrid[i] = (i < arguments.length && arguments[i]) ? 1 : 0;
 	}
+}
+
+// One cell of the 16-step accent strip, for the popup (setaccentgrid is the panel's whole-list
+// path and stays as it is). While Euclid is on the grid IS the algorithm's output, so a hand edit
+// would be overwritten at the next applyEuclid() -- ignore it rather than lie. The panel toggles
+// are moved by the same "accentgrid" echo applyEuclid() already uses, so no new receiver exists.
+function setaccentcell(i, v) {
+	if (euclidOn) return;
+	i = Math.round(i) - 1;
+	if (!isFinite(i) || i < 0 || i >= ACCENT_MAX) return;
+	accentGrid[i] = v ? 1 : 0;
+	outlet(4, ["accentgrid"].concat(accentGrid));
 }
 
 function setaccentcycle(c) {
