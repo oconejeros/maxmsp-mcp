@@ -3862,7 +3862,7 @@ var qnMaskShown = "";   // firma del ultimo maskecho
 var qnOrnScaleShown = "";   // firma (I,tipo,conteo) de la ultima escala resultante emitida; "" = forzar
 var qnVKeyShown = [];   // firma "forte,tonica" por voz del ultimo emitVoiceKeyReadouts(); "" = forzar
 for (var _vki = 0; _vki < MAX_VOICES; _vki++) qnVKeyShown.push("");
-var FILT_MAX = 64;      // tope de swatches ofrecidos a fs2setpick.js
+var FILT_MAX = 4096;    // tope de swatches ofrecidos a fs2setpick.js; > 351, o sea sin tope real (el panel pagina y filtra por n notas)
 
 // Largo de un ciclo de la forma para la grilla (con el doblado de la pendular), o -1 para
 // "muy largo, usar ventana rodante" (Super / SuperMin: una pasada son n!-ish pasos).

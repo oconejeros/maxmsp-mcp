@@ -24,7 +24,7 @@
 // Entra por outlet 3 de forteseq2.js (compartido con fs2horizon.js / fs2colmon.js -- se despacha
 // por el selector, sin [route]):
 //   filtclear                                         -- vacia la rejilla de Mascara.
-//   filtinfo  <total> <shown>                         -- shown = min(total, 64).
+//   filtinfo  <total> <shown>                         -- shown = total (sin tope; el panel filtra por n notas).
 //   filtset   <slot> <idx1> <forte> <rootAbs> <pc...>  -- un set permitido; pc ya transpuesto.
 //   maskecho  <m0..m11>                                -- mascara real del motor; el panel la adopta.
 //   zclear  zset <idx1> <forte> <mate> <pc...>         -- panel Z-pares.
@@ -75,6 +75,10 @@ var filtSets = [];        // filtSets[slot] = { idx1, forte, rootAbs, pcs:[...],
 var filtTotal = 0;        // cuantos pasan en total
 var filtShown = 0;        // cuantos se enviaron (<= FILT_MAX)
 var maskPage = 0;
+var mCard = 0;            // filtro local por cantidad de notas (0 = todas); solo afecta lo que se MUESTRA
+var M_CARDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+var mView = null;         // cache de maskView(); null = recalcular
+var mRequested = false;   // ya se pidio queryfiltsets al motor (ver paintMaskSection)
 var selIdx = -1;          // idx1 del swatch fijado en Compartido (-1 = ninguno)
 var maskHover = '';       // nombre Forte bajo el puntero, seccion Mascara
 var maskGeo = null;       // rects del ultimo paint(), para hit-testing coherente
@@ -116,7 +120,21 @@ fitToWindow();
 
 // --- entrada: mensajes por selector en inlet 0 ------------------------------------------
 
+// Los sets que pasan el filtro del motor (filtSets, huecos posibles), reducidos a los de mCard
+// notas. Es lo que la rejilla pagina y a lo que apuntan el hit-test y el hover.
+function maskView() {
+	if (mView) return mView;
+	var out = [];
+	for (var i = 0; i < filtSets.length; i++) {
+		var s = filtSets[i];
+		if (s && (!mCard || s.pcs.length === mCard)) out.push(s);
+	}
+	mView = out;
+	return out;
+}
+
 function filtclear() {
+	mView = null;
 	filtSets = [];
 	filtTotal = 0;
 	filtShown = 0;
@@ -148,6 +166,7 @@ function filtset() {
 	} else {
 		rgb = [0.5, 0.5, 0.5];
 	}
+	mView = null;
 	filtSets[slot] = { idx1: Math.round(a[1]), forte: String(a[2]), rootAbs: Math.round(a[3]), pcs: pcs, rgb: rgb };
 	if (selIdx >= 0 && filtSets[slot].idx1 === selIdx) forteOfSel = filtSets[slot].forte;
 	scheduleRedraw();
@@ -258,6 +277,17 @@ var Z_CARDS = [0, 4, 5, 6, 7, 8];
 
 function zclear() { zSets = []; zPage = 0; scheduleRedraw(); }
 
+// El motor solo manda zclear/zset cuando se le pide (queryzsets). Al pasar a la disposicion
+// simultanea se perdio el pedido que hacia el modo Z antiguo, y la lista quedaba vacia para
+// siempre. Un pedido por sesion de popup; un click sobre una lista vacia lo rearma (por si el
+// motor aun no habia construido sets[] en el primer paint).
+var zRequested = false;
+function zEnsureLoaded() {
+	if (zRequested) return;
+	zRequested = true;
+	outlet(0, ['queryzsets']);
+}
+
 function zset() {
 	var a = arrayfromargs(arguments);
 	if (a.length < 5) return;
@@ -277,6 +307,7 @@ function zView() {
 
 function zClick(x, y) {
 	if (!zGeo) return;
+	if (zSets.length === 0) zRequested = false;
 	if (ptIn(zGeo.parChip, x, y)) { zParMode = zParMode ? 0 : 1; mgraphics.redraw(); return; }
 	for (var c = 0; c < zGeo.chips.cards.length; c++) {
 		if (ptIn(zGeo.chips.cards[c], x, y)) { zCard = Z_CARDS[c]; zPage = 0; mgraphics.redraw(); return; }
@@ -324,6 +355,7 @@ function drawSwatchCell(cx, cy, cw, ch, rgb, highlighted, label) {
 }
 
 function paintZSection(x, y, w, h) {
+	zEnsureLoaded();
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
 	mgraphics.set_font_size(10);
 	mgraphics.move_to(x, y + 11);
@@ -704,29 +736,33 @@ function maskSwatchAt(x, y) {
 	var row = Math.floor((y - maskGeo.grid.y) / maskGeo.ch);
 	if (col < 0 || col >= maskGeo.cols || row < 0) return -1;
 	var gi = maskPage * maskGeo.pageSize + row * maskGeo.cols + col;
-	if (gi < 0 || gi >= filtShown) return -1;
+	if (gi < 0 || gi >= maskView().length) return -1;
 	return gi;
 }
 
 function maskPageCount() {
 	if (!maskGeo || maskGeo.pageSize <= 0) return 1;
-	return Math.max(1, Math.ceil(filtShown / maskGeo.pageSize));
+	return Math.max(1, Math.ceil(maskView().length / maskGeo.pageSize));
 }
 
 function onclick(x, y, but) {
 	if (!but) return;
 	if (barClick(x, y)) return;
+	if (filtSets.length === 0) mRequested = false;
 	if (maskGeo) {
 		if (ptIn(maskGeo.keys, x, y)) {
 			var pc = keyAt(x - maskGeo.keys.x, y - maskGeo.keys.y, maskGeo.keys.w, maskGeo.keys.h);
 			if (pc >= 0) { maskArr[pc] ^= 1; emitMask(); mgraphics.redraw(); }
 			return;
 		}
+		for (var mc = 0; mc < maskGeo.cardChips.length; mc++) {
+			if (ptIn(maskGeo.cardChips[mc], x, y)) { mCard = M_CARDS[mc]; maskPage = 0; mgraphics.redraw(); return; }
+		}
 		if (ptIn(maskGeo.prevBtn, x, y)) { if (maskPage > 0) { maskPage--; mgraphics.redraw(); } return; }
 		if (ptIn(maskGeo.nextBtn, x, y)) { if (maskPage < maskPageCount() - 1) { maskPage++; mgraphics.redraw(); } return; }
 		var gi = maskSwatchAt(x, y);
-		if (gi >= 0 && filtSets[gi]) {
-			var fs = filtSets[gi];
+		if (gi >= 0) {
+			var fs = maskView()[gi];
 			if (sharedTarget === 0) { selIdx = fs.idx1; forteOfSel = fs.forte; }
 			assignToTarget(fs.idx1, fs.rootAbs);
 			mgraphics.redraw();
@@ -744,7 +780,7 @@ function onidle(x, y) {
 	var f = '';
 	if (maskGeo) {
 		var gi = maskSwatchAt(x, y);
-		if (gi >= 0 && filtSets[gi]) f = filtSets[gi].forte;
+		if (gi >= 0) f = maskView()[gi].forte;
 	}
 	if (!f && zGeo) {
 		var zv = zView(), zi = zCellAt(x, y, zv);
@@ -826,6 +862,10 @@ function fillKey(x, y, w, h, pc, on, isBlack) {
 }
 
 function paintMaskSection(x, y, w, h) {
+	// El motor solo re-emite la rejilla cuando cambia el filtro (firma), asi que un jsui recien
+	// (re)cargado -- popup reabierto, js recargado -- quedaba vacio. Un pedido por sesion; un click
+	// en una rejilla vacia lo rearma (ver onclick).
+	if (!mRequested) { mRequested = true; outlet(0, ['queryfiltsets']); }
 	var pianoH = Math.max(56, Math.min(96, Math.round(h * 0.45)));
 	var pz = { x: x, y: y, w: w, h: pianoH };
 	var keys = { x: pz.x + 2, y: pz.y + 14, w: pz.w - 4, h: pz.h - 14 - 14 };
@@ -836,10 +876,22 @@ function paintMaskSection(x, y, w, h) {
 	mgraphics.set_source_rgba([0.62, 0.62, 0.68, 1]);
 	mgraphics.set_font_size(9);
 	mgraphics.move_to(gz.x, gz.y + 9);
-	var htxt = 'Sets que pasan: ' + filtShown + (filtShown < filtTotal ? ' / ' + filtTotal : '');
+	var view = maskView();
+	var htxt = 'Sets que pasan: ' + view.length + (view.length < filtTotal ? ' / ' + filtTotal : '');
 	mgraphics.show_text(htxt);
 
-	var headH = 12;
+	// filtro por cantidad de notas: una fila de chips (Todos, 1..12) bajo el titulo
+	var cardChips = [];
+	var cx0 = gz.x;
+	for (var mc = 0; mc < M_CARDS.length; mc++) {
+		var cwid = M_CARDS[mc] ? 24 : 34;
+		var cr = { x: cx0, y: gz.y + 12, w: cwid, h: 13 };
+		cardChips.push(cr);
+		drawChip(cr, M_CARDS[mc] ? String(M_CARDS[mc]) : 'Todos', mCard === M_CARDS[mc]);
+		cx0 += cwid + 2;
+	}
+
+	var headH = 28;
 	var gridTop = gz.y + headH;
 	var gridH = Math.max(1, gz.h - headH);
 	var cols = Math.max(4, Math.floor(gz.w / 46));
@@ -855,14 +907,14 @@ function paintMaskSection(x, y, w, h) {
 		piano: pz, keys: keys,
 		grid: { x: gz.x, y: gridTop, w: gz.w, h: rows * ch },
 		cols: cols, cw: cw, ch: ch, pageSize: pageSize,
-		prevBtn: prevBtn, nextBtn: nextBtn
+		prevBtn: prevBtn, nextBtn: nextBtn, cardChips: cardChips
 	};
 
 	var pc = maskPageCount();
 	if (maskPage > pc - 1) maskPage = pc - 1;
 	if (maskPage < 0) maskPage = 0;
 
-	var multi = pageSize > 0 && filtShown > pageSize;
+	var multi = pageSize > 0 && view.length > pageSize;
 	if (multi) {
 		drawBtn(prevBtn, '<', maskPage > 0);
 		drawBtn(nextBtn, '>', maskPage < maskPageCount() - 1);
@@ -874,9 +926,8 @@ function paintMaskSection(x, y, w, h) {
 
 	for (var k = 0; k < pageSize; k++) {
 		var gi = maskPage * pageSize + k;
-		if (gi >= filtShown) break;
-		var s = filtSets[gi];
-		if (!s) continue;
+		if (gi >= view.length) break;
+		var s = view[gi];
 		var cx = gz.x + (k % cols) * cw, cy = gridTop + Math.floor(k / cols) * ch;
 		var assigned = s.idx1 === selIdx;
 		if (!assigned) for (var v = 0; v < zVoiceCount; v++) if (zVoices[v] && zVoices[v].own && zVoices[v].forte === s.forte) assigned = true;

@@ -2648,8 +2648,8 @@ function checkFiltSets() {
 		const total = Number(last[0]);
 		shown = Number(last[1]);
 		if (!(total >= 1)) { console.error('FiltSets: filtinfo total < 1: ' + total); ok = false; }
-		if (shown !== Math.min(total, 64)) {
-			console.error('FiltSets: shown ' + shown + ' != min(total,64) con total ' + total); ok = false;
+		if (shown !== total) {
+			console.error('FiltSets: shown ' + shown + ' != total ' + total + ' (sin tope)'); ok = false;
 		}
 	}
 	if (sets.length !== shown) {
