@@ -227,6 +227,7 @@ forteseq/Cochrane__-__Beyond_Slonimsky.pdf
 # .amxd/.maxpat/.js. Son copias de seguridad locales, no fuente.
 *.bak-[0-9]*
 forteseq/*.maxpat.before*
+forteseq/*.js.before*
 
 # Artefactos de release para Payhip: los .amxd/.js/.zip empaquetados los regenera
 # tools/package_release.py y tools/make_lite.py desde forteseq/. Los scripts sí se

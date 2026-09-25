@@ -2107,6 +2107,146 @@
      ],
      "text": "prepend set"
     }
+   },
+   {
+    "box": {
+     "id": "obj-231",
+     "maxclass": "live.numbox",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      "float"
+     ],
+     "parameter_enable": 1,
+     "varname": "v_rrate",
+     "annotation": "Ritmo Raiz propio de esta voz: cada cuantos pasos avanza SU camino de raiz. En 0 (por defecto) esta voz sigue el camino compartido, como siempre. Con cualquier otro valor tiene su propio reloj, asi que dos voces con ritmos distintos recorren la misma secuencia de Sec Raiz desfasadas, en canon. La secuencia (Cuartas, Quintas, Azar...) sigue siendo la global: lo propio de cada voz es el reloj, no el camino. Ojo: con TonProp prendido y la voz sin seguir la raiz compartida, la voz tiene clave fija y esto no la mueve.",
+     "patching_rect": [
+      400.0,
+      1000.0,
+      34.0,
+      15.0
+     ],
+     "presentation": 1,
+     "presentation_rect": [
+      738.0,
+      3.0,
+      26.0,
+      15.0
+     ],
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_type": 1,
+       "parameter_unitstyle": 0,
+       "parameter_modmode": 4,
+       "parameter_mmin": 0.0,
+       "parameter_mmax": 64.0,
+       "parameter_initial": [
+        0
+       ],
+       "parameter_initial_enable": 1,
+       "parameter_longname": "V#1 R.Raiz",
+       "parameter_shortname": "R.Raiz"
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-232",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_rootrate_prep",
+     "patching_rect": [
+      400.0,
+      1030.0,
+      220.0,
+      22.0
+     ],
+     "text": "prepend setvoicerootrate #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-233",
+     "maxclass": "newobj",
+     "numinlets": 0,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_rrate_echo_rx",
+     "patching_rect": [
+      760.0,
+      1000.0,
+      160.0,
+      22.0
+     ],
+     "text": "receive FS2_ADV_ECHO"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-234",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "v_rrate_echo_route1",
+     "patching_rect": [
+      760.0,
+      1030.0,
+      160.0,
+      22.0
+     ],
+     "text": "route #1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-235",
+     "maxclass": "newobj",
+     "numinlets": 2,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "varname": "v_rrate_echo_route",
+     "patching_rect": [
+      760.0,
+      1060.0,
+      160.0,
+      22.0
+     ],
+     "text": "route rrate"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-236",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "varname": "v_rrate_echo_setrx",
+     "patching_rect": [
+      760.0,
+      1090.0,
+      160.0,
+      22.0
+     ],
+     "text": "prepend set"
+    }
    }
   ],
   "lines": [
@@ -3573,6 +3713,90 @@
       0
      ]
     }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-231",
+      0
+     ],
+     "destination": [
+      "obj-232",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-232",
+      0
+     ],
+     "destination": [
+      "obj-102",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-101",
+      0
+     ],
+     "destination": [
+      "obj-231",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-233",
+      0
+     ],
+     "destination": [
+      "obj-234",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-234",
+      0
+     ],
+     "destination": [
+      "obj-235",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-235",
+      0
+     ],
+     "destination": [
+      "obj-236",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "source": [
+      "obj-236",
+      0
+     ],
+     "destination": [
+      "obj-231",
+      0
+     ]
+    }
    }
   ],
   "parameters": {
@@ -3690,6 +3914,11 @@
    "obj-218": [
     "V#1 CopSalto",
     "V#1 CopSalto",
+    0
+   ],
+   "obj-231": [
+    "V#1 R.Raiz",
+    "V#1 R.Raiz",
     0
    ]
   },

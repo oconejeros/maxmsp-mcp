@@ -281,6 +281,18 @@ var voiceKeyLock = filled(MAX_VOICES, 0);      // 1 = this voice's own set stops
                                                 // pinned at whichever set it was on, while OTHER TonProp voices
                                                 // keep walking their own procession
 
+// Ritmo Raiz per voice. rootRate (below) already takes the SHARED root walk off the harmony's clock;
+// this takes it one step further and gives each voice its own clock for the same walk, so V1 can
+// modulate every 4 steps while V3 modulates every 7 and the two drift apart into a canon of
+// modulations. Deliberately only the CLOCK is per voice: the sequence itself stays the shared
+// rootSeqIdx (Cuartas/Quintas/Azar...), so the voices are the same journey at different speeds
+// rather than four unrelated ones -- a per-voice sequence menu was considered and left out.
+// 0 = this voice stays on the shared walk, exactly as before, which is what makes this additive.
+var voiceRootRate = filled(MAX_VOICES, 0);
+var voiceRootCount = filled(MAX_VOICES, 0);
+var voiceRootSeqPos = filled(MAX_VOICES, 0);
+var voiceRootSeqOffset = filled(MAX_VOICES, 0);   // what THIS voice's own walk is contributing right now
+
 // The accent grid can be drawn cell by cell or generated. With euclidOn = 1 it holds E(k, n):
 // k accents spread as evenly as `accentCycle` cells allow, then turned by euclidRot. Generating
 // writes the same array the toggles write, so nothing downstream knows where the pattern came
@@ -1106,18 +1118,40 @@ function rootSeqAdvanceOnHarmony() {
 	if (rootRate <= 0) rootSeqAdvance();
 }
 
+// One notch of ONE voice's own root walk (Ritmo Raiz por voz). Same body as rootSeqAdvance() over
+// this voice's own position/offset, reading the SHARED rootSeqIdx: the sequence is common, only the
+// clock is the voice's. Azar draws its own number per voice on purpose -- four voices sharing one
+// random draw would move in parallel, which is the opposite of what asking for separate clocks means.
+function voiceRootSeqAdvance(idx) {
+	if (rootSeqIdx === ROOT_RANDOM) {
+		voiceRootSeqOffset[idx] = Math.floor(Math.random() * 12);
+		return;
+	}
+	var seq = ROOT_SEQUENCES[rootSeqIdx];
+	if (!seq) { voiceRootSeqOffset[idx] = 0; return; }
+	voiceRootSeqPos[idx] = (voiceRootSeqPos[idx] + 1) % seq.length;
+	voiceRootSeqOffset[idx] = seq[voiceRootSeqPos[idx]];
+}
+
 // What actually sounds as the root. The sequence is added on top of BOTH branches on purpose:
 // with the mask fit on, the fit picks the transposition where the set fits the mask, and a root
 // sequence then carries it away from there -- asking for a root walk is the more deliberate of
 // the two requests, so it wins, and the mask stops describing what you hear.
-function effRoot() {
+// Split out of effRoot() so a voice on its own Ritmo Raiz clock can substitute ITS offset for the
+// shared one without recomputing (or duplicating) everything else -- see voiceEffRoot().
+function effRootBase() {
 	// While the listener owns the harmony the chord sounds in the key it was played in, and
 	// the Raiz dial steps aside rather than fighting it. Latch keeps that key; releasing in
-	// Sigue hands it straight back. The root SEQUENCE is added either way -- it carries the
-	// whole harmony around by design, and that does not stop being true because you played it.
+	// Sigue hands it straight back.
 	var base = listenOn ? listenTr
 		: ((filterOn && maskFit && setIndex < setFit.length) ? setFit[setIndex] : root);
-	return base + rootSeqOffset + modRootShift();
+	return base + modRootShift();
+}
+
+function effRoot() {
+	// The root SEQUENCE is added on top of the base either way -- it carries the whole harmony
+	// around by design, and that does not stop being true because you played it.
+	return effRootBase() + rootSeqOffset;
 }
 
 function rotl12(bits, r) {
@@ -1532,6 +1566,23 @@ function rootStep() {
 	if (rootCount < rootRate) return;
 	rootCount = 0;
 	if (!(listenMode && heldBits) && !followOn) rootSeqAdvance();
+}
+
+// The per-voice counterpart of rootStep(): every voice with its own Ritmo Raiz counts its own steps
+// and walks its own offset. Same held-chord/follow gates as every other root-walk call site -- a
+// listener's hand or a followed bus owns the root of ALL the voices, not just the shared one.
+// A plain loop over at most NUM_VOICES comparisons with no outlet traffic: this runs once per clock
+// step, and what costs in this file is crossing into Max, not arithmetic in JS.
+function voiceRootStep() {
+	if (listenMode && heldBits) return;
+	if (followOn) return;
+	for (var v = 0; v < NUM_VOICES; v++) {
+		if (voiceRootRate[v] <= 0) continue;   // this voice is still on the shared walk
+		voiceRootCount[v]++;
+		if (voiceRootCount[v] < voiceRootRate[v]) continue;
+		voiceRootCount[v] = 0;
+		voiceRootSeqAdvance(v);
+	}
 }
 
 // --- readouts ---------------------------------------------------------------------------
@@ -2865,6 +2916,25 @@ function assignvoicesetroot(v, i1, rootAbs) {
 	setvoicekeylock(v, 1);
 }
 
+// Ritmo Raiz for ONE voice: how many steps between notches of its own root walk, 0 = stay on the
+// shared walk. Same 0-64 shape as setrootrate(), and the count restarts here rather than mid-cycle
+// for the same reason. Echo token is "rrate": "rraiz" is already the GLOBAL Ritmo Raiz token on the
+// FS2_G_ECHO bus, and "raiz" is already this voice's fixed transpose on FS2_ADV_ECHO.
+function setvoicerootrate(v, r) {
+	var idx = Math.round(v) - 1;
+	if (idx < 0 || idx >= NUM_VOICES) return;
+	var n = Math.round(r);
+	if (!isFinite(n) || n < 0) n = 0;
+	if (n > 64) n = 64;
+	voiceRootRate[idx] = n;
+	voiceRootCount[idx] = 0;
+	// Going back to 0 hands this voice back to the shared walk, so the offset it had wandered to
+	// must not stay stuck on it -- otherwise the voice would sit a fourth away from the others for
+	// good, with no control left showing why.
+	if (n === 0) { voiceRootSeqPos[idx] = 0; voiceRootSeqOffset[idx] = 0; }
+	outlet(4, ["advecho", idx + 1, "rrate", voiceRootRate[idx]]);
+}
+
 function setvoicerootoffset(v, r) {
 	var idx = Math.round(v) - 1;
 	if (idx < 0 || idx >= NUM_VOICES) return;
@@ -2968,6 +3038,40 @@ function setrangetemplate(t) {
 	outlet(4, ["gecho", "rango", rangeTemplateIndex]);
 }
 
+// Has this voice's register been nudged away from what the panel claims? Answered here rather than
+// in the popup because RANGE_TEMPLATES lives here, and the jsui already keeps one hand-synced copy
+// of this menu's item names -- a second copy, of the numbers this time, would be one more thing to
+// forget.
+//
+// ONE BIT PER CONTROL, not one per group. A single shared bit for the five octave/root scalars lit
+// all five chips as soon as any one of them moved, so a voice with only Raiz changed showed Oc 0,
+// Ev 1, Rg 0 and Ps 16 as "changed" while sitting on their exact defaults -- which is worse than no
+// indicator, because it points at four controls that are fine.
+//   bit 0 -- the Min/Span clamp no longer matches the row this voice gets from the template the
+//            Rango menu is still showing. It is one bit for the pair because the template writes
+//            them as a pair. With rangeTemplateIndex 0 (the menu's own label, no template ever
+//            applied) there is nothing to have departed from, so the bit stays clear.
+//   bits 1-5 -- octBase / octEvery / octRange / octSteps / rootOff, each against its own default.
+//            These have no template, so the honest reference is the default, which is also what
+//            double-clicking the chip resets them to.
+var REG_DIRTY_CLAMP = 1, REG_DIRTY_OCTBASE = 2, REG_DIRTY_OCTEVERY = 4,
+	REG_DIRTY_OCTRANGE = 8, REG_DIRTY_OCTSTEPS = 16, REG_DIRTY_ROOTOFF = 32;
+
+function voiceRegDirty(v) {
+	var bits = 0;
+	var tpl = RANGE_TEMPLATES[rangeTemplateIndex];
+	if (tpl) {
+		var pair = tpl[v % tpl.length];   // same wrap setrangetemplate() applies when writing them
+		if (voiceRangeMin[v] !== pair[0] || voiceRangeMax[v] !== pair[1]) bits |= REG_DIRTY_CLAMP;
+	}
+	if (voiceOctBase[v] !== 0) bits |= REG_DIRTY_OCTBASE;
+	if (voiceOctEvery[v] !== 1) bits |= REG_DIRTY_OCTEVERY;
+	if (voiceOctRange[v] !== 0) bits |= REG_DIRTY_OCTRANGE;
+	if (voiceOctSteps[v] !== 16) bits |= REG_DIRTY_OCTSTEPS;
+	if (voiceRootOffset[v] !== 0) bits |= REG_DIRTY_ROOTOFF;
+	return bits;
+}
+
 function setdrum(x) {
 	drumOn = x ? 1 : 0;
 	outlet(4, ["gecho", "drum", drumOn]);
@@ -3012,6 +3116,13 @@ function setrootseq(i) {
 	// Every sequence begins on 0, so switching one on leaves the harmony where it stands and the
 	// walk starts at the next set change. Azar is the exception and has to draw its first root.
 	rootSeqOffset = (n === ROOT_RANDOM) ? Math.floor(Math.random() * 12) : 0;
+	// The per-voice walks read this same sequence, so they restart with it -- leaving them on an
+	// offset drawn from the PREVIOUS sequence would strand those voices in a key the new sequence
+	// never visits. Azar redraws per voice, same as voiceRootSeqAdvance() does.
+	for (var rv = 0; rv < MAX_VOICES; rv++) {
+		voiceRootSeqPos[rv] = 0;
+		voiceRootSeqOffset[rv] = (n === ROOT_RANDOM) ? Math.floor(Math.random() * 12) : 0;
+	}
 	outlet(4, ["gecho", "rootseq", rootSeqIdx]);
 }
 
@@ -4345,9 +4456,21 @@ function emitOrnScale() {
 function emitVoiceKeyReadouts() {
 	for (var v = 0; v < NUM_VOICES; v++) {
 		var keyOwn = voiceKeyOwn[v];
-		var si = keyOwn ? voiceSetIndex[v] : setIndex;
+		// Sin cursor propio (Ind apagado y sin disparo externo) emitVoices() le da a TODAS las
+		// voces la misma nota ya resuelta: la clave propia de esta voz esta puesta pero no llega
+		// al audio. La fila del popup describe lo que SUENA, asi que ahi manda la armonia
+		// compartida -- el set asignado se sigue viendo en el panel Selector (izquierda), que se
+		// pinta con `vcolor`, emitido mas abajo desde `siAssigned` justamente para no perderlo.
+		var selfCur = voiceSelfCursored(v);
+		var siAssigned = keyOwn ? voiceSetIndex[v] : setIndex;
+		var si = (keyOwn && selfCur) ? voiceSetIndex[v] : setIndex;
 		var forte = setForte[si] || "-";
-		var tonic = NOTE_NAMES[pc12(voiceRootFor(v))];
+		var tonic = NOTE_NAMES[pc12(selfCur ? voiceRootFor(v) : effRoot())];
+		// 1 = esta voz con TonProp sigue igual la raiz compartida (se la asigna el panel Z). En 0,
+		// voiceRootFor() devuelve SOLO voiceRootOffset, asi que ni el camino de raiz compartido ni
+		// el Ritmo Raiz propio de la voz la mueven -- el popup lo usa para apagar el chip RR en vez
+		// de dejarlo ahi pareciendo que hace algo.
+		var rootFollow = voiceRootFollow[v];
 		var readOwn = voiceReadOwn[v];
 		var patron = readOwn ? voiceReadMode[v] : readMode;
 		var dir = readOwn ? voiceReadDir[v] : readDir;
@@ -4382,26 +4505,42 @@ function emitVoiceKeyReadouts() {
 		// the crude per-voice root offset. Global-independent: they read the same with Propia on or off.
 		var octBase = voiceOctBase[v], octEvery = voiceOctEvery[v], octRange = voiceOctRange[v], octSteps = voiceOctSteps[v];
 		var rgMin = voiceRangeMin[v], rgSpan = voiceRangeMax[v] - voiceRangeMin[v], rootOff = voiceRootOffset[v];
+		// This voice's own Ritmo Raiz clock (0 = on the shared walk), and the two "you moved this
+		// away from the template/default" bits -- see voiceRegDirty(). Appended at the END of vkey
+		// for the same reason the Ola 10 block was: every field the popup already unpacks keeps its
+		// position, so an older jsui simply sees fewer arguments instead of misreading them.
+		var rootRt = voiceRootRate[v], regDirty = voiceRegDirty(v);
 		// -1 unless this voice's effective Patron is Coprimo (same "-1 = not applicable" as ornT).
 		var copSk = (patron === READ_COPRIMO) ? (readOwn ? voiceCoprimeSkip[v] : coprimeSkip) : -1;
 		var sig = forte + "," + tonic + "," + keyOwn + "," + readOwn + "," + patron + "," + dir + "," + ornT + "," +
 			ornN + "," + ornB + "," + muted + "," + keyLock + "," + artOwn + "," + ext + "," + vec + "," + diss + "," + si + "," +
 			velMin + "," + velMax + "," + durDiv + "," + silence + "," + grado + "," + div + "," +
 			euLarg + "," + euPuls + "," + euGir + "," + copSk + "," + fase + "," + desf + "," +
-			octBase + "," + octEvery + "," + octRange + "," + octSteps + "," + rgMin + "," + rgSpan + "," + rootOff;
+			octBase + "," + octEvery + "," + octRange + "," + octSteps + "," + rgMin + "," + rgSpan + "," + rootOff + "," +
+			rootRt + "," + regDirty + "," + rootFollow + "," + siAssigned;
 		if (sig === qnVKeyShown[v]) continue;
 		qnVKeyShown[v] = sig;
 		outlet(3, ["vkey", v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
-			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", si + 1,
+			artOwn, ext, ornN, ornB, vec, diss, zm ? ("Z:" + zm) : "-", modality, mm ? ("Esp:" + mm) : "-", siAssigned + 1,
 			velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf,
-			octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff]);
-		// vcolor <v0> <pc...> -- same sig-gated fire as vkey above, just the actual SOUNDING pcs
-		// (already transposed) so the popup can tint that voice's chip with harmonyToColor()
-		// instead of reconstructing pitch content from the Forte name alone.
+			octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff, rootRt, regDirty, rootFollow]);
+		// vcolor <v0> <pc...> -- las pcs ya transpuestas, para que fs2setpick.js (el panel
+		// Selector, el UNICO que consume este mensaje: horizon y colmon lo ignoran) tina el chip de
+		// esa voz con harmonyToColor() en vez de reconstruir el contenido desde el nombre Forte.
+		// Va con `siAssigned`, NO con `si`: aca importa el set que le ASIGNASTE a la voz, aunque
+		// ahora mismo no suene por falta de cursor propio. Esa es la division pedida -- la
+		// asignacion se ve a la izquierda, y la fila de chips de la derecha dice lo que suena.
 		var vroot = voiceRootFor(v);
 		var absPcs = [];
-		for (var pi = 0; pi < sets[si].length; pi++) absPcs.push(pc12(sets[si][pi] + vroot));
+		for (var pi = 0; pi < sets[siAssigned].length; pi++) absPcs.push(pc12(sets[siAssigned][pi] + vroot));
 		outlet(3, ["vcolor", v].concat(absPcs));
+		// vassign <v0> <forte asignado> <keyOwn> -- el compañero en texto de vcolor, y por el mismo
+		// motivo: la barra del panel Selector rotula lo que le ASIGNASTE a la voz, que es lo que ese
+		// panel sirve para elegir, mientras que el `forte` de vkey ya pasó a describir lo que SUENA
+		// para la fila de chips. Mensaje aparte en vez de un campo mas al final de vkey porque
+		// fs2setpick.js declara `vkey(v, forte, tonic, keyOwn)` y solo lee los primeros cuatro:
+		// alcanzar un campo 42 desde ahi obligaria a listar los 41 de por medio.
+		outlet(3, ["vassign", v, setForte[siAssigned] || "-", keyOwn ? 1 : 0]);
 	}
 }
 
@@ -5064,10 +5203,21 @@ function voiceCoprimeSkipOf(idx) {
 function voicePcsFor(idx, sharedPcs) {
 	return voiceKeyOwn[idx] ? (sets[voiceSetIndex[idx]] || sharedPcs) : sharedPcs;
 }
+// effRoot() as THIS voice hears it. With its own Ritmo Raiz clock the voice's own walk REPLACES the
+// shared one rather than stacking on top of it -- the same "never both at once" rule rootRate already
+// applies against the harmony's clock (see rootRate's declaration). Everything else about the shared
+// root (the dial, the mask fit, the listener's key, modulation) still reaches the voice untouched,
+// because only the rootSeqOffset term is swapped out.
+function voiceEffRoot(idx) {
+	return voiceRootRate[idx] > 0 ? effRootBase() + voiceRootSeqOffset[idx] : effRoot();
+}
+
 // This voice's own crude transpose if TonProp is on, the shared effRoot() otherwise.
+// Note the third branch: TonProp on with Follow off is a FIXED key, so neither the shared root walk
+// nor this voice's own one applies to it -- deliberately, and the same way it already ignored effRoot().
 function voiceRootFor(idx) {
-	if (!voiceKeyOwn[idx]) return effRoot();
-	return voiceRootFollow[idx] ? effRoot() + voiceRootOffset[idx] : voiceRootOffset[idx];
+	if (!voiceKeyOwn[idx]) return voiceEffRoot(idx);
+	return voiceRootFollow[idx] ? voiceEffRoot(idx) + voiceRootOffset[idx] : voiceRootOffset[idx];
 }
 
 // How many steps one complete pass takes, direction included. It decides when the set is allowed
@@ -5198,6 +5348,7 @@ function step() {
 	if (locked) setIndex = lockIndex;
 	harmonyStep();   // may move the set before this step reads it, when the harmony has its own clock
 	rootStep();      // same idea for Sec Raiz, on its own independent clock when rootRate > 0
+	voiceRootStep(); // and once more per voice, for the voices that have their own Ritmo Raiz
 	if (setIndex >= sets.length) setIndex = 0;
 	var pcs = sets[setIndex];
 	var n = pcs.length;

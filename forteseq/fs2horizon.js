@@ -263,6 +263,7 @@ function viewportWH() {
 	return [844 + (bothVisible ? PICKER_W : 0), 284];   // sin lectura de ventana
 }
 function fitToWindow() {
+	tipTick();   // the hover balloon's dwell timer rides this task -- see tipTick()
 	var s = windSize();
 	if (!s) { mgraphics.redraw(); return; }
 	var x0 = WPAD + leftMargin();
@@ -518,6 +519,7 @@ function zset() {}
 function nbclear() {}
 function nbset() {}
 function vcolor() {}
+function vassign() {}   // solo lo usa fs2setpick.js (rotula el set ASIGNADO); aca manda vkey
 function grango(t) { globalState.rango = Math.round(t); mgraphics.redraw(); }
 function gsilpre(t) { globalState.silpre = Math.round(t); mgraphics.redraw(); }
 function gornquad(s) { globalState.ornQuad = Math.round(s); mgraphics.redraw(); }
@@ -699,7 +701,7 @@ function ornscale() {
 function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLock,
 		artOwn, ext, ornN, ornB, vec, diss, zRel, modality, mirror, setIdx,
 		velMin, velMax, durDiv, silence, grado, div, euLarg, euPuls, euGir, copSk, fase, desf,
-		octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff) {
+		octBase, octEvery, octRange, octSteps, rgMin, rgSpan, rootOff, rootRate, regDirty, rootFollow) {
 	v = Math.round(v);
 	if (!(v >= 0 && v < MAXROWS)) return;
 	vkeyInfo[v] = {
@@ -731,7 +733,19 @@ function vkey(v, forte, tonic, keyOwn, readOwn, patron, dir, ornT, muted, keyLoc
 		octSteps: Math.round(octSteps === undefined ? 16 : octSteps),
 		rgMin: Math.round(rgMin === undefined ? 0 : rgMin),
 		rgSpan: Math.round(rgSpan === undefined ? 127 : rgSpan),
-		rootOff: Math.round(rootOff === undefined ? 0 : rootOff)
+		rootOff: Math.round(rootOff === undefined ? 0 : rootOff),
+		// This voice's own Ritmo Raiz clock (0 = on the shared root walk), and the engine's own
+		// verdict on whether this voice's register still matches what the panel claims:
+		// bit 1 = the Min/Span clamp left the Rango template, bit 2 = the octave/root scalars left
+		// their defaults. Computed by voiceRegDirty() in forteseq2.js rather than here, so
+		// RANGE_TEMPLATES stays in one file -- this one already keeps a hand-synced copy of that
+		// menu's NAMES (RANGE_NAMES), and a second copy of its numbers would be one more to forget.
+		rootRate: Math.round(rootRate === undefined ? 0 : rootRate),
+		regDirty: Math.round(regDirty === undefined ? 0 : regDirty),
+		// 1 = con TonProp puesto, esta voz sigue igual la raiz compartida (se lo asigna el panel Z).
+		// En 0 la voz tiene raiz FIJA: ni el camino compartido ni su propio Ritmo Raiz la mueven,
+		// asi que el chip RR se apaga en vez de quedar ahi pareciendo que hace algo.
+		rootFollow: !!Math.round(rootFollow || 0)
 	};
 	mgraphics.redraw();
 }
@@ -928,12 +942,20 @@ var DRAG_SPECS = {
 		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, vk.octEvery, nv, vk.octSteps, vk.octBase]); } },
 	octsteps: { min: 1, max: 16, field: 'octSteps', def: 16, pxPerUnit: 10,
 		send: function (v, nv, vk) { outlet(0, ['setvoiceoctavesimple', v + 1, vk.octEvery, vk.octRange, nv, vk.octBase]); } },
-	rgmin: { min: 0, max: 127, field: 'rgMin', def: 40, pxPerUnit: 3,
+	// defs are the ENGINE's defaults (voiceRangeMin 0 / voiceRangeMax 127 = no effective clamp).
+	// They used to read 40/17, which matched neither the engine nor any Rango template, so
+	// double-click-to-reset landed on an arbitrary narrow window and specsChanged() called an
+	// untouched voice "changed". Both now agree with forteseq2.js.
+	rgmin: { min: 0, max: 127, field: 'rgMin', def: 0, pxPerUnit: 3,
 		send: function (v, nv, vk) { outlet(0, ['setvoicerange', v + 1, nv, vk.rgSpan]); } },
-	rgspan: { min: 0, max: 127, field: 'rgSpan', def: 17, pxPerUnit: 3,
+	rgspan: { min: 0, max: 127, field: 'rgSpan', def: 127, pxPerUnit: 3,
 		send: function (v, nv, vk) { outlet(0, ['setvoicerange', v + 1, vk.rgMin, nv]); } },
 	rootoff: { min: -24, max: 24, field: 'rootOff', def: 0, pxPerUnit: 4,
 		send: function (v, nv) { outlet(0, ['setvoicerootoffset', v + 1, nv]); } },
+	// Ritmo Raiz for THIS voice: 0 = stay on the shared root walk, >0 = a notch every N steps on
+	// this voice's own clock. The sequence stays the global Sec Raiz -- only the clock is the voice's.
+	rrate: { min: 0, max: 64, field: 'rootRate', def: 0, pxPerUnit: 6,
+		send: function (v, nv) { outlet(0, ['setvoicerootrate', v + 1, nv]); } },
 	euclen: { min: 0, max: 16, field: 'euLarg', def: 0, pxPerUnit: 8,
 		send: function (v, nv) { outlet(0, ['setvoiceeuclen', v + 1, nv]); } },
 	euck: { min: 0, max: 16, field: 'euPuls', def: 0, pxPerUnit: 8,
@@ -1296,6 +1318,277 @@ var PAGE_VOCES1 = 20, PAGE_VOCES2 = 21, PAGE_VOCES3 = 22, PAGE_VOCES4 = 23;
 
 function ptIn(r, x, y) {
 	return r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+// --- ayuda al pasar el mouse ----------------------------------------------------------------
+// Live shows a parameter's `annotation` in its info view, but every control in this panel is drawn
+// by this file: Live does not know these chips exist, so that help has nowhere to appear. This is
+// the missing info view, drawn inside the canvas.
+//
+// The texts are English and are GENERATED by tools/gen_fs2_help.py out of the same .amxd
+// annotations the Live parameters carry, so the two cannot quietly drift apart -- the generator
+// stores a hash of the Spanish it translated and reports which English texts went stale after an
+// annotation is edited. Do not hand-edit between the markers; edit the generator and re-run it.
+//
+// Keys are 'v:<chipGeo name>' for a per-voice chip and 'g:<globalChipGeo name>' for a sidebar one.
+// ---- FS2_HELP BEGIN (generado por tools/gen_fs2_help.py -- no editar a mano) ----
+var HELP = {
+	'g:ciclo': 'How many cells of the accent grid are in play, from 1 to 16.',
+	'g:clearfavs': 'Empties the favourites list. It lives with the Live set rather than with the device presets, so this is the only thing that clears it.',
+	'g:cond': 'Voice leading in Chords mode. On each set change it tries every inversion in every octave within reach and keeps the one that moves least from the chord that just sounded. It changes no note of the set, only inversion and octave. Tight per-voice registers can undo part of the work.',
+	'g:curva': 'The shape of the tension cycle: how consonance rises and falls across it.',
+	'g:dir': 'Reading direction, over whichever order is chosen. Forward; backward, the same pass reversed; or alternating, there and back without repeating either end. The set does not change until the pass finishes, so alternating doubles how long a harmony lasts.',
+	'g:dirrasg': 'Which note the chord opens from. Alternate flips the direction on every step.',
+	'g:drum': 'Every pitch class becomes a Drum Rack pad instead of a note: the set chooses WHICH drums play and the reading chooses when. While it is on, nothing that moves a note vertically applies -- a rack\'s rows are different instruments, not registers, so folding would land on another drum. The root still counts: it shifts the whole set across the rack.',
+	'g:emit': 'Broadcasts which class this device is on, over its bus. Only WHICH set travels: root, octave, voicing and register stay each engine\'s own, because two engines in different registers or keys over one harmony is the point of having two.',
+	'g:enlace': 'Minimum common tones between one set and the next: the harmony may only move to a set sharing at least this many notes with the current one. At 0 the constraint is off, and the walk is free to jump anywhere the order allows.',
+	'g:escuchar': 'Off: the device does not listen. Follow: while you hold notes the harmony is the class you are playing, in the key you played it, and the sequence waits; releasing returns it exactly where it was. Latch: it keeps that chord and carries on from there. Any chord works -- the catalogue holds all 351 classes, so identifying one is a lookup that cannot fail.',
+	'g:euc': 'On: the accent grid generates itself as E(k,n) -- k accents spread as evenly as the cycle allows -- and the toggles become a drawing of the result. Off: the grid is the one you drew by hand.',
+	'g:eugir': 'Which cell the pattern starts on. The same E(k,n) rotated is a different rhythm -- it is the difference between the clave and its reverse.',
+	'g:eupuls': 'How many accents the generator spreads over the cycle. 3 over 8 gives the triplet feel, 5 over 8 the cinquillo, 5 over 16 the clave. More pulses than cells accents everything.',
+	'g:fav': 'Marks or unmarks the set sounding right now, which is what makes the button usable while browsing: hear something, mark it, carry on. It repaints on every harmony change, so it always tells the truth about the current set. The list travels with the Live set, not with the device presets.',
+	'g:favonly': 'Only marked sets are visited. It is one more filter, not a separate mode: it combines with cardinality, vector and mask instead of replacing them. With an empty list nothing would pass, so the device falls back to the whole catalogue and says so in the console.',
+	'g:figa': 'Length of accented notes as a denominator: 4 = quarter, 8 = eighth, 16 = sixteenth.',
+	'g:fign': 'Length of unaccented notes as a denominator: 4 = quarter, 8 = eighth, 16 = sixteenth.',
+	'g:flt': 'Master switch for the filter: cardinality, interval vector, favourites and the chromatic mask. Off puts the full 351-class catalogue back in play.',
+	'g:harm': 'How many steps between set changes. At 0 the reading decides, as always: the set changes when the pass ends. Any other value puts the harmony on its own clock, so a 720-step super-permutation can run over chords changing every 4. Lock still wins.',
+	'g:human': 'Random timing jitter, in percent: how far each note may wander from its exact position. It loosens a mechanical grid without changing the written rhythm.',
+	'g:ind': 'Independent Voices: every voice walks its own cursor instead of all of them being handed the same note. This is what makes the voice count buy texture, and what most per-voice controls need before they do anything at all.',
+	'g:lck': 'Freezes the shared set, so the harmony stops moving. The root walk keeps going underneath, so a locked set is still carried around.',
+	'g:maskfit': 'Fit: when a set does not satisfy the mask where it is stored, it is transposed to where it does and sounds there. Without fit almost nothing passes -- not even the diatonic scale passes its own scale\'s filter. With fit, the mask outranks the Root.',
+	'g:maskk': 'How many notes in common the Int mask mode requires.',
+	'g:maskmode': 'How a set is compared with the mask. Sub: the set fits inside the mask (mask = scale). Con: the set contains the whole mask (mask = required interval). Int: it shares at least k notes with the mask.',
+	'g:mod1cycle': 'How many steps one full cycle of modulator 1 takes.',
+	'g:mod1depth': 'How far modulator 1 moves its destination. At 0 it leaves it alone.',
+	'g:mod1dest': 'What modulator 1 moves. With the destination on "-" the modulator runs but changes nothing.',
+	'g:mod1phase': 'Where in its cycle modulator 1 starts, so several modulators can run out of phase with each other.',
+	'g:mod1shape': 'Waveform of modulator 1: the shape of the value it sends.',
+	'g:mod2cycle': 'How many steps one full cycle of modulator 2 takes.',
+	'g:mod2depth': 'How far modulator 2 moves its destination. At 0 it leaves it alone.',
+	'g:mod2dest': 'What modulator 2 moves. With the destination on "-" the modulator runs but changes nothing.',
+	'g:mod2phase': 'Where in its cycle modulator 2 starts, so several modulators can run out of phase with each other.',
+	'g:mod2shape': 'Waveform of modulator 2: the shape of the value it sends.',
+	'g:mod3cycle': 'How many steps one full cycle of modulator 3 takes.',
+	'g:mod3depth': 'How far modulator 3 moves its destination. At 0 it leaves it alone.',
+	'g:mod3dest': 'What modulator 3 moves. With the destination on "-" the modulator runs but changes nothing.',
+	'g:mod3phase': 'Where in its cycle modulator 3 starts, so several modulators can run out of phase with each other.',
+	'g:mod3shape': 'Waveform of modulator 3: the shape of the value it sends.',
+	'g:mod4cycle': 'How many steps one full cycle of modulator 4 takes.',
+	'g:mod4depth': 'How far modulator 4 moves its destination. At 0 it leaves it alone.',
+	'g:mod4dest': 'What modulator 4 moves. With the destination on "-" the modulator runs but changes nothing.',
+	'g:mod4phase': 'Where in its cycle modulator 4 starts, so several modulators can run out of phase with each other.',
+	'g:mod4shape': 'Waveform of modulator 4: the shape of the value it sends.',
+	'g:modo': 'Chords: every note of the set sounds together. Arpeggio: one note per step.',
+	'g:nmax': 'Largest set allowed through the filter: its maximum number of notes.',
+	'g:nmin': 'Smallest set allowed through the filter: its minimum number of notes.',
+	'g:octm': 'Master octave: shifts every voice at once, on top of each voice\'s own octave. Ignored in Drum mode, where there are no registers to shift.',
+	'g:orden': 'The route through the catalogue. Card: generation order. Forte: catalogue order. Cons: most consonant to most tense, by interval vector. Vec: chained by common tones. McKay / Natural / Modal: the Harmonic Processions orderings. Vector: by distance between interval vectors rather than shared notes.',
+	'g:ordrev': 'Walks the chosen Order backwards: the next set is the previous neighbour instead of the next one. What sounds now does not change, only which way it moves from here. Applies to own-key voices too.',
+	'g:ornbase': 'Base interval in semitones (1-14) of the interval cycle the ornament is built on. This is the Slonimsky ladder the principal tones climb.',
+	'g:ornbasemode': 'Where the ornament\'s principal tones come from: Degrees (the current set), Quadritone (a fixed four-note scheme), or Series (a generated progression).',
+	'g:ornnotas': 'How many ornament notes (1-4) are added around each principal tone.',
+	'g:ornquad': 'Which quadritone scheme the principal tones follow, when the base mode is Quadritone.',
+	'g:ornstep': 'The step the interval cycle climbs by, when the ornament\'s base is not taken from the set.',
+	'g:ornt': 'Ornament type: how the extra notes sit around each principal tone -- infra-, inter- or ultrapolation, in Slonimsky\'s terms.',
+	'g:pad': 'Which MIDI note is the first pad. 36 is C1, the bottom-left pad of a Live Drum Rack, and the twelve pitch classes run upward from there.',
+	'g:panic': 'All notes off. Releases anything left hanging, including a chord the listener latched.',
+	'g:patron': 'Reading order: how the engine walks the notes of the current set -- straight, super-permutation, modes, coprime, zigzag, urn, or ornament.',
+	'g:pborrar': 'Clears the selected slot.',
+	'g:pcargar': 'Loads the selected slot.',
+	'g:pguardar': 'Saves the current state into the selected slot.',
+	'g:progfav': 'Plays the favourites in the order you marked them rather than catalogue order, which turns a short list into a chord progression. It overrides Link and Tension and ignores the filter -- you picked these by hand. To move one to the end, unmark it and mark it again.',
+	'g:raizrate': 'How many steps between notches of the root walk. At 0 the walk stays tied to the harmony and moves when the set moves. Any other value gives Root Seq its OWN clock, whether or not the set ever changes.',
+	'g:randacc': 'Fills the accent grid at random, within the current cycle length. How much gets filled is the percentage beside it.',
+	'g:randaccpct': 'What share of the cells inside the current accent cycle the random fill turns on. Cells outside the cycle are cleared.',
+	'g:randmask': 'Fills the chromatic mask at random. How much of it gets filled is the percentage beside it.',
+	'g:randmaskpct': 'What share of the 12 mask cells the random fill turns on -- at least one, so the mask filter is never emptied by accident.',
+	'g:rango': 'Writes the register of all four voices at once, V1 the highest. Free releases them entirely; the rest are working ranges, not the extremes of an instrument. Nothing is locked afterwards, so a voice you nudge shows an amber Mn/Sp.',
+	'g:rasg': 'Strum: sub-ticks between one note of a chord and the next. At 0 the chord is struck together. It is measured in sub-ticks, so at Sub 1 a strum of 2 spreads the chord over two whole steps.',
+	'g:rata': 'How many times an accented note repeats (ratchet). 1 is a single note.',
+	'g:ratcaida': 'How much velocity the roll loses between its first repeat and its last.',
+	'g:ratn': 'How many times an unaccented note repeats (ratchet). 1 is a single note.',
+	'g:ratprob': 'How often the ratchet actually fires. At 100 always; at 30 one in three.',
+	'g:reparto': 'How this engine\'s notes are shared out over the bus -- which of them travel for other devices to pick up.',
+	'g:rndacc': 'Include the accent grid in what Throw re-rolls.',
+	'g:rndset': 'Include the set in what Throw re-rolls.',
+	'g:rndsil': 'Include the rest chances in what Throw re-rolls.',
+	'g:root': 'The root everything is transposed to, in semitones. It is the origin of the root walk, so moving it carries the whole sequence with it.',
+	'g:rootseq': 'The route the root walks: fourths, fifths, thirds, chromatic, whole tones, tritones, I-IV-V, or a fresh root drawn at random. Off leaves the root where the dial puts it.',
+	'g:rotacion': 'Rotates the current set: which note starts it. In Chords it picks the inversion (C-E-G, E-G-C, G-C-E); in Arpeggio it adds to the automatic rotation rather than fighting it. It wraps at the set size, so in a triad 3 equals 0. Voice leading still wins when it is on.',
+	'g:rotarx': 'How often the set\'s shape rotates. Off: once per complete pass of the catalogue. On: on every set change.',
+	'g:run': 'Starts and stops the engine. In Sync mode Live also has to be playing.',
+	'g:salto': 'How many degrees the Coprime reading steps by. The engine snaps it to the nearest coprime of the set size, which is the only thing that guarantees hitting every degree before repeating. On a 7-note set, 2 is a chain of thirds.',
+	'g:seguir': 'Takes the harmony from the bus instead of choosing it. With this on, this device\'s clock no longer moves the catalogue -- the broadcaster decides. A follower never broadcasts, so no loop is possible.',
+	'g:serpeak': 'Where the series turns around, when the base mode is Series.',
+	'g:serstart': 'First interval of the generated series the principal tones follow, when the base mode is Series.',
+	'g:serstep': 'How much the series grows at each step, when the base mode is Series.',
+	'g:set': 'Picks the pitch-class set from Forte\'s catalogue (1-351). Moving it jumps there at once, even with Lock off.',
+	'g:silacc': 'Chance, in percent, that an accented step rests instead of playing.',
+	'g:silnorm': 'Chance, in percent, that an unaccented step rests instead of playing.',
+	'g:silpre': 'Loads a ready-made pair of rest chances for the Normal and Accent groups -- a quick way to open up a dense part without dialling both by hand.',
+	'g:slot': 'Which of the twenty preset slots Save, Load and Clear work on. The slot itself is in no preset: if it were, loading one would move the slot and the next click would land somewhere else.',
+	'g:sub': 'Sub-ticks per step: the fine grid that swing, strum and per-voice delay are measured in. The higher the Sub, the finer they can be placed; at Sub 1 there is nothing between the steps for them to use.',
+	'g:swing': '50 is straight. 66 is triplet feel, the off-beat landing two thirds of the way. 75 is a dotted lilt. It only moves in whole sub-ticks, so the higher the Sub, the finer the swing.',
+	'g:tension': 'Length of the tension cycle, counted in set changes. The harmony is asked to follow a consonance curve across that many changes instead of simply walking the order. At 0 it is off.',
+	'g:tensmodel': 'Which measure of consonance the tension curve judges a set by.',
+	'g:tie': 'On: the accent cycle takes the length of the current set, so accents always land on the same notes of the chord. Off: it uses the fixed Cycle length.',
+	'g:tirar': 'Throw: re-rolls everything the three switches beside it allow -- the set, the rests, the accents -- in one go.',
+	'g:velmaxa': 'Highest velocity for accented notes.',
+	'g:velmaxn': 'Highest velocity for unaccented notes.',
+	'g:velmina': 'Lowest velocity for accented notes.',
+	'g:velminn': 'Lowest velocity for unaccented notes. Each note is drawn at random between Min and Max.',
+	'g:vmax1': 'Most semitones (ic1) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmax2': 'Most whole tones (ic2) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmax3': 'Most minor thirds (ic3) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmax4': 'Most major thirds (ic4) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmax5': 'Most fourths (ic5) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmax6': 'Most tritones (ic6) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin1': 'Fewest semitones (ic1) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin2': 'Fewest whole tones (ic2) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin3': 'Fewest minor thirds (ic3) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin4': 'Fewest major thirds (ic4) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin5': 'Fewest fourths (ic5) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:vmin6': 'Fewest tritones (ic6) a set may contain and still pass the filter. The interval vector counts how many of each interval class a set holds.',
+	'g:voicing': 'How a chord is spread in Chords mode. Extended is the classic: notes spread evenly over four octaves. Closed stacks them inside one. Drop 2, Drop 3 and Drop 2+4 lower inner voices an octave for the wind-section sound. Open alternates. A drop that does not fit the chord falls back to closed rather than sinking the bass.',
+	'v:art': 'Own articulation: this voice stops reading the Normal/Accent bands and uses its own velocity, note length and rest chance -- the four chips beside it. Off by default.',
+	'v:artdur': 'Note length for this voice as a note-value denominator: 4 = quarter, 8 = eighth, 16 = sixteenth. Used only when its own articulation is on.',
+	'v:artsil': 'Chance, in percent, that this voice rests instead of playing -- used only when its own articulation is on.',
+	'v:artvmax': 'Highest velocity for this voice, used only when its own articulation is on.',
+	'v:artvmin': 'Lowest velocity for this voice, used only when its own articulation is on. Each note is drawn at random between Min and Max.',
+	'v:copsalto': 'Coprime step for this voice (1-11, snapped to the nearest coprime of the set size), when its own reading is on and its Pattern is Coprime. Otherwise the global step is used.',
+	'v:desf': 'Fixed delay for this voice, in sub-ticks: how late it plays relative to the step. This is what turns four voices on one rhythm into an ensemble that is not quite together. Different from Phase, which moves which cell it reads. Needs Sub above 1.',
+	'v:dir': 'Reading direction for this voice, used only when its own reading is on.',
+	'v:div': 'Clock divider: this voice sounds once every N steps, and its cursor only advances when it sounds. Different dividers drift the voices apart and bring them back together at their common multiple. Needs Independent Voices.',
+	'v:euck': 'How many pulses this voice\'s euclidean rhythm spreads over its length. A cell that is not a pulse is a rest, and the cursor still advances through it.',
+	'v:euclen': 'Length of this voice\'s own euclidean rhythm -- how many cells the pattern spans. At 0 there is no pattern and the voice plays on every step it is given.',
+	'v:eucrot': 'Rotates this voice\'s euclidean rhythm: which cell the pattern starts on. The same pattern rotated is a different rhythm.',
+	'v:ext': 'External: the shared clock skips this voice, and it only sounds when a Hub in Send mode triggers it.',
+	'v:fase': 'Shifts where this voice reads the accent grid, so the voices do not all accent on the same step.',
+	'v:fijar': 'Freezes this voice\'s own set: it stops advancing on each harmony change and keeps sounding where it is, while other own-key voices carry on. It does NOT turn own key off -- to rejoin the shared harmony, turn that off instead.',
+	'v:grado': 'How many DEGREES of the set this voice sits above its own reading. 0,1,2,3 across four voices gives a four-part chord; negative puts it below. Always active in Arpeggio, and in Chords only under Independent Voices.',
+	'v:lec': 'Own reading: this voice stops following the global Pattern and Direction and uses its own. Only does anything under Independent Voices or an external trigger, which is where a voice already has a cursor of its own. Off by default.',
+	'v:octbase': 'Base octave for this voice, on top of the root and the master octave. The octave pattern (Ev / Rg / Ps) starts from here.',
+	'v:octevery': 'How many notes pass before this voice\'s octave pattern moves up one step.',
+	'v:octrange': 'How far the octave pattern travels, in octaves. Negative goes down instead of up. At 0 the voice stays at its fixed octave.',
+	'v:octsteps': 'How many stops there are between 0 and the range. Fewer steps means bigger, less gradual jumps.',
+	'v:on': 'Voice on/off. A voice that is off is muted in the engine: neither the shared clock nor an external trigger will sound it.',
+	'v:ornbase': 'Base interval in semitones (1-14) for this voice\'s ornament, when its own reading is on and its Pattern is Ornament. Ignored the rest of the time.',
+	'v:ornnotas': 'How many ornament notes (1-4) this voice adds, when its own reading is on and its Pattern is Ornament. Ignored the rest of the time.',
+	'v:ornt': 'Ornament type for this voice, when its own reading is on and its Pattern is Ornament. Ignored the rest of the time.',
+	'v:patron': 'Reading order for this voice, used only when its own reading is on.',
+	'v:rgmin': 'Lowest MIDI note this voice may sound. Notes outside the register are folded by whole octaves and never remapped, so the pitch class survives. Amber means this voice no longer matches the Range template the menu is showing.',
+	'v:rgspan': 'How wide this voice\'s register is, in semitones counted up from Min. Amber means this voice no longer matches the Range template the menu is showing.',
+	'v:rootoff': 'This voice\'s own transpose in semitones, read only when its own key is on. The rest of the time the voice follows the shared harmony.',
+	'v:rrate': 'This voice\'s own Root Rhythm: one notch of its root walk every N steps. At 0 it stays on the shared walk. The route stays the global Root Seq -- only the clock is the voice\'s -- so two voices at different rates travel the same road out of phase.',
+	'v:setbox': 'This voice\'s own set (1-351), read only when its own key is on. The rest of the time the voice follows the shared harmony.',
+	'v:ton': 'Own key: this voice stops following the global Set and Root and plays in its OWN key (bitonal/polytonal). Only does anything under Independent Voices or an external trigger, same as own reading. Off by default.',
+	'v:trig': 'Fires this voice once, right now -- the same momentary trigger as the panel\'s Trig button. Nothing is stored; it is for auditioning a voice without the transport.'
+};
+// ---- FS2_HELP END ----
+
+var TIP_DWELL_MS = 450;   // how still the pointer has to be before the balloon appears
+var hoverKey = '';        // what the pointer is over right now
+var hoverX = 0, hoverY = 0, hoverAt = 0;
+var tipShown = '';        // what is actually ON SCREEN; '' = no balloon
+
+// Which chip is under the pointer, as a HELP key. Reuses the very tables onmousedown() hit-tests --
+// paint() rebuilds chipGeo/globalChipGeo every frame, so there is no second geometry to keep in step.
+// The sidebar is scanned first because it is drawn over its own fixed columns, never inside a row.
+function helpKeyAt(x, y) {
+	var k;
+	for (k in globalChipGeo) {
+		if (ptIn(globalChipGeo[k], x, y)) return 'g:' + k;
+	}
+	if (!rowGeo || y < rowGeo.headH) return '';
+	var v = Math.floor((y - rowGeo.headH) / rowGeo.rowH);
+	if (!(v >= 0 && v < rowGeo.nRows)) return '';
+	var cg = chipGeo[v];
+	if (!cg) return '';
+	for (k in cg) {
+		if (ptIn(cg[k], x, y)) return 'v:' + k;
+	}
+	return '';
+}
+
+function onidle(x, y) {
+	// paint() draws translated by leftMargin() but the mouse arrives untranslated -- the same
+	// correction every other handler in this file opens with. Without it the tooltips are 388px
+	// off in the "Ambas" view, and only there, which is a nasty way to find out.
+	x -= leftMargin();
+	if (x === hoverX && y === hoverY) return;
+	hoverX = x; hoverY = y;
+	var k = helpKeyAt(x, y);
+	if (k === hoverKey) return;
+	hoverKey = k;
+	hoverAt = (new Date()).getTime();   // the dwell restarts on every new chip
+	// Moving off a chip takes the balloon away immediately; arriving at one waits out the dwell,
+	// which tipTick() does. Redrawing only on that transition keeps plain mouse travel free.
+	if (tipShown) { tipShown = ''; mgraphics.redraw(); }
+}
+
+function onidleout() {
+	hoverKey = '';
+	if (tipShown) { tipShown = ''; mgraphics.redraw(); }
+}
+
+// Published from the 250ms window-fit task rather than from onidle() itself, so the balloon waits
+// out TIP_DWELL_MS of stillness instead of flashing under a pointer that is merely crossing the
+// panel. No new timer: that task already runs, and already redraws.
+function tipTick() {
+	if (!hoverKey || tipShown === hoverKey) return;
+	if (dragBox || openMenu) return;   // scrubbing or picking from a list is not asking for help
+	if (!HELP[hoverKey]) return;
+	if ((new Date()).getTime() - hoverAt < TIP_DWELL_MS) return;
+	tipShown = hoverKey;
+	mgraphics.redraw();
+}
+
+// Word-wrap by character count. There is no text measurement anywhere in this repo (no
+// text_measure, no sketch.gettextinfo); every label in these three files is placed with a
+// `length * k` estimate, and this follows the same convention rather than inventing a second one.
+function wrapText(s, cols) {
+	var words = String(s).split(' ');
+	var lines = [], cur = '';
+	for (var i = 0; i < words.length; i++) {
+		var cand = cur ? cur + ' ' + words[i] : words[i];
+		if (cand.length > cols && cur) { lines.push(cur); cur = words[i]; }
+		else cur = cand;
+	}
+	if (cur) lines.push(cur);
+	return lines;
+}
+
+var TIP_FS = 10, TIP_CHW = 5.1, TIP_LH = 13, TIP_PAD = 6, TIP_COLS = 46;
+
+// Drawn at the very END of paint(), after the dropdown, for the reason documented there: anything
+// drawn before the forma / escala / acentos / status strips gets painted over by them.
+function drawTooltip(W, H) {
+	if (!tipShown) return;
+	var text = HELP[tipShown];
+	if (!text) return;
+	var lines = wrapText(text, TIP_COLS), i, maxLen = 0;
+	for (i = 0; i < lines.length; i++) if (lines[i].length > maxLen) maxLen = lines[i].length;
+	var tw = Math.min(W - 8, Math.round(maxLen * TIP_CHW) + TIP_PAD * 2);
+	var th = lines.length * TIP_LH + TIP_PAD * 2 - 3;
+	// Same placement rule the dropdown uses: prefer just below-right of the pointer, flip above it
+	// when there is no room below, and clamp to the panel either way so it never runs off-screen.
+	var tx = hoverX + 12, ty = hoverY + 16;
+	if (tx + tw > W) tx = Math.max(2, W - tw - 2);
+	if (ty + th > H) ty = Math.max(2, hoverY - th - 6);
+	if (ty < 2) ty = 2;
+	mgraphics.set_source_rgba([0.06, 0.06, 0.07, 0.97]);
+	mgraphics.rectangle(tx, ty, tw, th);
+	mgraphics.fill();
+	mgraphics.set_source_rgba([0.55, 0.45, 0.2, 0.9]);
+	mgraphics.set_line_width(1);
+	mgraphics.rectangle(tx + 0.5, ty + 0.5, tw - 1, th - 1);
+	mgraphics.stroke();
+	mgraphics.set_source_rgba([0.82, 0.82, 0.86, 1]);
+	mgraphics.set_font_size(TIP_FS);
+	for (i = 0; i < lines.length; i++) {
+		mgraphics.move_to(tx + TIP_PAD, ty + TIP_PAD + (i + 1) * TIP_LH - 4);
+		mgraphics.show_text(lines[i]);
+	}
 }
 
 // alarm (Ola 3): its own color, independent of on/disabled/dim -- for the plan's "trampas
@@ -1743,6 +2036,7 @@ function onclick(x, y, but) {
 	if (cg.rgmin && ptIn(cg.rgmin, x, y)) { dragBox = { v: v, kind: 'rgmin', startY: y, startVal: vk.rgMin }; return; }
 	if (cg.rgspan && ptIn(cg.rgspan, x, y)) { dragBox = { v: v, kind: 'rgspan', startY: y, startVal: vk.rgSpan }; return; }
 	if (cg.rootoff && ptIn(cg.rootoff, x, y)) { dragBox = { v: v, kind: 'rootoff', startY: y, startVal: vk.rootOff }; return; }
+	if (cg.rrate && ptIn(cg.rrate, x, y)) { dragBox = { v: v, kind: 'rrate', startY: y, startVal: vk.rootRate }; return; }
 	// Ritmo euclidiano por voz -- also unconditional (Largo=0 already means "no pattern", the
 	// panel doesn't gate these behind anything either).
 	if (cg.euclen && ptIn(cg.euclen, x, y)) {
@@ -1986,9 +2280,14 @@ function paint() {
 	for (var _aci = 0; _aci < ACCENT_MAX_UI && !accInUse; _aci++) {
 		if ((accentGridUI[_aci] ? 1 : 0) !== (_aci === 0 ? 1 : 0)) accInUse = true;   // default strip = only step 1 accented
 	}
+	// The register column's dot now asks the ENGINE (vkey's regDirty) instead of comparing against
+	// this file's own DRAG_SPECS defaults: the clamp's real reference is whichever Rango template is
+	// loaded, which only forteseq2.js knows. rrate joins it through specsChanged(), since a voice's
+	// own Ritmo Raiz genuinely has no reference but its default of 0.
 	var regInUse = false;
 	for (var _riu = 0; _riu < nRows && !regInUse; _riu++) {
-		regInUse = specsChanged(vkeyInfo[_riu], ['octbase', 'octevery', 'octrange', 'octsteps', 'rgmin', 'rgspan', 'rootoff']);
+		var _rvk = vkeyInfo[_riu];
+		regInUse = !!(_rvk && _rvk.regDirty) || specsChanged(_rvk, ['rrate']);
 	}
 
 	// Draws a collapsed column's narrow strip: one-letter tag + an "in use" dot below it. The dot
@@ -2676,7 +2975,12 @@ function paint() {
 		// same "real but not what's sounding" situation as setMoot above, same treatment: dim the
 		// readouts, hide the controls that would otherwise look like they do something right now.
 		var selfCursored = vk && (vk.ext || (globalState.mode === 1 && globalState.indep));
-		var keyMoot = vk && vk.keyOwn && !selfCursored;
+		// rootRate joins keyOwn here: a voice with its own Ritmo Raiz resolves its root through
+		// voiceRootFor() exactly like a TonProp voice does, so off a self-cursor it is inert in
+		// exactly the same way. Without it the tonic read "E" at full brightness while the voice
+		// was audibly playing the shared C -- and with Ton unlit there was nothing to explain why,
+		// which is worse than the TonProp case it was copied from.
+		var keyMoot = vk && (vk.keyOwn || vk.rootRate > 0) && !selfCursored;
 		var readMoot = vk && vk.readOwn && !selfCursored;
 		var keyDim = keyMoot ? 0.4 : 1.0;
 		var readDim = readMoot ? 0.4 : 1.0;
@@ -2846,11 +3150,28 @@ function paint() {
 				var dx1 = dx0 + DETAIL_W;
 				var d2dis = !!globalState.drum;
 				var sgn = function (n) { return (n > 0 ? '+' : '') + n; };
+				// The engine's per-control "you moved this off the template/default" bits
+				// (voiceRegDirty() in forteseq2.js). ONE BIT PER CHIP: bit 0 is the Min/Span pair
+				// against the Rango template, bits 1-5 are each octave/root scalar against its own
+				// default. Fed to drawChip()'s `alarm`, so exactly the chips responsible say so
+				// instead of the whole cluster lighting up because one of them moved.
+				var rd = vk.regDirty;
+				// Los dos chips de RAIZ se apagan exactamente cuando su valor no entra en la cuenta
+				// que hace voiceRootFor() en forteseq2.js. Esa funcion solo se consulta si la voz
+				// tiene cursor propio -- sin eso emitVoices() le da a todas la misma nota ya
+				// resuelta y manda el camino de raiz GLOBAL, por mas que la voz tenga el suyo
+				// puesto. Y dentro de ella:
+				//     sin TonProp        -> cuenta el Ritmo Raiz propio, NO el Rz
+				//     TonProp + Follow   -> cuentan los dos
+				//     TonProp sin Follow -> raiz FIJA: cuenta el Rz, NO el Ritmo Raiz propio
+				// El resto del racimo (Oc/Ev/Rg/Ps/Mn/Sp) no pasa por ahi y se aplica siempre.
+				var rrMoot = !selfCursored || (!!vk.keyOwn && !vk.rootFollow);
+				var rzMoot = !selfCursored || !vk.keyOwn;
 				var d2rows = [
-					[['octbase', 'Oc' + sgn(vk.octBase)], ['octevery', 'Ev' + vk.octEvery]],
-					[['octrange', 'Rg' + sgn(vk.octRange)], ['octsteps', 'Ps' + vk.octSteps]],
-					[['rgmin', 'Mn' + vk.rgMin], ['rgspan', 'Sp' + vk.rgSpan]],
-					[['rootoff', 'Rz' + sgn(vk.rootOff)]]
+					[['octbase', 'Oc' + sgn(vk.octBase), !!(rd & 2), false], ['octevery', 'Ev' + vk.octEvery, !!(rd & 4), false]],
+					[['octrange', 'Rg' + sgn(vk.octRange), !!(rd & 8), false], ['octsteps', 'Ps' + vk.octSteps, !!(rd & 16), false]],
+					[['rgmin', 'Mn' + vk.rgMin, !!(rd & 1), false], ['rgspan', 'Sp' + vk.rgSpan, !!(rd & 1), false]],
+					[['rootoff', 'Rz' + sgn(vk.rootOff), !!(rd & 32), rzMoot], ['rrate', 'RR' + vk.rootRate, false, rrMoot]]
 				];
 				for (var d2r = 0; d2r < d2rows.length; d2r++) {
 					var d2y = y + 2 + d2r * (chipH + chipGap);
@@ -2859,7 +3180,12 @@ function paint() {
 					for (var d2c = 0; d2c < d2row.length; d2c++) {
 						var d2w = d2row.length === 1 ? DETAIL_W - 6 : dcw;
 						cg[d2row[d2c][0]] = { x: dx1 + d2c * (dcw + 2), y: d2y, w: d2w, h: chipH };
-						drawChip(cg[d2row[d2c][0]], d2row[d2c][1], false, d2dis);
+						// alarm and dim are mutually exclusive by drawChip()'s own contract, so
+						// wherever this chip is moot -- drum mode for the whole cluster, or a fixed
+						// per-voice root for RR -- the dim wins over the "you changed this" amber.
+						var d2off = d2dis || d2row[d2c][3];
+						drawChip(cg[d2row[d2c][0]], d2row[d2c][1], false, d2off,
+							undefined, !d2off && d2row[d2c][2]);
 					}
 				}
 			}
@@ -3165,4 +3491,6 @@ function paint() {
 			mgraphics.show_text(pendingMenu.items[mi]);
 		}
 	}
+
+	drawTooltip(W, H);   // last of all: the hover balloon floats above even the open dropdown
 }

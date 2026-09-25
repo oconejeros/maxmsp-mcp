@@ -113,6 +113,7 @@ function zset() {}
 function nbclear() {}
 function nbset() {}
 function vcolor() {}
+function vassign() {}   // solo lo usa fs2setpick.js
 function grango() {}
 function gsilpre() {}
 function gsilence() {}
