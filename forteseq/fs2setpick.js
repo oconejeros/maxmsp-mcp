@@ -348,8 +348,8 @@ function drawSwatchCell(cx, cy, cw, ch, rgb, highlighted, label) {
 	if (cw >= 34) {
 		var lum = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114;
 		mgraphics.set_source_rgba(lum > 0.55 ? [0, 0, 0, 0.9] : [0.95, 0.95, 0.95, 0.9]);
-		mgraphics.set_font_size(8);
-		mgraphics.move_to(cx + 3, cy + ch - 6);
+		mgraphics.set_font_size(11);   // was 8: forte numbers are the whole point of the swatch
+		mgraphics.move_to(cx + 4, cy + ch - 7);
 		mgraphics.show_text(label);
 	}
 }

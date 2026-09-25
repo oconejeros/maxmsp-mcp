@@ -257,10 +257,12 @@ function paint() {
 				var name = NN[pc];
 				mgraphics.move_to(x + cellW / 2 - name.length * (isCur ? 3.2 : 2.4), y + rowH / 2 + (isCur ? 2 : 3));
 				mgraphics.show_text(name);
-				// octave digit, small, tucked into the top-right corner
-				mgraphics.set_font_size(6.5);
-				mgraphics.move_to(x + cellW - 6.5, y + 7);
-				mgraphics.show_text(String(oct));
+				// octave digit, top-right corner. Was 6.5pt (unreadable at a glance); 10pt,
+				// right-aligned by string length so a 2-char "-1" does not run off the cell.
+				var octS = String(oct);
+				mgraphics.set_font_size(10);
+				mgraphics.move_to(x + cellW - 3 - octS.length * 5.6, y + 10);
+				mgraphics.show_text(octS);
 			}
 
 			// bang flash: centre cell only, white overlay + outline, scaled by pulse

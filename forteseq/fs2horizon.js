@@ -833,9 +833,10 @@ function drawCell(x, y, w, h, note, dim, label, restMark) {
 		mgraphics.show_text(name);
 		if (w >= 24) {
 			var oct = Math.floor(note / 12) - 1;   // MIDI 60 = C4
-			mgraphics.set_font_size(9);
-			mgraphics.move_to(x + w - 11, y + 11);
-			mgraphics.show_text(String(oct));
+			var octS = String(oct);
+			mgraphics.set_font_size(12);   // was 9: the register read as a speck next to the 14pt note name
+			mgraphics.move_to(x + w - 4 - octS.length * 6.6, y + 13);
+			mgraphics.show_text(octS);
 		}
 	}
 }
@@ -869,8 +870,24 @@ var dragBox = null;   // { v, kind, startY, startVal } or null -- v === -1 means
 // persisted (no globalState field, no gecho, no Live parameter) -- resets to all-expanded every time
 // this jsui reloads, same scope the user asked for. Acentos was left out on purpose: only the three
 // columns named in the request get this.
-var collapsedCols = { camino: false, mod: false, ses: false };
+// Later extended (same mechanism, nothing new) to Set/Setup ('setup'), Filtro ('filt'), Acentos
+// ('acc') and the per-voice second detail panel ('reg': Oct/Ev/Rg/Ps/Mn/Sp/Rz) -- all start expanded.
+var collapsedCols = { camino: false, mod: false, ses: false, setup: false, filt: false, acc: false, reg: false };
 var COLLAPSED_W = 16;
+var lastCollapseToggle = 0;   // ondblclick() ignores a double-click that begins with a strip toggle
+
+// True when any of `kinds` (keys of DRAG_SPECS/TOGGLE_SPECS) holds something other than its `def` in
+// `state` -- the "in use" test behind a collapsed strip's dot, reusing the same per-control defaults
+// double-click-to-reset already relies on, so "changed" here means exactly "double-click would
+// visibly reset it".
+function specsChanged(state, kinds) {
+	if (!state) return false;
+	for (var i = 0; i < kinds.length; i++) {
+		var spec = DRAG_SPECS[kinds[i]] || TOGGLE_SPECS[kinds[i]];
+		if (spec && state[spec.field] != spec.def) return true;
+	}
+	return false;
+}
 
 // Sidebar-only font bump (user asked to read the left panel more easily, "unos 2 numeros" bigger).
 // drawChip() reads this instead of a literal size so both the sidebar (globalChipGeo.*) and the
@@ -1179,6 +1196,9 @@ function resetControl(kind, v) {
 // no entry in either table and so are silently ignored, same as clicking empty space.
 function ondblclick(x, y) {
 	if (!rowGeo) return;
+	// The first click of this double-click just collapsed/expanded a column: the second lands on
+	// whatever chip is now under the cursor, and must not reset it.
+	if (new Date().getTime() - lastCollapseToggle < 600) return;
 	x -= leftMargin();   // see onclick()'s comment: undo paint()'s translate for hit-testing
 	// Whatever the first click of this double-click already armed/opened is stale now.
 	openMenu = null; menuItemGeo = []; dragBox = null;
@@ -1443,9 +1463,15 @@ function onclick(x, y, but) {
 	// on a collapsed strip never falls through to whatever used to be under it. `xxxHdr` is the
 	// header row when expanded (click collapses) or the whole column height when collapsed (click
 	// anywhere re-expands) -- see paint()'s header block for how that single rect is built each frame.
-	if (globalChipGeo.caminoHdr && ptIn(globalChipGeo.caminoHdr, x, y)) { collapsedCols.camino = !collapsedCols.camino; mgraphics.redraw(); return; }
-	if (globalChipGeo.modHdr && ptIn(globalChipGeo.modHdr, x, y)) { collapsedCols.mod = !collapsedCols.mod; mgraphics.redraw(); return; }
-	if (globalChipGeo.sesHdr && ptIn(globalChipGeo.sesHdr, x, y)) { collapsedCols.ses = !collapsedCols.ses; mgraphics.redraw(); return; }
+	for (var ck in collapsedCols) {
+		var chdr = globalChipGeo[ck + 'Hdr'];
+		if (chdr && ptIn(chdr, x, y)) {
+			collapsedCols[ck] = !collapsedCols[ck];
+			lastCollapseToggle = new Date().getTime();
+			mgraphics.redraw();
+			return;
+		}
+	}
 	// The fixed global sidebar -- checked before the per-row lookup below since it isn't part of
 	// any voice row (x never overlaps a row's own chips, but checking explicitly here avoids
 	// wastefully falling through to the row-hit math on every sidebar click).
@@ -1858,7 +1884,8 @@ function paint() {
 	}
 	var extraW = 0;
 	for (var _cci = 0; _cci < condCols.length; _cci++) extraW += G_GAP + condColW(condCols[_cci]);
-	var GLOBAL_W = 2 + G_COL_W + G_GAP + G_COL_W + 2 + extraW;
+	var col2W = collapsedCols.setup ? COLLAPSED_W : G_COL_W;   // Set/Setup: fixed column, collapses like the conditional ones
+	var GLOBAL_W = 2 + G_COL_W + G_GAP + col2W + 2 + extraW;
 	// barra fija de globales, hasta CUATRO columnas, siempre visible, dibujada una sola vez fuera del
 	// loop de filas. Las cuatro son de FILAS FIJAS (sin contador dinamico) para que nada dentro de una
 	// columna se corra por lo que pase en otra: col 1 = Ind/Flt/Lck/Dir/Patron/Enlace; col 2 = Set/
@@ -1879,7 +1906,8 @@ function paint() {
 	// room for a usable grid after it -- otherwise it just isn't drawn and the window degrades to
 	// the pre-Ola-10 layout, same rule showDetail already follows.
 	var showDetail2 = showDetail && (W - keyW - DETAIL_W) > 260;
-	if (showDetail2) keyW += DETAIL_W;
+	var detail2W = collapsedCols.reg ? COLLAPSED_W : DETAIL_W;   // 2nd voice panel collapses to a strip
+	if (showDetail2) keyW += detail2W;
 	var histW = Math.round(Math.min((W - keyW) * 0.28, HIST_MAX * 22));   // played notes
 	var histCW = histW / HIST_MAX;
 	var histX = W - histW;
@@ -1916,7 +1944,7 @@ function paint() {
 	chipFontSize = SIDEBAR_CHIP_FONT;   // bigger label text for the whole left panel; reset below the per-voice loop
 	var gChipH = 18, gChipGap = 2;
 	var g1x = 2, g1w = G_COL_W;
-	var g2x = g1x + g1w + G_GAP, g2w = G_COL_W;
+	var g2x = g1x + g1w + G_GAP, g2w = col2W;
 	var slot3x = g2x + g2w + G_GAP;   // where the first conditional slot starts
 	function condSlotX(name) {        // -1 when that family is closed -- its chips then never get a geo
 		var x = slot3x;
@@ -1927,9 +1955,9 @@ function paint() {
 		return -1;
 	}
 	var g3x = condSlotX('orn'), g3w = G_COL_W;
-	var g4x = condSlotX('filt'), g4w = G_COL_W;
+	var g4x = condSlotX('filt'), g4w = condColW('filt');
 	var g5x = condSlotX('groove'), g5w = G_COL_W;
-	var g6x = condSlotX('acc'), g6w = G_COL_W;
+	var g6x = condSlotX('acc'), g6w = condColW('acc');
 	var g7x = condSlotX('camino'), g7w = condColW('camino');
 	var g8x = condSlotX('mod'), g8w = condColW('mod');
 	var g9x = condSlotX('ses'), g9w = condColW('ses');
@@ -1947,6 +1975,21 @@ function paint() {
 		if (globalState['mod' + _miu + 'dest'] !== 0 && globalState['mod' + _miu + 'depth'] !== 0) { modInUse = true; break; }
 	}
 	var sesInUse = Math.round(globalState.listen) !== 0 || !!globalState.emit || !!globalState.seguir;
+	// Set/Setup, Filtro, Acentos and the 2nd voice panel: "changed" = any control off its double-click
+	// default (specsChanged). The current Set index is deliberately not counted for Setup -- it moves
+	// on its own every step, so it would keep the dot lit permanently.
+	var setupInUse = specsChanged(globalState, ['groot', 'gharm', 'graiz', 'gorden', 'gordrev', 'grango', 'gsilpre',
+		'gsilnorm', 'gsilacc', 'grotarx', 'gvoicing', 'gcond']) || Math.round(globalState.rotacion) !== 0;
+	var filtInUse = specsChanged(globalState, ['gnmin', 'gnmax', 'gmaskmode', 'gmaskk', 'gmaskfit',
+		'gvmin1', 'gvmax1', 'gvmin2', 'gvmax2', 'gvmin3', 'gvmax3', 'gvmin4', 'gvmax4', 'gvmin5', 'gvmax5', 'gvmin6', 'gvmax6']);
+	var accInUse = specsChanged(globalState, ['gtie', 'geuc', 'gciclo', 'geurot', 'gvelminn', 'gvelmina', 'gvelmaxn', 'gvelmaxa', 'gfign', 'gfiga']);
+	for (var _aci = 0; _aci < ACCENT_MAX_UI && !accInUse; _aci++) {
+		if ((accentGridUI[_aci] ? 1 : 0) !== (_aci === 0 ? 1 : 0)) accInUse = true;   // default strip = only step 1 accented
+	}
+	var regInUse = false;
+	for (var _riu = 0; _riu < nRows && !regInUse; _riu++) {
+		regInUse = specsChanged(vkeyInfo[_riu], ['octbase', 'octevery', 'octrange', 'octsteps', 'rgmin', 'rgspan', 'rootoff']);
+	}
 
 	// Draws a collapsed column's narrow strip: one-letter tag + an "in use" dot below it. The dot
 	// reuses drawChip's own "on" amber when lit, dim gray otherwise -- no new palette invented.
@@ -1965,65 +2008,48 @@ function paint() {
 	mgraphics.set_font_size(10);
 	mgraphics.move_to(g1x, headH - 5);
 	mgraphics.show_text('Global');
-	mgraphics.move_to(g2x, headH - 5);
-	mgraphics.show_text('Set/Setup');
+	// Every collapsible column (Set/Setup, Filtro, Acentos, Camino, Modulacion, Sesion, and the 2nd
+	// per-voice panel "Registro") shares this one header: `<key>Hdr` in globalChipGeo doubles as the
+	// click target both ways -- just the header row when expanded (click collapses), the whole
+	// column height when collapsed (click anywhere re-expands). The family stays in condCols either
+	// way (condColW() is what shrinks it), so nothing before it ever moves.
+	function drawColHeader(key, x, w, title, letter, inUse) {
+		if (collapsedCols[key]) {
+			globalChipGeo[key + 'Hdr'] = { x: x, y: 0, w: w, h: H };
+			drawCollapsedStrip(x, w, letter, inUse);
+		} else {
+			globalChipGeo[key + 'Hdr'] = { x: x, y: 0, w: w, h: headH };
+			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+			mgraphics.set_font_size(10);
+			mgraphics.move_to(x, headH - 5);
+			mgraphics.show_text(title);
+			// A small "in use" dot beside the title too, so a change is visible before collapsing.
+			if (inUse) {
+				mgraphics.set_source_rgba([1, 0.85, 0.55, 1]);
+				mgraphics.rectangle(x + w - 8, headH - 11, 4, 4);
+				mgraphics.fill();
+			}
+		}
+	}
+	drawColHeader('setup', g2x, g2w, 'Set/Setup', 'T', setupInUse);
 	if (ornOpen) {
+		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+		mgraphics.set_font_size(10);
 		mgraphics.move_to(g3x, headH - 5);
 		mgraphics.show_text('Ornamento');
 	}
-	if (filtOpen) {
-		mgraphics.move_to(g4x, headH - 5);
-		mgraphics.show_text('Filtro');
-	}
+	if (filtOpen) drawColHeader('filt', g4x, g4w, 'Filtro', 'F', filtInUse);
 	if (grooveOpen) {
+		mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
+		mgraphics.set_font_size(10);
 		mgraphics.move_to(g5x, headH - 5);
 		mgraphics.show_text('Groove');
 	}
-	if (accOpen) {
-		mgraphics.move_to(g6x, headH - 5);
-		mgraphics.show_text('Acentos');
-	}
-	// Camino/Modulacion/Sesion: collapsible (density/clarity pass). `caminoHdr`/`modHdr`/`sesHdr`
-	// double as the click target both ways -- when expanded it covers just the header row (click
-	// collapses); when collapsed it covers the whole column height (click anywhere re-expands).
-	// The family stays IN condCols either way (caminoOpen/modOpen/sesOpen never go false) -- only
-	// condColW()'s width answer changes, so col 1/2 and the slots before this one never move.
-	if (caminoOpen) {
-		if (collapsedCols.camino) {
-			globalChipGeo.caminoHdr = { x: g7x, y: 0, w: g7w, h: H };
-			drawCollapsedStrip(g7x, g7w, 'C', caminoInUse);
-		} else {
-			globalChipGeo.caminoHdr = { x: g7x, y: 0, w: g7w, h: headH };
-			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-			mgraphics.set_font_size(10);
-			mgraphics.move_to(g7x, headH - 5);
-			mgraphics.show_text('Camino');
-		}
-	}
-	if (modOpen) {
-		if (collapsedCols.mod) {
-			globalChipGeo.modHdr = { x: g8x, y: 0, w: g8w, h: H };
-			drawCollapsedStrip(g8x, g8w, 'M', modInUse);
-		} else {
-			globalChipGeo.modHdr = { x: g8x, y: 0, w: g8w, h: headH };
-			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-			mgraphics.set_font_size(10);
-			mgraphics.move_to(g8x, headH - 5);
-			mgraphics.show_text('Modulacion');
-		}
-	}
-	if (sesOpen) {
-		if (collapsedCols.ses) {
-			globalChipGeo.sesHdr = { x: g9x, y: 0, w: g9w, h: H };
-			drawCollapsedStrip(g9x, g9w, 'S', sesInUse);
-		} else {
-			globalChipGeo.sesHdr = { x: g9x, y: 0, w: g9w, h: headH };
-			mgraphics.set_source_rgba([0.5, 0.5, 0.55, 1]);
-			mgraphics.set_font_size(10);
-			mgraphics.move_to(g9x, headH - 5);
-			mgraphics.show_text('Sesion');
-		}
-	}
+	if (accOpen) drawColHeader('acc', g6x, g6w, 'Acentos', 'A', accInUse);
+	if (caminoOpen) drawColHeader('camino', g7x, g7w, 'Camino', 'C', caminoInUse);
+	if (modOpen) drawColHeader('mod', g8x, g8w, 'Modulacion', 'M', modInUse);
+	if (sesOpen) drawColHeader('ses', g9x, g9w, 'Sesion', 'S', sesInUse);
+	if (showDetail2) drawColHeader('reg', GLOBAL_W + GATE_W + TXT_W + DETAIL_W + 2, detail2W, 'Registro', 'R', regInUse);
 
 	// Column 1 -- Run/Ind/Flt/Lck/Dir/Patron/Enlace, FIXED rows 0-4. The four pure on/off switches
 	// (Run/Ind/Flt/Lck) are paired two-per-row, half width each, same g1dcw idiom as OctM+Drum below
@@ -2119,6 +2145,7 @@ function paint() {
 	// Column 2 -- Set/Root/R.Arm/Orden/Rango/PresetSil/SilNorm+SilAcc, FIXED rows 0-6. Same
 	// drag-scrub DRAG_SPECS entries as before for Set/Root/R.Arm/SilNorm/SilAcc; Orden/Rango/
 	// PresetSil are dropdowns like Patron above.
+	if (!collapsedCols.setup) {
 	if (gFits(0)) {
 		globalChipGeo.set = { x: g2x, y: gRow(0), w: g2w, h: gChipH };
 		drawChip(globalChipGeo.set, 'Set ' + globalState.setIdx, false);
@@ -2207,6 +2234,8 @@ function paint() {
 		if (gRepOpen) pendingMenu = { v: -1, kind: 'greparto', anchor: globalChipGeo.reparto, items: REPARTO_NAMES, cur: -1 };
 	}
 
+	} // !collapsedCols.setup
+
 	// Column 3 -- the WHOLE Ornamento cluster (Tipo/Notas+Base/BaseModo), only drawn while Patron
 	// IS Ornamento (ornOpen, computed above alongside GLOBAL_W). Not gated further by voice or
 	// panel state -- if col 3 is drawn at all it always has all three rows (FIXED 0-2), since
@@ -2275,7 +2304,7 @@ function paint() {
 	// Vector IC WAS left out of the original round (comment used to call it "composition-time, not
 	// a live-performance knob") but the plan's Ola 5 overturns that: it is the one filter condition
 	// Mask Fit cannot route around (the vector is transposition-invariant), so it belongs here.
-	if (filtOpen) {
+	if (filtOpen && !collapsedCols.filt) {
 		if (gFits(0)) {
 			var ndcw = (g4w - 2) / 2;
 			globalChipGeo.nmin = { x: g4x, y: gRow(0), w: ndcw, h: gChipH };
@@ -2390,6 +2419,7 @@ function paint() {
 	// rows 0-5 like col 1/2. Ciclo dimmed while Tie is on (its value is ignored, see
 	// articulationFor()); Pulsos/Giro HIDDEN (not just dimmed) while Euclid is off -- they carry no
 	// reading at all then, same treatment as col 3/4's mutually-exclusive sub-rows.
+	if (!collapsedCols.acc) {
 	if (gFits(0)) {
 		var cdcw = (g6w - 2) / 2;
 		globalChipGeo.ciclo = { x: g6x, y: gRow(0), w: cdcw, h: gChipH };
@@ -2439,6 +2469,8 @@ function paint() {
 		globalChipGeo.randacc = { x: g6x, y: gRow(7), w: g6w, h: gChipH };
 		drawChip(globalChipGeo.randacc, 'Azar Acc', false, undefined, undefined, undefined, 'action');
 	}
+
+	} // !collapsedCols.acc
 
 	// Column 7 -- Camino armonico (Tension+Curva+Modelo, Prog Favoritos+Solo Fav+Fav+Limpiar favs).
 	// No gate propio (caminoOpen is always true, see its definition up top) -- always drawn, FIXED
@@ -2810,7 +2842,7 @@ function paint() {
 			// gates: these always read/write (Propia doesn't touch them). Drum on makes the octave
 			// pattern, the register clamp AND the voice root moot (padFor() ignores all three), so they
 			// dim rather than hide -- same rule as Rango/Oct Maestra in the sidebar.
-			if (showDetail2 && vk) {
+			if (showDetail2 && vk && !collapsedCols.reg) {
 				var dx1 = dx0 + DETAIL_W;
 				var d2dis = !!globalState.drum;
 				var sgn = function (n) { return (n > 0 ? '+' : '') + n; };
@@ -2961,38 +2993,6 @@ function paint() {
 		}
 	}
 
-	// The open Patron/OrnTipo dropdown, if any -- drawn last so it floats on top of every row,
-	// including whichever one comes after its own (see pendingMenu's own comment above).
-	menuItemGeo = [];
-	if (pendingMenu) {
-		var miH = 18;   // matches the bumped chipH so the open list reads at the same size as the chips
-		var mx = pendingMenu.anchor.x;
-		var mw = Math.max(pendingMenu.anchor.w, 110);
-		var totalH = miH * pendingMenu.items.length + 2;
-		var my = pendingMenu.anchor.y + pendingMenu.anchor.h + 1;
-		if (my + totalH > H) my = pendingMenu.anchor.y - totalH - 1;   // flip upward if it would run off the bottom
-		if (my < 0) my = 0;
-		mgraphics.set_source_rgba([0.08, 0.08, 0.09, 0.98]);
-		mgraphics.rectangle(mx, my, mw, totalH);
-		mgraphics.fill();
-		mgraphics.set_source_rgba([0, 0, 0, 0.8]);
-		mgraphics.set_line_width(1);
-		mgraphics.rectangle(mx, my, mw, totalH);
-		mgraphics.stroke();
-		for (var mi = 0; mi < pendingMenu.items.length; mi++) {
-			var ir = { x: mx, y: my + 1 + mi * miH, w: mw, h: miH };
-			menuItemGeo.push(ir);
-			var selected = (mi === pendingMenu.cur);
-			mgraphics.set_source_rgba(selected ? [0.35, 0.28, 0.12, 1] : [0.08, 0.08, 0.09, 1]);
-			mgraphics.rectangle(ir.x, ir.y, ir.w, ir.h);
-			mgraphics.fill();
-			mgraphics.set_source_rgba(selected ? [1, 0.85, 0.55, 1] : [0.75, 0.75, 0.8, 1]);
-			mgraphics.set_font_size(11);
-			mgraphics.move_to(ir.x + 3, ir.y + ir.h - 4);
-			mgraphics.show_text(pendingMenu.items[mi]);
-		}
-	}
-
 	// separator between grid and history zone
 	mgraphics.set_source_rgba([0, 0, 0, 0.6]);
 	mgraphics.set_line_width(1);
@@ -3115,5 +3115,54 @@ function paint() {
 		mgraphics.set_font_size(9);
 		mgraphics.move_to(4, sy + statusH - 4);
 		mgraphics.show_text(statusText());
+	}
+
+	// The open dropdown, if any -- drawn at the very END of paint() so it floats above everything,
+	// including the forma / escala / acentos / status strips below the grid. It used to be drawn right
+	// after the voice rows, and those strips then painted over its lower items (voice 4's Patron list
+	// lost everything from "Zigzag" down). If the whole list fits neither below nor above its chip
+	// (short window), it is split into columns on the roomier side instead of running off-screen.
+	menuItemGeo = [];
+	if (pendingMenu) {
+		var miH = 18;   // matches the bumped chipH so the open list reads at the same size as the chips
+		var nItems = pendingMenu.items.length;
+		var mAnc = pendingMenu.anchor;
+		var mw = Math.max(mAnc.w, 110);
+		var roomBelow = H - (mAnc.y + mAnc.h + 1);
+		var roomAbove = mAnc.y - 1;
+		var mUp = false, perCol = nItems;
+		if (nItems * miH + 2 <= roomBelow) {
+			mUp = false;
+		} else if (nItems * miH + 2 <= roomAbove) {
+			mUp = true;
+		} else {
+			mUp = roomAbove > roomBelow;
+			perCol = Math.max(3, Math.floor(((mUp ? roomAbove : roomBelow) - 2) / miH));
+		}
+		var nMCols = Math.ceil(nItems / perCol);
+		var totalH = perCol * miH + 2;
+		var mx = mAnc.x;
+		if (mx + nMCols * mw > W) mx = Math.max(0, W - nMCols * mw);
+		var my = mUp ? mAnc.y - totalH - 1 : mAnc.y + mAnc.h + 1;
+		if (my < 0) my = 0;
+		mgraphics.set_source_rgba([0.08, 0.08, 0.09, 0.98]);
+		mgraphics.rectangle(mx, my, nMCols * mw, totalH);
+		mgraphics.fill();
+		mgraphics.set_source_rgba([0, 0, 0, 0.8]);
+		mgraphics.set_line_width(1);
+		mgraphics.rectangle(mx, my, nMCols * mw, totalH);
+		mgraphics.stroke();
+		for (var mi = 0; mi < nItems; mi++) {
+			var ir = { x: mx + Math.floor(mi / perCol) * mw, y: my + 1 + (mi % perCol) * miH, w: mw, h: miH };
+			menuItemGeo.push(ir);
+			var selected = (mi === pendingMenu.cur);
+			mgraphics.set_source_rgba(selected ? [0.35, 0.28, 0.12, 1] : [0.08, 0.08, 0.09, 1]);
+			mgraphics.rectangle(ir.x, ir.y, ir.w, ir.h);
+			mgraphics.fill();
+			mgraphics.set_source_rgba(selected ? [1, 0.85, 0.55, 1] : [0.75, 0.75, 0.8, 1]);
+			mgraphics.set_font_size(11);
+			mgraphics.move_to(ir.x + 3, ir.y + ir.h - 4);
+			mgraphics.show_text(pendingMenu.items[mi]);
+		}
 	}
 }
